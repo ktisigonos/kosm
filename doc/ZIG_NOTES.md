@@ -41,6 +41,8 @@ When unsure about any std function, grep the std source for its definition befor
 - **Float math at comptime burns the branch quota fast:** one sRGB -> OKLCH conversion (`std.math.pow`, `cbrt`) costs a few hundred backwards branches, and a file-level `const` literal evaluates all its calls under one quota, so five `kosm.hex` calls exceed the default 1000. A comptime helper sets its own `@setEvalBranchQuota` inside its `comptime` block; test it from a file-level `const` with many calls.
 - **Untyped file-level number constants break mixed division:** `const h = 2;` then `h / @tan(x)` at comptime is "ambiguous coercion of division operands"; give such constants a type (`const h: f32 = 2;`).
 - **`@max` of comptime-known lengths takes the smallest fitting type:** `@max(a.len, b.len) + 2` with lengths 14 and 10 is a `u4`, so the `+ 2` overflows at comptime. Widen first: `@as(usize, @max(a.len, b.len)) + 2`.
+- **Indexing an empty array with a runtime index is a compile error**, even on a path that never runs: `var given: [0]bool` then `given[i]` is "cannot index into empty array". Return early under `if (comptime fields.len == 0)` so the rest is not analyzed.
+- **A function's return type is analyzed before any check in its body:** `fn f(comptime t: T) @TypeOf(@field(t.file, t.name))` fails with Zig's own "no member named" before a friendlier `@compileError` inside can run. Do the check in a separate `comptime check(t);` statement first.
 - **`@abs` of a signed integer returns the unsigned type:** `@intCast` it back before mixing with signed values.
 - **Anonymous struct literals passed as `anytype` keep comptime fields:** `.{ .text = @embedFile("x"), .format = runtime_value }` gives `text` a comptime field (`@typeInfo(T).@"struct".field_attrs[i].@"comptime"`), so `comptime options.text` works next to runtime fields.
 - **`@floatCast` from f64 to f32 never traps:** out-of-range values become +/-inf, so check `std.math.isFinite` after narrowing. A widened f32 keeps its exact binary value (`6.4` prints as `6.400000095367432`).
@@ -95,6 +97,9 @@ When unsure about any std function, grep the std source for its definition befor
 - **Module names in dependencies:** a package's module is fetched under the name its own `build.zig` passed to `b.addModule`, and the consumer aliases it freely via `mod.addImport("name", dep.module("root"))`.
 - **Dependency scripts run eagerly:** every non-lazy dependency's `build.zig` runs on every `zig build`, even when nothing imports it. `.lazy = true` only defers fetching.
 - **Lazy compilation prunes unused modules:** a module the root never references is dropped entirely, including its link flags. Force it in with `comptime { _ = @import("name"); }`.
+- **`b.args` is gone:** forward `zig build run -- ...` arguments with `run.addPassthruArgs()`.
+- **A `.path` dependency must be relative to the build root:** an absolute `.path = "/home/..."` is "expected path relative to build root; found absolute path".
+- **Failing a build from `build.zig` with a message:** `b.getInstallStep().dependOn(&b.addFail(message).step)` prints the message under the failed step; no panic needed.
 - **`std.Build`: `b.getInstallPath()` no longer exists**, which breaks third-party build scripts written for older Zig.
 - **`LazyPath.getPath` is gone:** for a file in a dependency use `dep.builder.root.joinString(b.allocator, "sub/path")`.
 - **Build `Run` args have `2` variants:** `addFileArg2(lp, .{})`, `addOutputFileArg2(name, .{})`, `addDepFileOutputArg2(name, .{})`; the old ones are deprecated.
