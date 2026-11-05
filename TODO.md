@@ -31,10 +31,10 @@ Markers:
   - Do: the `kosm` binary with only `kosm apply <kosmos> [--param value]... [--diff] [--config dir]` (D45, D66).
   - Done when: a scratch config project's kosmos plans, diffs and commits into a temp directory through `kosm apply --config`.
 
-- [ ] **3c. Built-in apps and Frost**
+- [x] **3c. Built-in apps and Kyanos**
   - Do: `packages/kosm_kitty` (adapter + app, `generate`), `packages/kosm_css` (adapter), `packages/kosm_zen` (app, `generate`), `packages/kosm_nvim` (app, `template`) as directory packages (D2, D62, D67). Apps use D27 defaults and never copy Ricer's choices.
-  - Do: port `~/.config/Ricer/Frost.toml` to a Frost kosmos in a scratch config project; it assigns fields to reproduce the current look (G2). Read the human's current files, never write them.
-  - Done when: Frost rices those apps end to end in `--diff` mode against the real files, and every difference the kosmos can't close is reported (missing app field or deliberate D27 change). Running it for real is `ASK`.
+  - Do: port `~/.config/Ricer/Kyanos.toml` (the theme in use) to a Kyanos kosmos in a scratch config project; it assigns fields to reproduce the current look (G2). Read the human's current files, never write them.
+  - Done when: Kyanos rices those apps end to end in `--diff` mode against the real files, and every difference the kosmos can't close is reported (missing app field or deliberate D27 change). Running it for real is `ASK`.
 
 - [ ] **4. `block` writer**
   - Do: `# kosm:begin <id>` ... `# kosm:end` blocks using the adapter's comment syntax (section 7).
@@ -50,3 +50,9 @@ Markers:
 - [ ] **6. CLI completion** `BLOCKED: Q16`
   - Do: `kosm add/remove/update` (D46), app reloads (D59), applying kosmoi from packages and keeping directory manifests up to date (D62), `current`, `--set` (D20).
   - Done when: each command is tested against a temp config project; nothing touches `~/.config/kosm`.
+
+---
+
+Follow-ups with no step yet (the human places them):
+- `kosm_kitty`: cover `map` and `mouse_map` (keyboard and mouse mappings), and `modify_font size`.
+- `kosm_zen`: Zen's about:config prefs through a `user.js` adapter (`kosm_userjs`).

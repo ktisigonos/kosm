@@ -9,5 +9,6 @@
         "build.zig.zon",
         "build",
         "src",
+        "packages",
     },
 }

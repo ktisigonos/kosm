@@ -44,4 +44,27 @@ pub fn build(b: *std.Build) void {
     for ([_]*std.Build.Module{ kosm_module, runner_module, cli_module, build_helpers_module }) |module| {
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
     }
+    addPackageTests(b, test_step, kosm_module, target, optimize);
+}
+
+/// The built-in packages in packages/ (D67), tested against this kosm.
+const built_in_packages = [_][]const u8{ "kosm_kitty", "kosm_css", "kosm_zen", "kosm_nvim" };
+
+/// Tests each built-in package with every other one importable by name, as a config sees them.
+fn addPackageTests(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    var modules: [built_in_packages.len]*std.Build.Module = undefined;
+    for (built_in_packages, &modules) |name, *module| {
+        module.* = b.createModule(.{
+            .root_source_file = b.path(b.fmt("packages/{s}/root.zig", .{name})),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "kosm", .module = kosm_module }},
+        });
+    }
+    for (modules, 0..) |module, index| {
+        for (built_in_packages, modules, 0..) |other_name, other, other_index| {
+            if (other_index != index) module.addImport(other_name, other);
+        }
+        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .name = built_in_packages[index] })).step);
+    }
 }
