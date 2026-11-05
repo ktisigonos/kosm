@@ -190,6 +190,6 @@ test "two apps writing one file is an error" {
     var plan: Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
     try plan.add("/nonexistent/kosm-test/a.conf", "~/a.conf", "one", "1\n");
-    try testing.expectError(error.FileWrittenTwice, plan.add("/nonexistent/kosm-test/a.conf", "~/a.conf", "two", "2\n"));
-    try testing.expectEqualStrings("one", plan.find("/nonexistent/kosm-test/a.conf").?.owner);
+    try testing.expectError(error.EditsOverlap, plan.add("/nonexistent/kosm-test/a.conf", "~/a.conf", "two", "2\n"));
+    try testing.expectEqualStrings("one", plan.find("/nonexistent/kosm-test/a.conf").?.owner());
 }

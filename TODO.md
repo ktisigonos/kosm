@@ -42,7 +42,7 @@ Markers:
   - Do: the Kyanos port uses HSV `value +10` / `-15` like Ricer, so its bright and inactive colors match exactly.
   - Done when: round trips sRGB <-> each space are tested (hue wrap, gray hue, gamut edges), each modifier space is tested, and Kyanos `--diff` shows no color differences from Ricer except deliberate D27 ones.
 
-- [ ] **4. `block` writer**
+- [x] **4. `block` writer**
   - Do: `# kosm:begin <id>` ... `# kosm:end` blocks using the adapter's comment syntax (section 7).
   - Do: add the `comment` capability to `kosm.Adapter` (D39); 3a left it out until it has a user.
   - Do: `Plan` entries become byte ranges inside a file, so D38 rejects only overlapping ranges instead of any second writer of a file.
@@ -64,3 +64,4 @@ Follow-ups with no step yet (the human places them):
 - `kosm_zen`: Zen's about:config prefs through a `user.js` adapter (`kosm_userjs`).
 - `kosm_kitty`: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
 - Warn when a printed color is clipped to the gamut (D48); core has no way to warn yet, only to error.
+- `output.templateBlock` (D71): the text form of `block`, with `template`'s call shape; build it when the first real app needs it.

@@ -56,6 +56,8 @@ test {
     std.testing.refAllDecls(Output);
     std.testing.refAllDecls(Diagnostics);
     std.testing.refAllDecls(Plan);
+    std.testing.refAllDecls(Plan.Edit);
+    std.testing.refAllDecls(@import("block.zig"));
     std.testing.refAllDecls(commit);
     std.testing.refAllDecls(diff);
     std.testing.refAllDecls(@import("template.zig"));

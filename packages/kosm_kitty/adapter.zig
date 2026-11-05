@@ -4,12 +4,13 @@
 const std = @import("std");
 const kosm = @import("kosm");
 
-/// The adapter for kitty.conf files; enables `generate`. It claims no extension, since many
+/// The adapter for kitty.conf files; enables `generate` and `block` (D71). It claims no extension, since many
 /// formats use `.conf`: pass `.lang = "kitty"`.
 pub const adapter: kosm.Adapter = .{
     .name = "kitty",
     .default_format = .{ .color = .hex, .boolean = .yes_no },
     .serialize = serialize,
+    .comment = .{ .line = "#" },
 };
 
 fn serialize(writer: *std.Io.Writer, root: kosm.Value, context: *kosm.Adapter.Context) kosm.Adapter.Error!void {

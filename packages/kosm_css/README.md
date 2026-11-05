@@ -1,6 +1,6 @@
 # kosm_css
 
-CSS for kosm: the `css` adapter, which claims `.css` files and enables `generate`.
+CSS for kosm: the `css` adapter, which claims `.css` files and enables `generate` and `block`.
 
 `generate` writes every value as a custom property on `:root`. Nested structs join their names
 with `-`, and `_` becomes `-`:
@@ -22,3 +22,6 @@ try output.generate(.{ .file = "~/.config/app/kosm.css" }, .{ .kosm = .{ .tab_ba
 | integer, float | the number |
 | `kosm.raw(text)` | `text`, verbatim (`10px`, `1px solid red`) |
 | bool, list | an error: CSS has neither, so pass `kosm.raw` text |
+
+`block` writes the same text between `/* kosm:begin <id> */` and `/* kosm:end */` in a CSS file
+you otherwise write by hand (D72).

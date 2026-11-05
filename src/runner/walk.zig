@@ -121,8 +121,8 @@ test "every app in nested structs is planned under its tree path, null ones are 
     };
     try planTree(tree, fixture.context(home));
     try testing.expectEqual(2, fixture.plan.files.items.len);
-    try testing.expectEqualStrings("terminal.kitty", fixture.plan.files.items[0].owner);
-    try testing.expectEqualStrings("editor", fixture.plan.files.items[1].owner);
+    try testing.expectEqualStrings("terminal.kitty", fixture.plan.files.items[0].owner());
+    try testing.expectEqualStrings("editor", fixture.plan.files.items[1].owner());
     try testing.expectEqualStrings("size = 2\n", fixture.plan.files.items[1].new);
 }
 

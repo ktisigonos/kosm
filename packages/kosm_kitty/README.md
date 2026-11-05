@@ -1,6 +1,6 @@
 # kosm_kitty
 
-kitty for kosm: the `kitty` adapter (writes kitty.conf files) and the kitty app.
+kitty for kosm: the `kitty` adapter (writes kitty.conf files and `# kosm:begin` blocks in them) and the kitty app.
 
 The app covers every kitty.conf option, grouped like kitty's own docs and named exactly like
 kitty's options (`kitty.cursor.cursor_trail = 1`). It writes only the options that are set to

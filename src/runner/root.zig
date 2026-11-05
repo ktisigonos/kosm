@@ -84,7 +84,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: []const kos
 /// The app planning the file shown as `display_path`, or empty.
 fn ownerOf(plan: *const kosm.Plan, display_path: []const u8) []const u8 {
     for (plan.files.items) |file| {
-        if (std.mem.eql(u8, file.display_path, display_path)) return file.owner;
+        if (std.mem.eql(u8, file.display_path, display_path)) return file.owner();
     }
     return "";
 }

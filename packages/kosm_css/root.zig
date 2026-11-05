@@ -3,12 +3,13 @@
 const std = @import("std");
 const kosm = @import("kosm");
 
-/// Writes CSS files of custom properties; enables `generate`. Colors default to `#rrggbbaa`.
+/// Writes CSS custom properties; enables `generate` and `block` (D71). Colors default to `#rrggbbaa`.
 pub const adapter: kosm.Adapter = .{
     .name = "css",
     .extensions = &.{".css"},
     .default_format = .{ .color = .hex8 },
     .serialize = serialize,
+    .comment = .{ .block = .{ .open = "/*", .close = "*/" } },
 };
 
 /// One `--name: value;` line per value, inside `:root { }`. Nested tables join their keys with

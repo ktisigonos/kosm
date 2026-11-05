@@ -15,12 +15,25 @@ extensions: []const []const u8 = &.{},
 /// How this language spells values where neither the app nor the user chose (D70).
 /// Named apart from the `format` capability step 5 adds (D39).
 default_format: Format = .{},
-/// Writes a whole file from a value tree; enables the `generate` writer.
+/// Writes a whole file from a value tree; enables `generate` and data blocks (D71).
 serialize: ?*const fn (writer: *std.Io.Writer, root: Value, context: *Context) Error!void = null,
+/// How this language writes a comment on a line of its own; enables `block` (D72).
+comment: ?Comment = null,
 
 /// What a capability gets besides its input: the file's format and a place to explain
 /// a failure.
 pub const Context = @import("Adapter/Context.zig");
+
+/// A language's comment syntax: `.{ .line = "#" }` or `.{ .block = .{ .open = "/*", .close = "*/" } }`.
+pub const Comment = union(enum) {
+    /// Starts a comment running to the end of the line ("#", "--").
+    line: []const u8,
+    /// Wraps a comment in delimiters.
+    block: BlockComment,
+};
+
+/// Delimiters of a `Comment.block`.
+pub const BlockComment = @import("Adapter/BlockComment.zig");
 
 /// Errors a capability may return. Return `UnsupportedValue` through `Context.unsupported`.
 pub const Error = std.Io.Writer.Error || error{UnsupportedValue};
