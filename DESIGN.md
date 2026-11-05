@@ -177,8 +177,8 @@ pub const Variations = struct {
 - **D50. Kosmoi, apps and adapters import each other by name**, like packages: `@import("base")`, `@import("hypr_defs")`, never `@import("base.zig")`. Each one is its own Zig module, and Zig doesn't allow a file in two modules. Names must be unique among your local kosmoi, apps, adapters and installed packages; kosm errors on a collision, naming both. Files *inside* a directory kosmos, app or adapter (D62) are private to it and import each other relatively (`@import("colors.zig")`).
 - **D62. A file is private, a directory is a package.** The same rule holds for `kosmoi/`, `apps/` and `adapters/`:
   - `kosmoi/frost.zig`: a single-file kosmos. It has no manifest and can't be installed by others (they can still copy the file).
-  - `kosmoi/nord/` with `root.zig`, plus any files, templates and subdirectories it needs: a directory kosmos. It carries its own `build.zig.zon` and **no `build.zig`**, which makes it a complete Zig package. Publishing it means pushing that directory as a git repo, and others `kosm add` it and use it as `@import("nord")` or `kosm apply nord.iced`. (Verified on 0.17: a zon-only package can be fetched by archive, with its own dependencies fetched by hash.)
-  - **Kosm keeps that manifest up to date when it builds that one kosmos.** `kosm apply nord` regenerates `kosmoi/nord/build.zig.zon`, and nothing else: `kosm apply frost` doesn't touch nord. Kosm writes `.name`, `.fingerprint`, `.version` and `.minimum_zig_version` once and never changes them afterwards. On every build it rewrites `.dependencies` (exactly the installed packages nord imports, copied with their url and hash from the config's own `build.zig.zon`, which stays the source of truth) and `.paths` (every file in the directory).
+  - `kosmoi/nord/` with `root.zig`, plus any files, templates and subdirectories it needs: a directory kosmos. It carries a `build.zig.zon` and a minimal `build.zig` that only calls kosm's helper (`pub fn build(b: *std.Build) void { @import("kosm").package(b); }`), so it's an ordinary Zig package: ZLS completion, `zig build test` and `zig fetch --save` all work inside it, also when someone develops it on its own outside a config. All the logic lives in kosm's `package` helper, so the generated `build.zig` never changes. Publishing it means pushing that directory as a git repo, and others `kosm add` it and use it as `@import("nord")` or `kosm apply nord.iced`. (A zon-only package would also work, verified on 0.17, but the standard shape costs nothing since kosm generates it.)
+  - **Kosm keeps that manifest up to date when it builds that one kosmos.** `kosm apply nord` regenerates `kosmoi/nord/build.zig.zon`, and nothing else: `kosm apply frost` doesn't touch nord. Kosm writes `build.zig`, and the manifest's `.name`, `.fingerprint`, `.version` and `.minimum_zig_version`, once and never changes them afterwards. On every build it rewrites `.dependencies` (`kosm` itself plus exactly the installed packages nord imports, copied with their url and hash from the config's own `build.zig.zon`, which stays the source of truth) and `.paths` (every file in the directory).
   - If a directory kosmos imports a *local* kosmos, app or adapter that isn't a directory package (e.g. `@import("base")` where `base` is `kosmoi/base.zig`), regenerating its manifest is an error naming the import, because the published package couldn't resolve it.
 - **D21. Kosmos functions may return an error union** (`!Base`). Kosm reports the error with the kosmos name.
 
@@ -415,6 +415,7 @@ pub const adapter = kosm.Adapter{
 |   |-- hypr_defs.zig        #   a file: private
 |   `-- my_bar/              #   a directory: a package (D62)
 |       |-- root.zig
+|       |-- build.zig        #   one line, written once by kosm new
 |       `-- build.zig.zon    #   written and kept up to date by kosm
 |-- adapters/                # optional: local adapters, same rule
 `-- kosmoi/
@@ -423,6 +424,7 @@ pub const adapter = kosm.Adapter{
         |-- root.zig
         |-- colors.zig
         |-- templates/
+        |-- build.zig        # one line, written once by kosm new
         `-- build.zig.zon    # written and kept up to date by kosm
 ```
 
@@ -436,7 +438,7 @@ pub const adapter = kosm.Adapter{
 
 ```
 kosm init                            # create ~/.config/kosm
-kosm new <kosmos>                    # scaffold kosmoi/<kosmos>.zig
+kosm new kosmos|app|adapter <name>   # scaffold a directory package (D63)
 kosm apply <file>[.<variant>] [--<param> value]... [--set path=value]... [--diff]
 kosm list                            # kosmoi + variants, installed packages
 kosm current                         # what's applied (kosm records the last apply)
@@ -446,6 +448,7 @@ kosm remove <name>
 kosm update [name]                   # re-fetch packages at their tracked ref, rebuild
 ```
 
+- **D63. `kosm new` scaffolds the full directory.** `kosm new kosmos frost` creates `kosmoi/frost/` with `root.zig` (a commented starting kosmos), `build.zig` and `build.zig.zon`; `kosm new app` and `kosm new adapter` do the same in `apps/` and `adapters/`. Nobody writes build files by hand. A single-file kosmos, app or adapter (D62) is still valid for personal use; you just create the file yourself.
 - **D46. Package commands wrap `zig fetch`.** No custom package format or registry. `add` checks that the package provides at least one app or adapter, and reports what it provides. `build.zig.zon` stores only the resolved URL + hash, which loses "follow branch `main`", so kosm keeps that intent in `packages.zon` (name -> url + ref), and `update` re-runs `zig fetch --save=<name>` from it.
 
 ## 11. Build order
