@@ -13,6 +13,7 @@ Purpose: stop agents (and humans) from repeating the same mistakes. Zig is pre-1
 - Toolchain verified: Zig 0.17.0 (`zig version`), 2026-11-05.
 - Language reference: `doc/generated/zig/` (run `./fetch-docs.sh`; one file per chapter, search across the directory, open only small chapters whole).
 - Zig std source: run `zig env` and use `.std_dir`; see AGENTS.md for the search commands.
+- **`zig env` prints ZON, not JSON:** the AGENTS.md one-liner (`"std_dir": *"..."`) matches nothing. Use `zig env | grep -o '\.std_dir = "[^"]*"' | cut -d'"' -f2`. `std.builtin.Type` lives in `std/lang.zig`, not `builtin.zig`.
 - Dependencies: `zig-pkg/<package>/` (the hash-named directory changes when a dependency is updated).
 
 When unsure about any std function, grep the std source for its definition before using it.
@@ -24,6 +25,7 @@ When unsure about any std function, grep the std source for its definition befor
 ### Language and comptime
 
 - **Struct `@typeInfo` has no `.fields` in 0.17:** `@typeInfo(T).@"struct"` holds parallel slices `field_names`, `field_types`, `field_attrs` (plus `decl_names`); `@Struct(layout, backing, names, types, attrs)` builds one back.
+- **Enum `@typeInfo` also uses parallel slices:** `@typeInfo(E).@"enum"` has `field_names` and `field_values` (comptime_int); `std.enums.values(E)` gives a `[]const E`.
 - **Looping over `@typeInfo(T).@"struct".field_types` needs `inline for`:** a plain `for` indexes the slice at runtime ("values of type 'type' must be comptime-known"). Helpers computing over fields return `comptime_int` and use `comptime var`.
 - **comptime tables:** a `const` built in a comptime block and returned as an anonymous struct literal (`break :blk .{ .items = items }`) keeps comptime fields, and taking `&table.items` at runtime fails with "runtime value contains reference to comptime var". Give the result a named struct type: `const final: Table = .{ ... }; break :blk final;`.
 - **Array repeat `**` is gone:** `[_]u8{'a'} ** 4` fails with the misleading "binary operator '*' has whitespace on one side, but not the other". Use `const filler: [4]u8 = @splat('a');` (`@splat` takes one argument; the length comes from the result type) or `@memset` on a runtime buffer.

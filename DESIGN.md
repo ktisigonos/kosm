@@ -114,7 +114,9 @@ pub const Variations = struct {
         selected: Modifier, checked: Modifier, dragged: Modifier, visited: Modifier,
         disabled: Modifier, placeholder: Modifier,
         inactive: Modifier,                                 // unfocused window / widget
-        selected_inactive: Modifier,                        // default: selected, then inactive
+        selected_inactive: ?Modifier = null,                // null: selected, then inactive
+
+        pub fn selectedInactive(self: State) Modifier { ... } // read the composition through this
     };
 
     /// Mode-aware elevation. GTK shade/card/popover, Material surface containers, Qt Shadow.
@@ -141,19 +143,17 @@ pub const Variations = struct {
 };
 ```
 
-- **D12.** There are 33 variations in 7 families, and `Variations.from(mode)` provides every default. Mode-aware families (emphasis, surface, state) invert direction in light mode, e.g. `hovered` darkens.
+- **D12.** There are 33 variations in 7 families, and `Variations.from(mode)` provides every default. Mode-aware families (emphasis, state, surface, line) invert direction in light mode, e.g. `hovered` darkens. `Theme.from` points `contrast.on`/`on_muted` at the palette's black and white, and `surface.shadow` at its black.
 - **D13. Variations transform; they never choose hues.** `error`, `warning` and the like are a module's decision (`error = palette.red`), not variations.
 - **D14. `active` is deliberately absent.** It means "pressed" in CSS and "focused window" in Qt, so it's split into `state.pressed` and `state.inactive`.
-- **D15. A `Modifier` is one of:**
-  - OKLCH deltas (`lightness`, `chroma`, `hue`) plus optional `alpha`;
-  - a mix toward a color (`mix = .{ .toward = …, .amount = 0.5 }`);
-  - a contrast function (`contrast.on` / `on_muted`: picks a readable color);
-  - a **composition** of sibling variations (`.compose = &.{ .state_selected, .state_inactive }`).
-- **D16. Compositions are references, resolved when applied.** That's the one exception to D3, and it's what makes tweaking `state.selected` also change `state.selected_inactive`. Users can write their own: `variations.state.selected.then(variations.state.hovered)`.
+- **D15. A `Modifier` is a struct of optional parts**, applied in this order: OKLCH deltas (`lightness`, `chroma`, `hue`; chroma never drops below 0, hue wraps), a mix toward a color (`mix = .{ .toward = …, .amount = 0.5 }`), a contrast pick (`contrast`: whichever of two candidates has the higher WCAG 2 contrast ratio on the color, optionally mixed back toward it, for `contrast.on` / `on_muted`), and finally an absolute `alpha`. Each part is a plain field, so `hovered.lightness = 0.06` works.
+- **D16. Compositions are copies, read through a method.** `a.then(b)` returns a modifier that applies `a`, then `b`, holding up to 8 steps inline (no memory needed). A copied modifier can't look anything up later (D24: `apply` only sees `self`), so variations that default to a composition are `?Modifier = null` and are read through a method, like D23's derived colors: `state.selectedInactive()` returns `selected_inactive orelse selected.then(inactive)`. That's what makes tweaking `state.selected` also change it, for every module built afterwards.
 
 ### 4.4 Color
 
 - **D47. Colors are formatted with a template and a list of components.** `color.format("rgba({}, {}, {}, {})", &.{ .red_255, .green_255, .blue_255, .alpha_01 })`: each `{}` takes the next component, `{{` and `}}` are literal braces. The template and the list are comptime, so a typo in a component or a count mismatch is a compile error (G8). Shortcuts: `color.hex()` (`#rrggbb`) and `color.hex8()` (`#rrggbbaa`).
+- **D48. Colors are OKLCH in f64, and out-of-gamut values are kept.** Nothing is clamped while colors are built, mixed or modified, since some apps (game engines, HDR) want values beyond sRGB. Clipping happens only when printing bytes (`red_255`, `hex`, ...); float components (`red_01`, `lightness`, ...) print the real value.
+- **D49. `kosm.hex(text)` is comptime**, so a bad literal is a compile error. It takes `rgb`, `rgba`, `rrggbb` or `rrggbbaa` with an optional `#`. `Color.parseHex` is the runtime version and returns an error; params and `--set` use it.
 
 ## 5. Kosmoi
 

@@ -13,7 +13,7 @@ Markers:
 
 ---
 
-- [ ] **1. Core data** `PLAN FIRST`
+- [x] **1. Core data** `PLAN FIRST`
   - Do: Color (OKLCH, formatting), Modifier, Variations, Palette with wheel resolution, Theme (section 4, D6-D16). Pure: no files, no IO.
   - Done when: `zig build test` passes with tests for the risky parts listed in `AGENTS.md` (color round trips, wheel resolution edge cases, modifier kinds, compositions, mode inversion).
 
