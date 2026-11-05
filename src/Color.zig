@@ -3,6 +3,7 @@
 const Color = @This();
 
 const std = @import("std");
+const parsing = @import("Color/parse.zig");
 
 /// Perceptual lightness: 0 is black, 1 is white. Values outside 0..1 are kept (D48).
 lightness: f64,
@@ -78,6 +79,15 @@ pub fn parseHex(text: []const u8) ParseHexError!Color {
         .blue = @as(f64, @floatFromInt(channels[2])) / 255,
         .alpha = @as(f64, @floatFromInt(channels[3])) / 255,
     });
+}
+
+/// Errors from parsing color text.
+pub const ParseError = parsing.Error;
+
+/// Parses any common color text (D55): hex as `parseHex` takes it, `rgb()`, `rgba()`,
+/// `hsl()`, `hsla()` or `oklch()`, with commas or spaces and an optional `/ alpha`.
+pub fn parse(text: []const u8) ParseError!Color {
+    return parsing.parse(text);
 }
 
 /// Mixes toward `target` in OKLCH: amount 0 keeps this color, 1 gives `target`.

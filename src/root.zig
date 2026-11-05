@@ -9,6 +9,7 @@ pub const Variations = @import("Variations.zig");
 pub const Theme = @import("Theme.zig");
 pub const Mode = Theme.Mode;
 pub const ColorFormat = @import("ColorFormat.zig");
+pub const ColorChoice = @import("color_choice.zig").ColorChoice;
 pub const Raw = @import("Raw.zig");
 pub const Value = @import("value.zig").Value;
 pub const Adapter = @import("Adapter.zig");
@@ -36,6 +37,8 @@ pub fn hex(comptime text: []const u8) Color {
 test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(Color);
+    std.testing.refAllDecls(@import("Color/parse.zig"));
+    std.testing.refAllDecls(@import("color_choice.zig"));
     std.testing.refAllDecls(Palette);
     std.testing.refAllDecls(Modifier);
     std.testing.refAllDecls(Variations);
