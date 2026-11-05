@@ -1,0 +1,19 @@
+.{
+    .name = .kosm_nvim,
+    .version = "0.0.0",
+    .fingerprint = 0xeee46e3128ceb350, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .kosm = .{ .path = "../.." },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "root.zig",
+        "App.zig",
+        "Base16.zig",
+        "Terminal.zig",
+        "templates",
+        "README.md",
+    },
+}
