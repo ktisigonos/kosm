@@ -13,7 +13,7 @@ local theme = require('theme')
 | Field | Default |
 |---|---|
 | `file` | `~/.config/nvim/lua/theme.lua` |
-| `color_format` | `#rrggbb` |
+| `format` | `.{ .color = .hex }` (`#rrggbb`); booleans `true`/`false`, 6 float decimals (D70) |
 | `transparent` | false |
 | `base16.base00` | black, white in light mode (background) |
 | `base16.base01` | `surface.raised` of `base00` |

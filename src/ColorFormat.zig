@@ -15,6 +15,10 @@ components: []const Color.Component,
 pub const hex: ColorFormat = .init("#{}", &.{.hex});
 /// `#rrggbbaa`, clipped to the gamut.
 pub const hex8: ColorFormat = .init("#{}", &.{.hex8});
+/// `#RRGGBB`, clipped to the gamut.
+pub const hex_upper: ColorFormat = .init("#{}", &.{.hex_upper});
+/// `#RRGGBBAA`, clipped to the gamut.
+pub const hex8_upper: ColorFormat = .init("#{}", &.{.hex8_upper});
 
 /// A format whose template and components are checked at compile time, like `Color.format`.
 pub fn init(comptime template: []const u8, comptime components: []const Color.Component) ColorFormat {
@@ -25,9 +29,10 @@ pub fn init(comptime template: []const u8, comptime components: []const Color.Co
 /// Errors from `write`.
 pub const WriteError = std.Io.Writer.Error || error{InvalidColorFormat};
 
-/// Prints `color` in this format. A template that does not match its components (only possible
-/// when the fields were set by hand instead of through `init`) is `error.InvalidColorFormat`.
-pub fn write(format: ColorFormat, color: Color, writer: *std.Io.Writer) WriteError!void {
+/// Prints `color` in this format, float components with at most `decimals` decimals. A template
+/// that does not match its components (only possible when the fields were set by hand instead
+/// of through `init`) is `error.InvalidColorFormat`.
+pub fn write(format: ColorFormat, color: Color, decimals: u8, writer: *std.Io.Writer) WriteError!void {
     var component_index: usize = 0;
     var index: usize = 0;
     while (index < format.template.len) : (index += 1) {
@@ -38,7 +43,7 @@ pub fn write(format: ColorFormat, color: Color, writer: *std.Io.Writer) WriteErr
             index += 1;
         } else if (character == '{' and next == '}') {
             if (component_index == format.components.len) return error.InvalidColorFormat;
-            try writeComponent(color, format.components[component_index], writer);
+            try writer.writeAll(color.formatComponent(format.components[component_index], decimals).slice());
             component_index += 1;
             index += 1;
         } else if (character == '{' or character == '}') {
@@ -50,22 +55,12 @@ pub fn write(format: ColorFormat, color: Color, writer: *std.Io.Writer) WriteErr
     if (component_index != format.components.len) return error.InvalidColorFormat;
 }
 
-/// Prints one component of `color`, e.g. `red_255` as `94`.
-pub fn writeComponent(color: Color, component: Color.Component, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    switch (component) {
-        inline else => |known| {
-            const text = color.format("{}", &.{known});
-            try writer.writeAll(text.slice());
-        },
-    }
-}
-
 const testing = std.testing;
 
 fn expectWritten(expected: []const u8, format: ColorFormat, color: Color) !void {
     var buffer: [64]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
-    try format.write(color, &writer);
+    try format.write(color, Color.default_decimals, &writer);
     try testing.expectEqualStrings(expected, writer.buffered());
 }
 
@@ -76,6 +71,7 @@ test "runtime formats print like Color.format" {
     const rgba: ColorFormat = .init("rgba({}, {}, {}, {})", &.{ .red_255, .green_255, .blue_255, .alpha_01 });
     try expectWritten("rgba(94, 129, 172, 0.501961)", rgba, color);
     try expectWritten("{5e81ac}", .init("{{{}}}", &.{.hex}), color);
+    try expectWritten("#5E81AC80", hex8_upper, color);
 }
 
 test "a hand-built format with the wrong component count is an error" {
@@ -83,9 +79,9 @@ test "a hand-built format with the wrong component count is an error" {
     var buffer: [64]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     const too_few: ColorFormat = .{ .template = "{} {}", .components = &.{.hex} };
-    try testing.expectError(error.InvalidColorFormat, too_few.write(color, &writer));
+    try testing.expectError(error.InvalidColorFormat, too_few.write(color, 6, &writer));
     const too_many: ColorFormat = .{ .template = "{}", .components = &.{ .hex, .hex } };
-    try testing.expectError(error.InvalidColorFormat, too_many.write(color, &writer));
+    try testing.expectError(error.InvalidColorFormat, too_many.write(color, 6, &writer));
     const lone_brace: ColorFormat = .{ .template = "{x}", .components = &.{} };
-    try testing.expectError(error.InvalidColorFormat, lone_brace.write(color, &writer));
+    try testing.expectError(error.InvalidColorFormat, lone_brace.write(color, 6, &writer));
 }

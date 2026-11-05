@@ -10,8 +10,9 @@ const settings = @import("settings.zig");
 
 /// The file kosm owns; kitty.conf includes it. Default: `~/.config/kitty/kosm.conf`.
 file: []const u8 = "~/.config/kitty/kosm.conf",
-/// How colors are printed. null: `#rrggbb`, the kitty adapter's format (D61).
-color_format: ?kosm.ColorFormat = null,
+/// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the kitty
+/// adapter's: `#rrggbb`, `yes`/`no`, then kosm's 6 float decimals.
+format: kosm.Format = .{},
 /// Derives `color8`..`color15` from `color0`..`color7` when they are null (D23).
 /// Default: the theme's `lightness.bright`.
 bright: kosm.Modifier,
@@ -94,7 +95,7 @@ pub fn apply(self: App, output: *kosm.Output) !void {
         .os = derived.os,
         .shortcuts = derived.shortcuts,
     });
-    try output.generate(.{ .file = self.file, .lang = "kitty", .color_format = self.color_format }, tree);
+    try output.generate(.{ .file = self.file, .lang = "kitty", .format = self.format }, tree);
 }
 
 /// An 8-bit alpha can't hold 0.5 exactly (`80` is 0.502), so derived opacities are rounded

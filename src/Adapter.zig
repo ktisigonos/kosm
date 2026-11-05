@@ -4,7 +4,7 @@
 const Adapter = @This();
 
 const std = @import("std");
-const ColorFormat = @import("ColorFormat.zig");
+const Format = @import("Format.zig");
 const Value = @import("value.zig").Value;
 
 /// The language name apps pass as `.lang`, e.g. "css".
@@ -12,12 +12,13 @@ name: []const u8,
 /// File extensions this adapter claims, with the dot (".css"). Picked from the file name
 /// unless the app passes `.lang` (D26).
 extensions: []const []const u8 = &.{},
-/// The color format for this language when neither the app nor the user sets one (D61).
-color_format: ?ColorFormat = null,
+/// How this language spells values where neither the app nor the user chose (D70).
+/// Named apart from the `format` capability step 5 adds (D39).
+default_format: Format = .{},
 /// Writes a whole file from a value tree; enables the `generate` writer.
 serialize: ?*const fn (writer: *std.Io.Writer, root: Value, context: *Context) Error!void = null,
 
-/// What a capability gets besides its input: the file's color format and a place to explain
+/// What a capability gets besides its input: the file's format and a place to explain
 /// a failure.
 pub const Context = @import("Adapter/Context.zig");
 

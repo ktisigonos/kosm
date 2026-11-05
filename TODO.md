@@ -62,3 +62,5 @@ Markers:
 Follow-ups with no step yet (the human places them):
 - `kosm_kitty`: cover `map` and `mouse_map` (keyboard and mouse mappings), and `modify_font size`.
 - `kosm_zen`: Zen's about:config prefs through a `user.js` adapter (`kosm_userjs`).
+- `kosm_kitty`: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
+- Warn when a printed color is clipped to the gamut (D48); core has no way to warn yet, only to error.

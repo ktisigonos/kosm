@@ -1,14 +1,14 @@
-//! Passed to an adapter capability: the file's color format (D61), and room to explain
-//! why a value can't be written, so kosm can report it with the file and app (G6).
+//! Passed to an adapter capability: the file's format (D70), and room to explain why a value
+//! can't be written, so kosm can report it with the file and app (G6).
 
 const Context = @This();
 
 const std = @import("std");
 const Color = @import("../Color.zig");
-const ColorFormat = @import("../ColorFormat.zig");
+const Format = @import("../Format.zig");
 
-/// How colors without an explicit component are printed in this file.
-color_format: ColorFormat,
+/// How this file spells colors, booleans and floats, every layer applied.
+format: Format.Resolved,
 message_buffer: [message_capacity]u8 = undefined,
 message_length: usize = 0,
 
@@ -16,11 +16,21 @@ const message_capacity = 512;
 
 /// Prints `color` in the file's color format.
 pub fn writeColor(context: *const Context, writer: *std.Io.Writer, color: Color) std.Io.Writer.Error!void {
-    context.color_format.write(color, writer) catch |err| switch (err) {
+    context.format.writeColor(writer, color) catch |err| switch (err) {
         error.WriteFailed => return error.WriteFailed,
         // Kosm checks the format before handing it to an adapter.
         error.InvalidColorFormat => unreachable,
     };
+}
+
+/// Prints `value` in the file's boolean spelling.
+pub fn writeBoolean(context: *const Context, writer: *std.Io.Writer, value: bool) std.Io.Writer.Error!void {
+    return context.format.writeBoolean(writer, value);
+}
+
+/// Prints `value` at the file's float precision.
+pub fn writeFloat(context: *const Context, writer: *std.Io.Writer, value: f64) std.Io.Writer.Error!void {
+    return context.format.writeFloat(writer, value);
 }
 
 /// Records why a value can't be written and returns the error to pass up.

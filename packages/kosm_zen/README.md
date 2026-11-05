@@ -24,7 +24,7 @@ color goes:
 | Field | Property | Default |
 |---|---|---|
 | `file` | | `~/.config/ZenBrowser/kosm.css` |
-| `color_format` | | null: `#rrggbbaa` |
+| `format` | | `.{}`: the CSS adapter's `#rrggbbaa`, then 6 float decimals (D70) |
 | `foreground` | `--kosm-foreground` | white, black in light mode |
 | `accent` | `--kosm-accent` | cyan |
 | `background` | `--kosm-background` | black, white in light mode |

@@ -8,7 +8,7 @@ const kosm = @import("kosm");
 /// formats use `.conf`: pass `.lang = "kitty"`.
 pub const adapter: kosm.Adapter = .{
     .name = "kitty",
-    .color_format = .hex,
+    .default_format = .{ .color = .hex, .boolean = .yes_no },
     .serialize = serialize,
 };
 
@@ -43,8 +43,8 @@ fn writeValue(writer: *std.Io.Writer, key: []const u8, value: kosm.Value, contex
             try writer.writeAll(text);
         },
         .integer => |integer| try writer.print("{d}", .{integer}),
-        .float => |float| try writer.print("{d}", .{float}),
-        .boolean => |boolean| try writer.writeAll(if (boolean) "yes" else "no"),
+        .float => |float| try context.writeFloat(writer, float),
+        .boolean => |boolean| try context.writeBoolean(writer, boolean),
         .color => |color| try context.writeColor(writer, color),
         .list => |items| for (items, 0..) |item, index| {
             if (item == .list or item == .table) return context.unsupported("'{s}': a kitty.conf list holds only plain values", .{key});
@@ -58,7 +58,7 @@ fn writeValue(writer: *std.Io.Writer, key: []const u8, value: kosm.Value, contex
 const testing = std.testing;
 
 fn serializeForTest(root: kosm.Value, output: *std.Io.Writer.Allocating) !void {
-    var context: kosm.Adapter.Context = .{ .color_format = .hex };
+    var context: kosm.Adapter.Context = .{ .format = adapter.default_format.resolve() };
     try serialize(&output.writer, root, &context);
 }
 
@@ -96,7 +96,7 @@ test "sections become comments over plain option lines" {
 test "values that would break a line are refused" {
     var output: std.Io.Writer.Allocating = .init(testing.allocator);
     defer output.deinit();
-    var context: kosm.Adapter.Context = .{ .color_format = .hex };
+    var context: kosm.Adapter.Context = .{ .format = adapter.default_format.resolve() };
     const root: kosm.Value = .{ .table = &.{.{ .key = "shell", .value = .{ .string = "fish\nrm -rf" } }} };
     try testing.expectError(error.UnsupportedValue, serialize(&output.writer, root, &context));
     try testing.expectEqualStrings("'shell': kitty.conf values cannot span lines", context.message());

@@ -8,8 +8,9 @@ const kosm = @import("kosm");
 
 /// The file kosm owns. Default: `~/.config/ZenBrowser/kosm.css`.
 file: []const u8 = "~/.config/ZenBrowser/kosm.css",
-/// How colors are printed. null: `#rrggbbaa`, the CSS adapter's format (D61).
-color_format: ?kosm.ColorFormat = null,
+/// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the CSS
+/// adapter's: `#rrggbbaa`, then kosm's 6 float decimals.
+format: kosm.Format = .{},
 /// Text and icons (`--kosm-foreground`). Default: white, black in light mode.
 foreground: kosm.Color,
 /// Links, focused fields and the selected tab's text (`--kosm-accent`). Default: cyan.
@@ -57,7 +58,7 @@ pub fn from(theme: kosm.Theme) App {
 
 /// Writes every color as a `--kosm-*` custom property.
 pub fn apply(self: App, output: *kosm.Output) !void {
-    try output.generate(.{ .file = self.file, .lang = "css", .color_format = self.color_format }, .{ .kosm = .{
+    try output.generate(.{ .file = self.file, .lang = "css", .format = self.format }, .{ .kosm = .{
         .foreground = self.foreground,
         .accent = self.accent,
         .background = self.background,

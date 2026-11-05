@@ -27,8 +27,10 @@ pub const Text = @import("Color/Text.zig");
 
 /// Below this chroma a color counts as gray, and mixing takes the other color's hue.
 const gray_chroma = 1e-6;
-/// Floats print with at most this many decimals.
-const float_decimals = 6;
+/// Floats print with at most this many decimals unless a file's format says otherwise.
+pub const default_decimals = 6;
+/// The most decimals a float component can print with.
+pub const max_decimals = 12;
 /// Formatted float components are clamped to this magnitude so they always fit in `Text`.
 const max_float_magnitude = 1e12;
 
@@ -146,6 +148,10 @@ pub const Component = enum {
     hex,
     /// `rrggbbaa`, lowercase, clipped to the gamut. No `#`.
     hex8,
+    /// `RRGGBB`, uppercase, clipped to the gamut. No `#`.
+    hex_upper,
+    /// `RRGGBBAA`, uppercase, clipped to the gamut. No `#`.
+    hex8_upper,
     /// OKLCH lightness as a float, nominally 0..1.
     lightness,
     /// OKLCH chroma as a float.
@@ -171,7 +177,7 @@ pub fn format(color: Color, comptime template: []const u8, comptime components: 
             text.append(template[index..][0..1]);
             index += 1;
         } else if (character == '{') {
-            formatComponent(color, rgb, components[component_index], &text);
+            appendComponent(color, rgb, components[component_index], default_decimals, &text);
             component_index += 1;
             index += 1;
         } else {
@@ -219,25 +225,38 @@ pub fn checkTemplate(comptime template: []const u8, comptime component_count: us
         @compileError("color template \"" ++ template ++ "\" is too long for Color.Text");
 }
 
-fn formatComponent(color: Color, rgb: Rgb, component: Component, text: *Text) void {
+/// One component as text, floats with at most `decimals` decimals (clamped to `max_decimals`).
+pub fn formatComponent(color: Color, component: Component, decimals: u8) Text {
+    var text: Text = .{};
+    appendComponent(color, color.toRgb(), component, @min(decimals, max_decimals), &text);
+    return text;
+}
+
+fn appendComponent(color: Color, rgb: Rgb, component: Component, decimals: u8, text: *Text) void {
     switch (component) {
         .red_255 => formatByte(rgb.red, "{d}", text),
         .green_255 => formatByte(rgb.green, "{d}", text),
         .blue_255 => formatByte(rgb.blue, "{d}", text),
         .alpha_255 => formatByte(rgb.alpha, "{d}", text),
-        .red_01 => formatFloat(rgb.red, text),
-        .green_01 => formatFloat(rgb.green, text),
-        .blue_01 => formatFloat(rgb.blue, text),
-        .alpha_01 => formatFloat(rgb.alpha, text),
+        .red_01 => formatFloat(rgb.red, decimals, text),
+        .green_01 => formatFloat(rgb.green, decimals, text),
+        .blue_01 => formatFloat(rgb.blue, decimals, text),
+        .alpha_01 => formatFloat(rgb.alpha, decimals, text),
         .hex, .hex8 => {
             formatByte(rgb.red, "{x:0>2}", text);
             formatByte(rgb.green, "{x:0>2}", text);
             formatByte(rgb.blue, "{x:0>2}", text);
             if (component == .hex8) formatByte(rgb.alpha, "{x:0>2}", text);
         },
-        .lightness => formatFloat(color.lightness, text),
-        .chroma => formatFloat(color.chroma, text),
-        .hue => formatFloat(color.hue, text),
+        .hex_upper, .hex8_upper => {
+            formatByte(rgb.red, "{X:0>2}", text);
+            formatByte(rgb.green, "{X:0>2}", text);
+            formatByte(rgb.blue, "{X:0>2}", text);
+            if (component == .hex8_upper) formatByte(rgb.alpha, "{X:0>2}", text);
+        },
+        .lightness => formatFloat(color.lightness, decimals, text),
+        .chroma => formatFloat(color.chroma, decimals, text),
+        .hue => formatFloat(color.hue, decimals, text),
     }
 }
 
@@ -248,14 +267,21 @@ fn formatByte(channel: f64, comptime pattern: []const u8, text: *Text) void {
     text.length += written.len;
 }
 
-fn formatFloat(value: f64, text: *Text) void {
+fn formatFloat(value: f64, decimals: u8, text: *Text) void {
     const finite = if (std.math.isNan(value)) 0 else std.math.clamp(value, -max_float_magnitude, max_float_magnitude);
-    const scale = std.math.pow(f64, 10, float_decimals);
-    var rounded = @round(finite * scale) / scale;
-    if (rounded == 0) rounded = 0; // turns -0 into 0
-    // Cannot fail: the value is clamped, so it fits in component_width.
-    const written = std.fmt.bufPrint(text.buffer[text.length..], "{d}", .{rounded}) catch unreachable;
+    // Cannot fail: the value is clamped and decimals are at most max_decimals, so it fits in component_width.
+    const written = std.fmt.bufPrint(text.buffer[text.length..], "{d}", .{roundDecimals(finite, decimals)}) catch unreachable;
     text.length += written.len;
+}
+
+/// `value` rounded to at most `decimals` decimals, so `{d}` prints no float noise
+/// (0.1 + 0.2 prints `0.3`). Values too large to scale, and infinities, are kept; -0 becomes 0.
+pub fn roundDecimals(value: f64, decimals: u8) f64 {
+    const scale = std.math.pow(f64, 10, @floatFromInt(decimals));
+    const scaled = value * scale;
+    if (!std.math.isFinite(scaled)) return value;
+    const rounded = @round(scaled) / scale;
+    return if (rounded == 0) 0 else rounded;
 }
 
 const Vector = [3]f64;
@@ -415,6 +441,24 @@ test "format fills components and keeps doubled braces" {
     const braces = color.format("{{{}}}", &.{.hex});
     try testing.expectEqualStrings("{5e81ac}", braces.slice());
     try testing.expectEqualStrings("#5e81ac", color.hex().slice());
+}
+
+test "uppercase hex and float components with a chosen precision" {
+    const color = try parseHex("#5e81ac80");
+    try testing.expectEqualStrings("#5E81AC 5E81AC80", color.format("#{} {}", &.{ .hex_upper, .hex8_upper }).slice());
+    try testing.expectEqualStrings("0.5", color.formatComponent(.alpha_01, 2).slice());
+    try testing.expectEqualStrings("0.501961", color.formatComponent(.alpha_01, 6).slice());
+    try testing.expectEqualStrings("1", color.formatComponent(.alpha_01, 0).slice());
+    try testing.expectEqualStrings("0.50196078431", color.formatComponent(.alpha_01, 11).slice());
+    try testing.expectEqualStrings("5E81AC", color.formatComponent(.hex_upper, 0).slice());
+}
+
+test "roundDecimals trims float noise and keeps what it cannot scale" {
+    try testing.expectEqual(0.3, roundDecimals(0.1 + 0.2, 6));
+    try testing.expectEqual(6.4, roundDecimals(@as(f32, 6.4), 6));
+    try testing.expectEqual(0.0, roundDecimals(-0.0000001, 6));
+    try testing.expectEqual(1e300, roundDecimals(1e300, 12));
+    try testing.expect(std.math.isInf(roundDecimals(std.math.inf(f64), 2)));
 }
 
 test "mix takes the shorter way around the hue wheel" {

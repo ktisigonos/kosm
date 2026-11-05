@@ -22,7 +22,7 @@ are enums in Zig spelling (`.thin_sparse` for `thin-sparse`); structured values 
 | Field | Default |
 |---|---|
 | `file` | `~/.config/kitty/kosm.conf` |
-| `color_format` | null: `#rrggbb` |
+| `format` | `.{}`: the kitty adapter's `#rrggbb` and `yes`/`no`, then 6 float decimals (D70) |
 | `bright` | the theme's `lightness.bright`; makes `color8`..`color15` from `color0`..`color7` |
 
 ### `fonts` (Fonts)

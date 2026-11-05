@@ -4,6 +4,7 @@
 const std = @import("std");
 const Color = @import("Color.zig");
 const ColorFormat = @import("ColorFormat.zig");
+const Format = @import("Format.zig");
 const Raw = @import("Raw.zig");
 
 /// Where a placeholder pointed at a `null` optional, the one failure only runtime can see.
@@ -18,14 +19,14 @@ pub const Failure = struct {
 pub const Error = ColorFormat.WriteError || error{MissingValue};
 
 /// Writes `text` with every placeholder replaced by the value at its path in `app`. Colors
-/// without a component print in `color_format` (D61). `name` names the template in compile
+/// print in `format` (D70): a color without a component in its color format. `name` names the template in compile
 /// errors. A `null` on the way is `error.MissingValue`, described in `failure`.
 pub fn render(
     writer: *std.Io.Writer,
     comptime name: []const u8,
     comptime text: []const u8,
     app: anytype,
-    color_format: ColorFormat,
+    format: Format.Resolved,
     failure: *Failure,
 ) Error!void {
     const parts = comptime parse(name, text);
@@ -33,7 +34,7 @@ pub fn render(
         try writer.writeAll(part.literal);
         if (part.path.len != 0) {
             const location: Location = .{ .name = name, .line = part.line, .path = part.path, .braced = part.braced };
-            writeValue(writer, app, comptime splitPath(part.path), location, color_format) catch |err| {
+            writeValue(writer, app, comptime splitPath(part.path), location, format) catch |err| {
                 if (err == error.MissingValue) failure.* = .{ .line = part.line, .path = part.path };
                 return err;
             };
@@ -187,37 +188,38 @@ fn writeValue(
     value: anytype,
     comptime rest: []const []const u8,
     comptime location: Location,
-    color_format: ColorFormat,
+    format: Format.Resolved,
 ) Error!void {
     const T = @TypeOf(value);
     if (@typeInfo(T) == .optional) {
         const present = value orelse return error.MissingValue;
-        return writeValue(writer, present, rest, location, color_format);
+        return writeValue(writer, present, rest, location, format);
     }
-    if (rest.len == 0) return writeLeaf(writer, value, location, color_format);
+    if (rest.len == 0) return writeLeaf(writer, value, location, format);
     if (T == Color) {
         if (comptime std.meta.stringToEnum(Color.Component, rest[0])) |component| {
             if (rest.len > 1) fail(location, "color component '" ++ rest[0] ++ "' has no '" ++ rest[1] ++ "'");
-            return ColorFormat.writeComponent(value, component, writer);
+            return format.writeComponent(writer, value, component);
         }
         fail(location, "a color has no '" ++ rest[0] ++ "'; its components are " ++ joinNames(std.meta.fieldNames(Color.Component)));
     }
     if (@typeInfo(T) != .@"struct")
         fail(location, "'" ++ rest[0] ++ "' follows a " ++ @typeName(T) ++ ", which has no fields");
     if (!@hasField(T, rest[0])) fail(location, unknownField(T, location, rest));
-    return writeValue(writer, @field(value, rest[0]), rest[1..], location, color_format);
+    return writeValue(writer, @field(value, rest[0]), rest[1..], location, format);
 }
 
-fn writeLeaf(writer: *std.Io.Writer, value: anytype, comptime location: Location, color_format: ColorFormat) Error!void {
+fn writeLeaf(writer: *std.Io.Writer, value: anytype, comptime location: Location, format: Format.Resolved) Error!void {
     const T = @TypeOf(value);
-    if (T == Color) return color_format.write(value, writer);
+    if (T == Color) return format.writeColor(writer, value);
     if (T == Raw) return writer.writeAll(value.text);
     if (T == []const u8 or T == []u8) return writer.writeAll(value);
     switch (@typeInfo(T)) {
         .pointer => |pointer| if (pointer.size == .one and @typeInfo(pointer.child) == .array and
             @typeInfo(pointer.child).array.child == u8) return writer.writeAll(value),
-        .int, .comptime_int, .float, .comptime_float => return writer.print("{d}", .{value}),
-        .bool => return writer.writeAll(if (value) "true" else "false"),
+        .int, .comptime_int => return writer.print("{d}", .{value}),
+        .float, .comptime_float => return format.writeFloat(writer, value),
+        .bool => return format.writeBoolean(writer, value),
         .@"enum" => return writer.writeAll(@tagName(value)),
         .@"struct" => fail(location, "this is a struct; name one of its fields: " ++ joinNames(std.meta.fieldNames(T))),
         else => {},
@@ -302,11 +304,17 @@ fn testApp() !TestApp {
     return .{ .palette = .{ .red = try Color.parseHex("#bf616a"), .blue = try Color.parseHex("#5e81ac") } };
 }
 
+const test_format = Format.kosm_default;
+
 fn expectRendered(expected: []const u8, comptime text: []const u8) !void {
+    try expectRenderedWith(expected, text, test_format);
+}
+
+fn expectRenderedWith(expected: []const u8, comptime text: []const u8, format: Format.Resolved) !void {
     var buffer: [512]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     var failure: Failure = .{};
-    try render(&writer, "test", text, try testApp(), .hex, &failure);
+    try render(&writer, "test", text, try testApp(), format, &failure);
     try testing.expectEqualStrings(expected, writer.buffered());
 }
 
@@ -320,6 +328,11 @@ test "bare and braced placeholders resolve against the app's fields" {
 
 test "color components name the printed form" {
     try expectRendered("bf616aff 94", "kosm.palette.red.hex8 {kosm.palette.blue.red_255}");
+}
+
+test "booleans, floats and float components follow the file's format" {
+    const format: Format.Resolved = .{ .color = .hex_upper, .boolean = .on_off, .float_precision = 2 };
+    try expectRenderedWith("on 0.85 #BF616A 0.59", "kosm.blur kosm.opacity kosm.palette.red {kosm.palette.blue.lightness}", format);
 }
 
 test "a sentence-ending dot and plain braces are left alone" {
@@ -336,7 +349,7 @@ test "a null optional is a runtime error naming the line" {
     var buffer: [64]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     var failure: Failure = .{};
-    try testing.expectError(error.MissingValue, render(&writer, "test", "one\nkosm.border_inactive", try testApp(), .hex, &failure));
+    try testing.expectError(error.MissingValue, render(&writer, "test", "one\nkosm.border_inactive", try testApp(), test_format, &failure));
     try testing.expectEqual(2, failure.line);
     try testing.expectEqualStrings("border_inactive", failure.path);
 }

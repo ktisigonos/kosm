@@ -7,7 +7,7 @@ const kosm = @import("kosm");
 pub const adapter: kosm.Adapter = .{
     .name = "css",
     .extensions = &.{".css"},
-    .color_format = .hex8,
+    .default_format = .{ .color = .hex8 },
     .serialize = serialize,
 };
 
@@ -56,7 +56,7 @@ fn writeValue(writer: *std.Io.Writer, path: []const []const u8, value: kosm.Valu
         },
         .raw => |text| try writer.writeAll(text),
         .integer => |integer| try writer.print("{d}", .{integer}),
-        .float => |float| try writer.print("{d}", .{float}),
+        .float => |float| try context.writeFloat(writer, float),
         .color => |color| try context.writeColor(writer, color),
         .boolean => return context.unsupported("'{s}': CSS has no booleans; pass a number or kosm.raw text", .{path[path.len - 1]}),
         .list => return context.unsupported("'{s}': CSS lists differ per property; pass kosm.raw text", .{path[path.len - 1]}),
@@ -69,7 +69,7 @@ const testing = std.testing;
 test "nested tables become dashed custom properties on :root" {
     var output: std.Io.Writer.Allocating = .init(testing.allocator);
     defer output.deinit();
-    var context: kosm.Adapter.Context = .{ .color_format = .hex8 };
+    var context: kosm.Adapter.Context = .{ .format = adapter.default_format.resolve() };
     const root: kosm.Value = .{ .table = &.{.{ .key = "kosm", .value = .{ .table = &.{
         .{ .key = "foreground", .value = .{ .color = try kosm.Color.parseHex("#a3c5cc") } },
         .{ .key = "containers", .value = .{ .table = &.{.{ .key = "blue", .value = .{ .color = try kosm.Color.parseHex("#26718080") } }} } },
@@ -93,7 +93,7 @@ test "nested tables become dashed custom properties on :root" {
 test "booleans and lists are refused with the property named" {
     var output: std.Io.Writer.Allocating = .init(testing.allocator);
     defer output.deinit();
-    var context: kosm.Adapter.Context = .{ .color_format = .hex8 };
+    var context: kosm.Adapter.Context = .{ .format = adapter.default_format.resolve() };
     const root: kosm.Value = .{ .table = &.{.{ .key = "blur", .value = .{ .boolean = true } }} };
     try testing.expectError(error.UnsupportedValue, serialize(&output.writer, root, &context));
     try testing.expectEqualStrings("'blur': CSS has no booleans; pass a number or kosm.raw text", context.message());

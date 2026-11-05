@@ -5,7 +5,7 @@ const Output = @This();
 
 const std = @import("std");
 const Adapter = @import("Adapter.zig");
-const ColorFormat = @import("ColorFormat.zig");
+const Format = @import("Format.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Plan = @import("Plan.zig");
 const template_writer = @import("template.zig");
@@ -31,7 +31,7 @@ pub const Error = error{
     UnknownLanguage,
     AmbiguousLanguage,
     MissingCapability,
-    InvalidColorFormat,
+    InvalidFormat,
     UnsupportedValue,
     MissingValue,
     FileWrittenTwice,
@@ -45,7 +45,7 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
     const adapter = try output.findAdapter(options.file, options.lang);
     const serialize = adapter.serialize orelse
         return output.fail(error.MissingCapability, options.file, "adapter '{s}' cannot write whole files (it has no serialize)", .{adapter.name});
-    const color_format = try output.checkColorFormat(options.file, options.color_format orelse adapter.color_format orelse .hex);
+    const format = try output.checkFormat(options.file, options.format.orElse(adapter.default_format).resolve());
     const root = value.from(output.allocator, values) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.IntegerTooLarge => return output.fail(error.UnsupportedValue, options.file, "an integer is too large for a file value", .{}),
@@ -54,7 +54,7 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
 
     var content: std.Io.Writer.Allocating = .init(output.allocator);
     defer content.deinit();
-    var context: Adapter.Context = .{ .color_format = color_format };
+    var context: Adapter.Context = .{ .format = format };
     serialize(&content.writer, root, &context) catch |err| switch (err) {
         // An allocating writer fails only when it runs out of memory.
         error.WriteFailed => return error.OutOfMemory,
@@ -64,22 +64,23 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
 }
 
 /// Writes a whole file from a template whose placeholders resolve against `app`'s fields (D60, D65).
-/// `options` is `.{ .file = "~/...", .text = @embedFile("templates/x"), .color_format = ... }`;
-/// `.text` must be comptime, so unknown paths are compile errors. `.color_format` is optional.
+/// `options` is `.{ .file = "~/...", .text = @embedFile("templates/x"), .format = self.format }`;
+/// `.text` must be comptime, so unknown paths are compile errors. `.format` (a `kosm.Format`)
+/// is optional; fields left null take those of the adapter claiming the file's extension.
 pub fn template(output: *Output, app: anytype, options: anytype) Error!void {
     const Options = @TypeOf(options);
     comptime checkTemplateOptions(Options);
     const path = try output.resolvePath(options.file);
-    const color_format = try output.checkColorFormat(options.file, try output.templateColorFormat(options));
+    const format = try output.checkFormat(options.file, try output.templateFormat(options));
 
     var content: std.Io.Writer.Allocating = .init(output.allocator);
     defer content.deinit();
     var failure: template_writer.Failure = .{};
     const name = comptime if (isComptimeField(Options, "file")) options.file else "template";
-    template_writer.render(&content.writer, name, options.text, app, color_format, &failure) catch |err| switch (err) {
+    template_writer.render(&content.writer, name, options.text, app, format, &failure) catch |err| switch (err) {
         error.WriteFailed => return error.OutOfMemory,
         error.MissingValue => return output.fail(error.MissingValue, options.file, "template line {d}: kosm.{s} is null", .{ failure.line, failure.path }),
-        // checkColorFormat already wrote this format once.
+        // checkFormat already wrote this color format once.
         error.InvalidColorFormat => unreachable,
     };
     try output.addFile(options.file, path, content.written());
@@ -88,9 +89,11 @@ pub fn template(output: *Output, app: anytype, options: anytype) Error!void {
 fn checkTemplateOptions(comptime Options: type) void {
     if (@typeInfo(Options) != .@"struct") @compileError("output.template: options must be a struct literal: .{ .file = ..., .text = ... }");
     for (std.meta.fieldNames(Options)) |field_name| {
-        const known = std.mem.eql(u8, field_name, "file") or std.mem.eql(u8, field_name, "text") or std.mem.eql(u8, field_name, "color_format");
-        if (!known) @compileError("output.template: unknown option '" ++ field_name ++ "'; options are file, text, color_format");
+        const known = std.mem.eql(u8, field_name, "file") or std.mem.eql(u8, field_name, "text") or std.mem.eql(u8, field_name, "format");
+        if (!known) @compileError("output.template: unknown option '" ++ field_name ++ "'; options are file, text, format");
     }
+    if (@hasField(Options, "format") and @FieldType(Options, "format") != Format)
+        @compileError("output.template: .format must be a kosm.Format, e.g. self.format");
     if (!@hasField(Options, "file")) @compileError("output.template: missing option .file");
     if (!@hasField(Options, "text")) @compileError("output.template: missing option .text");
     if (!isComptimeField(Options, "text")) @compileError("output.template: .text must be comptime, e.g. @embedFile(\"templates/theme.lua\")");
@@ -104,24 +107,20 @@ fn isComptimeField(comptime Options: type, comptime name: []const u8) bool {
     return false;
 }
 
-/// The template's own format, else that of the one adapter claiming its extension, else hex (D61).
-fn templateColorFormat(output: *Output, options: anytype) Error!ColorFormat {
-    if (@hasField(@TypeOf(options), "color_format")) {
-        const ColorFormatField = @TypeOf(options.color_format);
-        if (ColorFormatField == ColorFormat) return options.color_format;
-        if (ColorFormatField == ?ColorFormat) {
-            if (options.color_format) |format| return format;
-        } else @compileError("output.template: .color_format must be a kosm.ColorFormat");
-    }
+/// The template's own format, its null fields from the one adapter claiming its extension,
+/// then kosm's (D70).
+fn templateFormat(output: *Output, options: anytype) Error!Format.Resolved {
+    const own: Format = if (@hasField(@TypeOf(options), "format")) options.format else .{};
+    if (own.isComplete()) return own.resolve();
     const extension = std.Io.Dir.path.extension(options.file);
     var found: ?Adapter = null;
     for (output.adapters) |adapter| {
         if (!adapter.claims(extension)) continue;
-        if (found) |first| return output.fail(error.AmbiguousLanguage, options.file, "adapters '{s}' and '{s}' both handle '{s}' files; set .color_format", .{ first.name, adapter.name, extension });
+        if (found) |first| return output.fail(error.AmbiguousLanguage, options.file, "adapters '{s}' and '{s}' both handle '{s}' files; set every field of .format", .{ first.name, adapter.name, extension });
         found = adapter;
     }
-    if (found) |adapter| return adapter.color_format orelse .hex;
-    return .hex;
+    if (found) |adapter| return own.orElse(adapter.default_format).resolve();
+    return own.resolve();
 }
 
 fn resolvePath(output: *Output, file: []const u8) Error![]const u8 {
@@ -148,11 +147,14 @@ fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapt
     return found orelse output.fail(error.UnknownLanguage, file, "no installed adapter handles '{s}' files; pass .lang", .{extension});
 }
 
-/// A hand-built format whose template does not match its components is caught here, once.
-fn checkColorFormat(output: *Output, file: []const u8, format: ColorFormat) Error!ColorFormat {
+/// A hand-built color format whose template does not match its components, or a float
+/// precision past `Format.max_float_precision`, is caught here, once.
+fn checkFormat(output: *Output, file: []const u8, format: Format.Resolved) Error!Format.Resolved {
+    if (format.float_precision > Format.max_float_precision)
+        return output.fail(error.InvalidFormat, file, "float_precision {d} is more than the {d} decimals kosm can print", .{ format.float_precision, Format.max_float_precision });
     var discarding: std.Io.Writer.Discarding = .init(&.{});
-    format.write(.{ .lightness = 0, .chroma = 0, .hue = 0 }, &discarding.writer) catch
-        return output.fail(error.InvalidColorFormat, file, "color format \"{s}\" does not match its {d} components", .{ format.template, format.components.len });
+    format.writeColor(&discarding.writer, .{ .lightness = 0, .chroma = 0, .hue = 0 }) catch
+        return output.fail(error.InvalidFormat, file, "color format \"{s}\" does not match its {d} components", .{ format.color.template, format.color.components.len });
     return format;
 }
 
@@ -171,6 +173,7 @@ fn fail(output: *Output, err: Error, file: []const u8, comptime format: []const 
 
 const testing = std.testing;
 const Color = @import("Color.zig");
+const ColorFormat = @import("ColorFormat.zig");
 
 /// `key = value` lines, a stand-in for a real adapter.
 fn serializeLines(writer: *std.Io.Writer, root: value.Value, context: *Adapter.Context) Adapter.Error!void {
@@ -179,14 +182,16 @@ fn serializeLines(writer: *std.Io.Writer, root: value.Value, context: *Adapter.C
         switch (entry.value) {
             .string => |text| try writer.print("\"{s}\"", .{text}),
             .integer => |number| try writer.print("{d}", .{number}),
+            .float => |number| try context.writeFloat(writer, number),
+            .boolean => |boolean| try context.writeBoolean(writer, boolean),
             .color => |color| try context.writeColor(writer, color),
-            else => return context.unsupported("'{s}' must be a string, integer or color", .{entry.key}),
+            else => return context.unsupported("'{s}' must be a plain value", .{entry.key}),
         }
         try writer.writeByte('\n');
     }
 }
 
-const lines_adapter: Adapter = .{ .name = "lines", .extensions = &.{".lines"}, .color_format = .hex8, .serialize = serializeLines };
+const lines_adapter: Adapter = .{ .name = "lines", .extensions = &.{".lines"}, .default_format = .{ .color = .hex8, .boolean = .yes_no }, .serialize = serializeLines };
 const other_lines_adapter: Adapter = .{ .name = "other", .extensions = &.{".lines"} };
 
 const Fixture = struct {
@@ -226,7 +231,7 @@ test "generate serializes through the adapter claiming the extension, under ~" {
     var output = try fixture.output("terminal", &.{lines_adapter});
     const red = try Color.parseHex("#bf616a");
     try output.generate(.{ .file = "~/kitty/kosm.lines" }, .{ .name = "frost", .size = 12, .accent = red });
-    try output.generate(.{ .file = "~/hex.lines", .color_format = .hex }, .{ .accent = red });
+    try output.generate(.{ .file = "~/hex.lines", .format = .{ .color = .hex, .float_precision = 1 } }, .{ .accent = red, .blur = true, .opacity = 0.25 });
 
     const file = fixture.plan.files.items[0];
     try testing.expect(std.mem.endsWith(u8, file.path, "/kitty/kosm.lines"));
@@ -234,7 +239,7 @@ test "generate serializes through the adapter claiming the extension, under ~" {
     try testing.expectEqualStrings("terminal", file.owner);
     try testing.expectEqual(null, file.old);
     try testing.expectEqualStrings("name = \"frost\"\nsize = 12\naccent = #bf616aff\n", file.new);
-    try testing.expectEqualStrings("accent = #bf616a\n", fixture.plan.files.items[1].new);
+    try testing.expectEqualStrings("accent = #bf616a\nblur = yes\nopacity = 0.3\n", fixture.plan.files.items[1].new);
 }
 
 test "generate errors name the problem and the file" {
@@ -252,11 +257,13 @@ test "generate errors name the problem and the file" {
     try testing.expectError(error.UnknownLanguage, output.generate(.{ .file = "~/a.toml" }, .{ .size = 1 }));
     try testing.expectError(error.InvalidPath, output.generate(.{ .file = "relative.lines", .lang = "lines" }, .{ .size = 1 }));
 
-    try testing.expectError(error.UnsupportedValue, output.generate(.{ .file = "~/a.lines", .lang = "lines" }, .{ .blur = true }));
-    try testing.expectEqualStrings("adapter 'lines': 'blur' must be a string, integer or color", fixture.diagnostics.message());
+    try testing.expectError(error.UnsupportedValue, output.generate(.{ .file = "~/a.lines", .lang = "lines" }, .{ .sizes = .{ 1, 2 } }));
+    try testing.expectEqualStrings("adapter 'lines': 'sizes' must be a plain value", fixture.diagnostics.message());
 
     const broken: ColorFormat = .{ .template = "{} {}", .components = &.{.hex} };
-    try testing.expectError(error.InvalidColorFormat, output.generate(.{ .file = "~/a.lines", .lang = "lines", .color_format = broken }, .{ .size = 1 }));
+    try testing.expectError(error.InvalidFormat, output.generate(.{ .file = "~/a.lines", .lang = "lines", .format = .{ .color = broken } }, .{ .size = 1 }));
+    try testing.expectError(error.InvalidFormat, output.generate(.{ .file = "~/a.lines", .lang = "lines", .format = .{ .float_precision = 13 } }, .{ .size = 1 }));
+    try testing.expectEqualStrings("float_precision 13 is more than the 12 decimals kosm can print", fixture.diagnostics.message());
     try testing.expectEqual(0, fixture.plan.files.items.len);
 }
 
@@ -287,24 +294,28 @@ const TemplateApp = struct {
     rounding: u8 = 10,
     accent: Color,
     border_inactive: ?Color = null,
-    color_format: ColorFormat = .hex8,
+    blur: bool = true,
+    format: Format = .{ .color = .hex8 },
 };
 
-test "template renders the app's fields with the file's color format" {
+test "template renders the app's fields with the file's format" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
     var output = try fixture.output("editor", &.{lines_adapter});
     const app: TemplateApp = .{ .accent = try Color.parseHex("#5e81ac") };
 
-    try output.template(app, .{ .file = "~/theme.lua", .text = "accent = 'kosm.accent' -- {kosm.rounding}px\n", .color_format = app.color_format });
+    try output.template(app, .{ .file = "~/theme.lua", .text = "accent = 'kosm.accent' -- {kosm.rounding}px\n", .format = app.format });
     try testing.expectEqualStrings("accent = '#5e81acff' -- 10px\n", fixture.plan.files.items[0].new);
 
-    try output.template(app, .{ .file = "~/theme.txt", .text = "kosm.accent" });
-    try testing.expectEqualStrings("#5e81ac", fixture.plan.files.items[1].new);
+    try output.template(app, .{ .file = "~/theme.txt", .text = "kosm.accent kosm.blur" });
+    try testing.expectEqualStrings("#5e81ac true", fixture.plan.files.items[1].new);
 
-    try output.template(app, .{ .file = "~/theme.lines", .text = "kosm.accent" });
-    try testing.expectEqualStrings("#5e81acff", fixture.plan.files.items[2].new);
+    try output.template(app, .{ .file = "~/theme.lines", .text = "kosm.accent kosm.blur" });
+    try testing.expectEqualStrings("#5e81acff yes", fixture.plan.files.items[2].new);
+
+    try output.template(app, .{ .file = "~/more.lines", .text = "kosm.accent kosm.blur", .format = Format{ .boolean = .one_zero } });
+    try testing.expectEqualStrings("#5e81acff 1", fixture.plan.files.items[3].new);
 }
 
 test "template reports a null placeholder with its line" {

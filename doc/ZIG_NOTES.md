@@ -45,6 +45,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **A function's return type is analyzed before any check in its body:** `fn f(comptime t: T) @TypeOf(@field(t.file, t.name))` fails with Zig's own "no member named" before a friendlier `@compileError` inside can run. Do the check in a separate `comptime check(t);` statement first.
 - **`@abs` of a signed integer returns the unsigned type:** `@intCast` it back before mixing with signed values.
 - **Anonymous struct literals passed as `anytype` keep comptime fields:** `.{ .text = @embedFile("x"), .format = runtime_value }` gives `text` a comptime field (`@typeInfo(T).@"struct".field_attrs[i].@"comptime"`), so `comptime options.text` works next to runtime fields.
+- **An anonymous struct literal inside an `anytype` argument does not coerce to a struct type later:** `options.format` from `.{ .format = .{ .boolean = .one_zero } }` is its own anonymous type, so `const own: Format = options.format;` fails. Require the typed value (`Format{ ... }`, `self.format`) and check it with `@FieldType(Options, "format") != Format` for a clear `@compileError`.
 - **`@floatCast` from f64 to f32 never traps:** out-of-range values become +/-inf, so check `std.math.isFinite` after narrowing. A widened f32 keeps its exact binary value (`6.4` prints as `6.400000095367432`).
 
 ### std

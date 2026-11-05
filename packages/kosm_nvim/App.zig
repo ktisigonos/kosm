@@ -9,8 +9,9 @@ const kosm = @import("kosm");
 
 /// The file kosm owns. Default: `~/.config/nvim/lua/theme.lua`.
 file: []const u8 = "~/.config/nvim/lua/theme.lua",
-/// How colors are printed. Default: `#rrggbb`.
-color_format: kosm.ColorFormat = .hex,
+/// How values are spelled (D70), e.g. `.color = .hex_upper`. Default: colors as `#rrggbb`;
+/// null fields take kosm's `true`/`false` and 6 float decimals.
+format: kosm.Format,
 /// Whether the colorscheme leaves the background transparent. Default: false.
 transparent: bool = false,
 /// The base16 slots.
@@ -30,6 +31,7 @@ pub fn from(theme: kosm.Theme) App {
     const foreground = if (theme.mode == .dark) palette.white else palette.black;
     const bright = variations.lightness.bright;
     return .{
+        .format = .{ .color = .hex },
         .base16 = .{
             .base00 = background,
             .base01 = variations.surface.raised.apply(background),
@@ -74,7 +76,7 @@ pub fn apply(self: App, output: *kosm.Output) !void {
     try output.template(self, .{
         .file = self.file,
         .text = @embedFile("templates/theme.lua"),
-        .color_format = self.color_format,
+        .format = self.format,
     });
 }
 
