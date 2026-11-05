@@ -34,7 +34,13 @@ Markers:
 - [x] **3c. Built-in apps and Kyanos**
   - Do: `packages/kosm_kitty` (adapter + app, `generate`), `packages/kosm_css` (adapter), `packages/kosm_zen` (app, `generate`), `packages/kosm_nvim` (app, `template`) as directory packages (D2, D62, D67). Apps use D27 defaults and never copy Ricer's choices.
   - Do: port `~/.config/Ricer/Kyanos.toml` (the theme in use) to a Kyanos kosmos in a scratch config project; it assigns fields to reproduce the current look (G2). Read the human's current files, never write them.
-  - Done when: Kyanos rices those apps end to end in `--diff` mode against the real files, and every difference the kosmos can't close is reported (missing app field or deliberate D27 change). Running it for real is `ASK`.
+  - Done when: Kyanos rices those apps end to end in `--diff` mode against the real files, and every difference the kosmos can't close is reported (missing app field or deliberate D27 change). Nothing is applied for real until kosm is finished.
+
+- [ ] **3d. Color spaces and formatting** `PLAN FIRST` `BLOCKED: Q17`
+  - Do: modifiers in HSV/HSB, HSL, CMYK, RGB and the other spaces Q17 settles (D68), converting from and back to the stored OKLCH (D48).
+  - Do: per-file value formatting beyond colors (D69): hex letter case, bool spelling, number precision; the kitty, css, zen and nvim apps expose it as overridable fields.
+  - Do: the Kyanos port uses HSV `value +10` / `-15` like Ricer, so its bright and inactive colors match exactly.
+  - Done when: round trips sRGB <-> each space are tested (hue wrap, gray hue, gamut edges), each modifier space is tested, and Kyanos `--diff` shows no color differences from Ricer except deliberate D27 ones.
 
 - [ ] **4. `block` writer**
   - Do: `# kosm:begin <id>` ... `# kosm:end` blocks using the adapter's comment syntax (section 7).
