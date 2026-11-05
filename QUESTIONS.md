@@ -5,26 +5,10 @@ answer becomes a `D#` in [DESIGN.md](DESIGN.md) and the question is deleted.
 An agent must not start on a section whose questions are still open.
 
 Steps 1 and 2 are done. Answered in v0.5: Q6 (D56, D59), Q7 (D57), Q8 (D58),
-Q10 (D50), Q11 (D51), Q12 (D52), Q13 (D53, D54), Q14 (D55), Q4 (D60, D61), Q15 (D50, D62).
+Q10 (D50), Q11 (D51), Q12 (D52), Q13 (D53, D54), Q14 (D55), Q4 (D60, D61), Q15 (D50, D62), Q17 (D68, D70).
 Step 3 has no open questions.
 
 ---
-
-## Blocking step 3d (color spaces and formatting)
-
-### Q17. Where D69's formatting settings live
-Today a file has one formatting setting, its color format (D61: a template plus components,
-`#{}` with `.hex` prints `#a3c5cc`). D69 adds more: uppercase hex (`#A3C5CC`), bool spelling
-(`true`/`yes`/`1`/`on`), number precision (`0.5` vs `0.50196`). Each is set by the adapter,
-then the app, then the user, like D61. Options:
-- (a) Separate pieces: `ColorFormat` gains components like `.hex_upper`, and a new
-  `kosm.ValueFormat` holds bools and numbers. An app exposes two fields per file
-  (`color_format`, `value_format`).
-- (b) One `kosm.Format` per file holding everything: `.color` (today's `ColorFormat`),
-  `.boolean`, `.float_precision`, ... An app exposes one field per file (`format`), and a user
-  writes `kitty.format.boolean = .yes_no` or `kitty.format.color = .hex_upper`.
-
-**A:**
 
 ## Blocking step 6 (CLI completion)
 
