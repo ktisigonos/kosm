@@ -165,7 +165,7 @@ pub const Variations = struct {
 ## 5. Kosmoi
 
 - **D17. A kosmos is a public function returning a struct of apps.**
-  - A kosmos is a `pub fn` in a file under `kosmoi/` that takes either nothing or one `Params` struct whose fields all have defaults, and returns (optionally through `!`) a struct containing at least one app (D53). Helpers like `frostTheme(palette)` or `build(theme)` therefore aren't kosmoi.
+  - A kosmos is a `pub fn` in a kosmos file (D62: `kosmoi/frost.zig`, or `kosmoi/nord/root.zig`) that takes either nothing or one `Params` struct whose fields all have defaults, and returns (optionally through `!`) a struct containing at least one app (D53). Helpers like `frostTheme(palette)` or `build(theme)` therefore aren't kosmoi.
   - Each one is applied by name: `kosmos()` is the file's default, and any other name is a variant.
   - `kosm apply frost` -> `frost.kosmos()`; `kosm apply frost.iced` -> `frost.iced()`.
   - One file or many is your choice: nothing forces a base/frost split.
@@ -174,7 +174,12 @@ pub const Variations = struct {
 - **D55. Colors in flags.** A `kosm.Color` field accepts every common text form: `#rgb`, `#rrggbb`, `#rrggbbaa` (with or without `#`), `rgb(...)`, `rgba(...)`, `hsl(...)`, `hsla(...)` and `oklch(...)`. A `kosm.ColorChoice` field additionally accepts a hue name (`--accent sky`). Kosm can't know the kosmos' palette while parsing, so the kosmos resolves it with `params.accent.resolve(theme.palette)`. Flags are spelled `--border-size`; the field spelling `--border_size` is accepted too.
 - **D56. Hosts are opt-in.** If `Params` has a field `host` of an enum type the user declares (`pub const Host = enum { nous, egregoros, ergasterion, synekdemos };`), kosm fills it from the machine's hostname. An unknown hostname is an error naming the hostname and the enum. Without such a field nothing happens, so kosmoi that don't care never see hosts. Combined with optional apps (D53), `if (params.host == .ergasterion) result.hyprland = null;` skips an app on one machine.
 - **D20. `--set` pokes the final tree.** `--set hyprland.blur.size=20` runs after the kosmos function returns and walks the tree by reflection. It's for one-off tweaks: it assigns a result, so nothing derived from it changes (D3).
-- **D50. Kosmoi and local apps import each other by name**, like packages: `@import("base")`, `@import("hypr_defs")`, never `@import("base.zig")`. Every kosmoi and local-app file is its own Zig module, and Zig doesn't allow a file in two modules. Names must be unique across `kosmoi/`, `apps/` and packages; kosm errors on a collision, naming both files.
+- **D50. Kosmoi, apps and adapters import each other by name**, like packages: `@import("base")`, `@import("hypr_defs")`, never `@import("base.zig")`. Each one is its own Zig module, and Zig doesn't allow a file in two modules. Names must be unique among your local kosmoi, apps, adapters and installed packages; kosm errors on a collision, naming both. Files *inside* a directory kosmos, app or adapter (D62) are private to it and import each other relatively (`@import("colors.zig")`).
+- **D62. A file is private, a directory is a package.** The same rule holds for `kosmoi/`, `apps/` and `adapters/`:
+  - `kosmoi/frost.zig`: a single-file kosmos. It has no manifest and can't be installed by others (they can still copy the file).
+  - `kosmoi/nord/` with `root.zig`, plus any files, templates and subdirectories it needs: a directory kosmos. It carries its own `build.zig.zon` and **no `build.zig`**, which makes it a complete Zig package. Publishing it means pushing that directory as a git repo, and others `kosm add` it and use it as `@import("nord")` or `kosm apply nord.iced`. (Verified on 0.17: a zon-only package can be fetched by archive, with its own dependencies fetched by hash.)
+  - **Kosm keeps that manifest up to date when it builds that one kosmos.** `kosm apply nord` regenerates `kosmoi/nord/build.zig.zon`, and nothing else: `kosm apply frost` doesn't touch nord. Kosm writes `.name`, `.fingerprint`, `.version` and `.minimum_zig_version` once and never changes them afterwards. On every build it rewrites `.dependencies` (exactly the installed packages nord imports, copied with their url and hash from the config's own `build.zig.zon`, which stays the source of truth) and `.paths` (every file in the directory).
+  - If a directory kosmos imports a *local* kosmos, app or adapter that isn't a directory package (e.g. `@import("base")` where `base` is `kosmoi/base.zig`), regenerating its manifest is an error naming the import, because the published package couldn't resolve it.
 - **D21. Kosmos functions may return an error union** (`!Base`). Kosm reports the error with the kosmos name.
 
 ```zig
@@ -283,7 +288,7 @@ pub fn from(theme: kosm.Theme) App {
 }
 ```
 
-- **D25. Local apps: kosm owns whatever you tell it to own.** Any `.zig` file in `~/.config/kosm/apps/` with the same shape is an app, just not packaged. Use it to point kosm at *your* files:
+- **D25. Local apps: kosm owns whatever you tell it to own.** Any app in `~/.config/kosm/apps/` (a file or a directory, D62) with the same shape is an app, just not installed from a package. Use it to point kosm at *your* files:
 
   ```zig
   // ~/.config/kosm/apps/hypr_defs.zig
@@ -407,10 +412,18 @@ pub const adapter = kosm.Adapter{
 |-- build.zig.zon            # `kosm add` writes dependencies here
 |-- packages.zon             # refs to follow for `kosm update` (D46)
 |-- apps/                    # optional: local apps (D25)
+|   |-- hypr_defs.zig        #   a file: private
+|   `-- my_bar/              #   a directory: a package (D62)
+|       |-- root.zig
+|       `-- build.zig.zon    #   written and kept up to date by kosm
+|-- adapters/                # optional: local adapters, same rule
 `-- kosmoi/
-    |-- base.zig
-    |-- frost.zig
-    `-- ...
+    |-- frost.zig            # a file: private
+    `-- nord/                # a directory: a package (D62)
+        |-- root.zig
+        |-- colors.zig
+        |-- templates/
+        `-- build.zig.zon    # written and kept up to date by kosm
 ```
 
 - **D43. Seamless install:** `build.zig` imports `build.zig.zon` at comptime, iterates `.dependencies`, and makes every package importable by name from `kosmoi/` and `apps/` (`@import("kosm_hyprland")`). It also discovers every `pub fn` kosmos (D17). No hand-editing of build.zig. **Verify on Zig 0.17 first.**

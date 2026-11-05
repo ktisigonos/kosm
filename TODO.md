@@ -23,7 +23,7 @@ Markers:
 
 - [ ] **3. Writers: `generate` + `template`** `PLAN FIRST`
   - Do: both writers, transactional apply and `--diff` (D36-D38), and 3 built-in apps (kitty, one CSS app, nvim) written exactly like third-party packages (D2).
-  - Do: turn the step 2 spike into real code: `addConfigProject` in kosm's `build.zig` (dependency walk, package unification, `dependOnDirectoryContents`, one module per kosmoi file) and the reflection runner (kosmos discovery, `Params` parsing, tree walk).
+  - Do: turn the step 2 spike into real code: `addConfigProject` in kosm's `build.zig` (dependency walk, package unification, `dependOnDirectoryContents`, one module per single-file kosmos, app or adapter, and one per directory rooted at its `root.zig`, D62) and the reflection runner (kosmos discovery, `Params` parsing, tree walk).
   - Do: the runner's comptime walks set `@setEvalBranchQuota`; nested app trees exceed the default 1000.
   - Done when: the real Frost kosmos rices those apps end to end in `--diff` mode, and tests prove a failing plan writes nothing. Running it for real is `ASK`.
 
@@ -35,6 +35,6 @@ Markers:
   - Do: tree-sitter runtime in core (D41, dependency approval is `ASK`), then `kosm_json`, `kosm_lua`, `kosm_hyprlang` (D28-D35, D39-D40).
   - Done when: path matching, cardinality, and byte-preserving edits are tested per adapter on real-world snippets.
 
-- [ ] **6. CLI completion** `BLOCKED: Q15, Q16`
-  - Do: `kosm add/remove/update` (D46), app reloads (D59), applying kosmoi from packages (Q15), `current`, `--set` (D20).
+- [ ] **6. CLI completion** `BLOCKED: Q16`
+  - Do: `kosm add/remove/update` (D46), app reloads (D59), applying kosmoi from packages and keeping directory manifests up to date (D62), `current`, `--set` (D20).
   - Done when: each command is tested against a temp config project; nothing touches `~/.config/kosm`.

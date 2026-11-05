@@ -102,4 +102,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`-include` in C flags needs an absolute path:** a bare file name fails with "checking cache failed: file_open FileNotFound".
 - **`zig cc` fuses multiply-adds by default** (`-ffp-contract=on`); pass `-ffp-contract=off` to C code that relies on exact rounding.
 - **`__builtin_cpu_supports` does not link:** Zig's compiler-rt has no `__cpu_model`.
+- **A package needs no `build.zig`, only a `build.zig.zon`:** fetched by path or archive, its manifest still drives transitive fetches. The consumer reads its files with `dep.path("root.zig")` and reaches its dependencies with `dep.builder.dependency("name", .{})`. (`b.lazyImport` of such a package is a compile error: there is no build.zig to import.)
+- **`zig fetch --save` needs a `build.zig` in the cwd or a parent:** to edit a zon-only manifest, write it directly and get the hash from plain `zig fetch <url>` (last line of output).
+- **Every manifest needs a valid `.fingerprint`:** it is tied to the package name; `0x0` fails with "invalid fingerprint", and the error prints the value to use for a new package. Never change it once published.
 - **`zig build --fork=path` needs a `build.zig.zon` there:** for a plain C package, try local changes with a temporary `.path` in the root's `build.zig.zon`.
