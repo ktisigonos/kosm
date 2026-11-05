@@ -4,9 +4,6 @@ const std = @import("std");
 const Color = @import("Color.zig");
 const Raw = @import("Raw.zig");
 
-/// One key and its value in a table.
-pub const Entry = @import("value/Entry.zig");
-
 /// A value an adapter can write. Strings are quoted by the adapter, `raw` text is not (D42).
 pub const Value = union(enum) {
     /// Named values in declaration order.
@@ -21,6 +18,9 @@ pub const Value = union(enum) {
     color: Color,
     /// Written verbatim.
     raw: []const u8,
+
+    /// One key and its value in a `table`.
+    pub const Entry = @import("value/Entry.zig");
 };
 
 /// Errors from `from`.
@@ -28,9 +28,11 @@ pub const FromError = std.mem.Allocator.Error || error{ IntegerTooLarge, NullInL
 
 /// Converts a plain struct by reflection: strings, integers, floats, bools, enums (by tag name),
 /// colors, `kosm.raw` text, nested structs (tables), and arrays, slices or tuples (lists).
-/// A `null` optional field is left out of its table. Everything lives in `allocator`.
+/// A `null` optional field is left out of its table. A `Value`, at any depth, is taken as it
+/// is, for apps that build the tree themselves (D64). Everything lives in `allocator`.
 pub fn from(allocator: std.mem.Allocator, values: anytype) FromError!Value {
     const T = @TypeOf(values);
+    if (T == Value) return values;
     if (T == Color) return .{ .color = values };
     if (T == Raw) return .{ .raw = values.text };
     if (comptime isString(T)) return .{ .string = values };
@@ -58,7 +60,7 @@ pub fn from(allocator: std.mem.Allocator, values: anytype) FromError!Value {
 
 fn fromStruct(allocator: std.mem.Allocator, values: anytype) FromError!Value {
     const info = @typeInfo(@TypeOf(values)).@"struct";
-    var entries: std.ArrayList(Entry) = try .initCapacity(allocator, info.field_names.len);
+    var entries: std.ArrayList(Value.Entry) = try .initCapacity(allocator, info.field_names.len);
     inline for (info.field_names, info.field_types) |name, Field| {
         const field = @field(values, name);
         if (@typeInfo(Field) == .optional) {
@@ -126,6 +128,15 @@ test "from turns a nested struct into tables in declaration order" {
     try testing.expectEqualStrings("nested", entries[7].key);
     try testing.expectEqualStrings("two", entries[7].value.table[1].value.string);
     try testing.expectEqual(2, entries[8].value.list[1].integer);
+}
+
+test "from takes an already built value as it is" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const built: Value = .{ .raw = "0.5pt" };
+    const tree = try from(arena.allocator(), .{ .border = built, .size = 2 });
+    try testing.expectEqualStrings("0.5pt", tree.table[0].value.raw);
+    try testing.expectEqualStrings("0.5pt", (try from(arena.allocator(), built)).raw);
 }
 
 test "from rejects integers that do not fit and nulls inside lists" {
