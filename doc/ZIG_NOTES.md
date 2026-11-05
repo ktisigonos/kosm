@@ -38,6 +38,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **A field of a typed struct literal does not parse:** `Params{}.blur` is "expected `;` after statement"; bind the literal first (`const params: Params = .{};`).
 - **`&.default` does not give the address of the decl:** coercing to `*const T` makes a static copy, so `x == &T.default` is false. Compare the values.
 - **Empty exhaustive enums are rejected:** an enum with no fields, only decls, fails with "empty exhaustive enums must be backed by 'noreturn'". Add `_,` to make it non-exhaustive.
+- **Float math at comptime burns the branch quota fast:** one sRGB -> OKLCH conversion (`std.math.pow`, `cbrt`) exceeds the default 1000 backwards branches. A comptime helper sets its own `@setEvalBranchQuota` inside its `comptime` block, and a test must call it from a file-level `const`, since `comptime f()` inside a test does not hit the same limit.
 - **Untyped file-level number constants break mixed division:** `const h = 2;` then `h / @tan(x)` at comptime is "ambiguous coercion of division operands"; give such constants a type (`const h: f32 = 2;`).
 - **`@max` of comptime-known lengths takes the smallest fitting type:** `@max(a.len, b.len) + 2` with lengths 14 and 10 is a `u4`, so the `+ 2` overflows at comptime. Widen first: `@as(usize, @max(a.len, b.len)) + 2`.
 - **`@abs` of a signed integer returns the unsigned type:** `@intCast` it back before mixing with signed values.
