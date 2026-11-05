@@ -1,4 +1,4 @@
-# Kosm — Design (Draft v0.4)
+# Kosm — Design (Draft v0.5)
 
 > κόσμος: *order, arrangement, adornment*. The root of both *cosmos* and *cosmetic*.
 >
@@ -37,14 +37,21 @@ Previous attempts and what they taught us:
 ## 2. Architecture: three layers
 
 ```
- KOSMOS                 APP MODULES                 LANGUAGE ADAPTERS + WRITERS
+ KOSMOS                 APPS                        LANGUAGE ADAPTERS + WRITERS
  what the rice is   →   what an app needs     →     how bytes reach a file
  (user: functions       (packages: fields +         (packages, written once per language)
-  returning modules)     from + apply)
+  returning apps)        from + apply)
 ```
 
-- **D1.** The three layers never mix. An app module never parses anything. An adapter never knows about any app.
-- **D2.** Everything is a Zig package. One package can export any mix of adapters, modules and kosmoi. Kosm's own built-ins are written exactly like third-party packages.
+- **D1.** The three layers never mix. An app never parses anything. An adapter never knows about any app.
+- **D2.** Everything is a Zig package. One package can export any mix of adapters, apps and kosmoi. Kosm's own built-ins are written exactly like third-party packages.
+- **D54. Vocabulary.** These four words mean exactly this, everywhere (docs, code, CLI output):
+  - **package**: Zig's own term, anything `kosm add` fetches. A package can contain apps, adapters and/or kosmoi.
+  - **app**: support for one program (`kosm_hyprland` exports `App`, `from`, `App.apply`).
+  - **adapter**: support for one language or file format (Lua, TOML, JSON).
+  - **kosmos**: a rice, a function returning a tree of apps.
+
+  "Module" is left to Zig's own meaning (`b.addModule`) and is never used for apps.
 
 ## 3. The core rule (style A)
 
@@ -52,11 +59,11 @@ Previous attempts and what they taught us:
   - Want a change to *flow* into everything derived from it? Change the **input** and call `from` again.
   - Want to change one *result*? Assign the field.
 - **D4. Inheritance is a function call.** A kosmos that builds on another calls the other's build function with different inputs, then assigns its own tweaks. No `.with`, no `.override`, no merge magic.
-- **D5. Nothing is written until kosm says so.** User code only builds values. Kosm calls each module's `apply` at the end, plans every edit, and commits all or nothing (§7.2). User code never calls `apply`.
+- **D5. Nothing is written until kosm says so.** User code only builds values. Kosm calls each app's `apply` at the end, plans every edit, and commits all or nothing (§7.2). User code never calls `apply`.
 
 ## 4. Theme: the only standard
 
-`kosm.Theme` is what every module's `from` receives. It has three parts: **palette**, **mode** and **variations**.
+`kosm.Theme` is what every app's `from` receives. It has three parts: **palette**, **mode** and **variations**.
 
 ```zig
 var theme = kosm.Theme.from(palette, .dark);
@@ -73,12 +80,12 @@ red · orange · yellow · lime · green · teal · cyan · sky · blue · purpl
 - **D6.** `kosm.Palette` (the input) has **`black` and `white` as required fields**, and all 12 hues as `?Color = null`.
 - **D7. Missing hues are mixed from the nearest set hues on either side of the wheel**, by *wheel position*, not by actual hue. So if `red` and `yellow` are both blues (FrostIced), the derived `orange` is a blue as well. Mixing happens in OKLCH. One set hue means every hue is that hue. No set hues means every hue derives from `gray`.
 - **D8.** `gray` is always derived: mix(black, white). It can be overridden on the resolved palette.
-- **D9.** `theme.palette` is the **resolved** palette (`kosm.Palette.Resolved`): all 12 hues, plus black, white and gray, all non-optional. Modules only ever see this one.
-- **D10.** Extra colors beyond the wheel belong to modules (their own fields) or to your own consts. The wheel is the only shared vocabulary.
+- **D9.** `theme.palette` is the **resolved** palette (`kosm.Palette.Resolved`): all 12 hues, plus black, white and gray, all non-optional. Apps only ever see this one.
+- **D10.** Extra colors beyond the wheel belong to apps (their own fields) or to your own consts. The wheel is the only shared vocabulary.
 
 ### 4.2 Mode
 
-- **D11.** `mode: .dark | .light`. That's the single global fact modules use to decide their own background, foreground, buttons and so on. There is no global `bg`/`fg`/`button`/`outline`: every one of those belongs to a module.
+- **D11.** `mode: .dark | .light`. That's the single global fact apps use to decide their own background, foreground, buttons and so on. There is no global `bg`/`fg`/`button`/`outline`: every one of those belongs to an app.
 
 ### 4.3 Variations
 
@@ -144,10 +151,10 @@ pub const Variations = struct {
 ```
 
 - **D12.** There are 33 variations in 7 families, and `Variations.from(mode)` provides every default. Mode-aware families (emphasis, state, surface, line) invert direction in light mode, e.g. `hovered` darkens. `Theme.from` points `contrast.on`/`on_muted` at the palette's black and white, and `surface.shadow` at its black.
-- **D13. Variations transform; they never choose hues.** `error`, `warning` and the like are a module's decision (`error = palette.red`), not variations.
+- **D13. Variations transform; they never choose hues.** `error`, `warning` and the like are an app's decision (`error = palette.red`), not variations.
 - **D14. `active` is deliberately absent.** It means "pressed" in CSS and "focused window" in Qt, so it's split into `state.pressed` and `state.inactive`.
 - **D15. A `Modifier` is a struct of optional parts**, applied in this order: OKLCH deltas (`lightness`, `chroma`, `hue`; chroma never drops below 0, hue wraps), a mix toward a color (`mix = .{ .toward = …, .amount = 0.5 }`), a contrast pick (`contrast`: whichever of two candidates has the higher WCAG 2 contrast ratio on the color, optionally mixed back toward it, for `contrast.on` / `on_muted`), and finally an absolute `alpha`. Each part is a plain field, so `hovered.lightness = 0.06` works.
-- **D16. Compositions are copies, read through a method.** `a.then(b)` returns a modifier that applies `a`, then `b`, holding up to 8 steps inline (no memory needed). A copied modifier can't look anything up later (D24: `apply` only sees `self`), so variations that default to a composition are `?Modifier = null` and are read through a method, like D23's derived colors: `state.selectedInactive()` returns `selected_inactive orelse selected.then(inactive)`. That's what makes tweaking `state.selected` also change it, for every module built afterwards.
+- **D16. Compositions are copies, read through a method.** `a.then(b)` returns a modifier that applies `a`, then `b`, holding up to 8 steps inline (no memory needed). A copied modifier can't look anything up later (D24: `apply` only sees `self`), so variations that default to a composition are `?Modifier = null` and are read through a method, like D23's derived colors: `state.selectedInactive()` returns `selected_inactive orelse selected.then(inactive)`. That's what makes tweaking `state.selected` also change it, for every app built afterwards.
 
 ### 4.4 Color
 
@@ -157,24 +164,28 @@ pub const Variations = struct {
 
 ## 5. Kosmoi
 
-- **D17. A kosmos is a public function returning a struct of modules.**
-  - Each `pub fn` in a file under `kosmoi/` that returns such a struct is a kosmos: `kosmos()` is the file's default, and any other name is a variant.
+- **D17. A kosmos is a public function returning a struct of apps.**
+  - A kosmos is a `pub fn` in a file under `kosmoi/` that takes either nothing or one `Params` struct whose fields all have defaults, and returns (optionally through `!`) a struct containing at least one app (D53). Helpers like `frostTheme(palette)` or `build(theme)` therefore aren't kosmoi.
+  - Each one is applied by name: `kosmos()` is the file's default, and any other name is a variant.
   - `kosm apply frost` → `frost.kosmos()`; `kosm apply frost.iced` → `frost.iced()`.
   - One file or many is your choice: nothing forces a base/frost split.
-- **D18. The returned tree is the selection.** Kosm walks the returned struct recursively. Any field whose type has `pub fn apply` is a module, and any other struct is recursed into. Only modules that appear in the tree are applied. A website-only kosmos returns `struct { website: website.Module }`.
-- **D19. Parameters become CLI flags.** A kosmos function may take one `Params` struct. Kosm parses `kosm apply frost --accent '#ff0000' --blur false` into it by reflection. Field types decide parsing, and colors accept hex or a palette name like `sky`. Fields should be optional with defaults.
+- **D18. The returned tree is the selection.** Kosm walks the returned struct recursively. **D53:** a field is an app when its type is a struct with exactly `pub fn apply(self, *kosm.Output) !void` (so `Modifier.apply(Color) Color` doesn't count), and any other struct is recursed into. An optional app (`?hyprland.App`) set to `null` is skipped. Only apps that appear in the tree are applied. A website-only kosmos returns `struct { website: website.App }`.
+- **D19. Parameters become CLI flags.** A kosmos function may take one `Params` struct. Kosm parses `kosm apply frost --accent '#ff0000' --blur false` into it by reflection. Field types decide parsing (colors: D55). Fields should be optional with defaults.
+- **D55. Colors in flags.** A `kosm.Color` field accepts every common text form: `#rgb`, `#rrggbb`, `#rrggbbaa` (with or without `#`), `rgb(...)`, `rgba(...)`, `hsl(...)`, `hsla(...)` and `oklch(...)`. A `kosm.ColorChoice` field additionally accepts a hue name (`--accent sky`). Kosm can't know the kosmos' palette while parsing, so the kosmos resolves it with `params.accent.resolve(theme.palette)`. Flags are spelled `--border-size`; the field spelling `--border_size` is accepted too.
+- **D56. Hosts are opt-in.** If `Params` has a field `host` of an enum type the user declares (`pub const Host = enum { nous, egregoros, ergasterion, synekdemos };`), kosm fills it from the machine's hostname. An unknown hostname is an error naming the hostname and the enum. Without such a field nothing happens, so kosmoi that don't care never see hosts. Combined with optional apps (D53), `if (params.host == .ergasterion) result.hyprland = null;` skips an app on one machine.
 - **D20. `--set` pokes the final tree.** `--set hyprland.blur.size=20` runs after the kosmos function returns and walks the tree by reflection. It's for one-off tweaks: it assigns a result, so nothing derived from it changes (D3).
+- **D50. Kosmoi and local apps import each other by name**, like packages: `@import("base")`, `@import("hypr_defs")`, never `@import("base.zig")`. Every kosmoi and local-app file is its own Zig module, and Zig doesn't allow a file in two modules. Names must be unique across `kosmoi/`, `apps/` and packages; kosm errors on a collision, naming both files.
 - **D21. Kosmos functions may return an error union** (`!Base`). Kosm reports the error with the kosmos name.
 
 ```zig
 // kosmoi/base.zig
 const kosm = @import("kosm");
-const hyprland = @import("kosm-hyprland");
-const browser = @import("kosm-browser");
+const hyprland = @import("kosm_hyprland");
+const browser = @import("kosm_browser");
 
 pub const Base = struct {
-    hyprland: hyprland.Module,
-    browser: browser.Module,
+    hyprland: hyprland.App,
+    browser: browser.App,
 };
 
 pub fn from(theme: kosm.Theme) Base {
@@ -190,7 +201,7 @@ pub fn from(theme: kosm.Theme) Base {
 ```zig
 // kosmoi/frost.zig
 const kosm = @import("kosm");
-const base = @import("base.zig");
+const base = @import("base");                       // by name (D50)
 
 pub const frost_palette: kosm.Palette = .{
     .black = kosm.hex("102840"), .white = kosm.hex("eceff4"),
@@ -222,28 +233,28 @@ pub fn iced() base.Base {
     palette.red = kosm.hex("5e81ac");                 // input change: everything derived follows
     const theme = frostTheme(palette);
     var result = build(theme);                        // frost's tweaks are kept
-    const hyprland_module = &result.hyprland;         // plain pointer for repeated edits
-    hyprland_module.colors.border_active = theme.palette.blue;
-    hyprland_module.blur.passes = 4;
+    const hyprland_app = &result.hyprland;         // plain pointer for repeated edits
+    hyprland_app.colors.border_active = theme.palette.blue;
+    hyprland_app.blur.passes = 4;
     return result;
 }
 ```
 
-## 6. App modules
+## 6. Apps
 
-- **D22. A module package exports `Module` (a struct of plain fields), `from`, and `Module.apply`.**
-  - `from(theme)`, or `from(theme, required)` when the module has required inputs. `required` is a struct whose fields have **no defaults**, so leaving one out is a compile error naming the field. That's how a maintainer makes e.g. a glow color mandatory.
+- **D22. An app package exports `App` (a struct of plain fields), `from`, and `App.apply`.**
+  - `from(theme)`, or `from(theme, required)` when the app has required inputs. `required` is a struct whose fields have **no defaults**, so leaving one out is a compile error naming the field. That's how a maintainer makes e.g. a glow color mandatory.
   - Every other field is filled with a sane default by `from` and can be overwritten by assignment.
   - New fields can be added at any time without breaking existing kosmoi.
-  - `apply(self: Module, output: *kosm.Output) !void` contains no parsing and no file IO, only calls on `output`.
-- **D23. Derived-from-sibling fields are `?Color = null`.** If a module color is naturally derived from another *module* field (e.g. `border_inactive` from `border_active`), it's declared `?Color = null` and computed in `apply`. So changing `border_active` after `from` still flows into it, and setting `border_inactive` explicitly still wins.
-- **D24.** A module stores whatever it needs from the theme inside its own fields during `from`. `apply` only sees `self`.
+  - `apply(self: App, output: *kosm.Output) !void` contains no parsing and no file IO, only calls on `output`.
+- **D23. Derived-from-sibling fields are `?Color = null`.** If an app color is naturally derived from another *app* field (e.g. `border_inactive` from `border_active`), it's declared `?Color = null` and computed in `apply`. So changing `border_active` after `from` still flows into it, and setting `border_inactive` explicitly still wins.
+- **D24.** An app stores whatever it needs from the theme inside its own fields during `from`. `apply` only sees `self`.
 
 ```zig
-// kosm-hyprland/src/root.zig
+// kosm_hyprland/src/root.zig
 const kosm = @import("kosm");
 
-pub const Module = struct {
+pub const App = struct {
     colors: struct {
         border_active: kosm.Color,
         border_inactive: ?kosm.Color = null,          // null → inactive variation of border_active
@@ -253,7 +264,7 @@ pub const Module = struct {
     blur: struct { enabled: bool = true, size: u16 = 8, passes: u8 = 2 } = .{},
     inactive: kosm.Modifier,
 
-    pub fn apply(self: Module, output: *kosm.Output) !void {
+    pub fn apply(self: App, output: *kosm.Output) !void {
         var file = try output.edit(.{ .files = "~/.config/hypr/**/*.lua" });
         const inactive_border = self.colors.border_inactive orelse self.inactive.apply(self.colors.border_active);
         try file.set("general.active_border", self.colors.border_active.format("rgba({})", &.{.hex8}));
@@ -264,7 +275,7 @@ pub const Module = struct {
     }
 };
 
-pub fn from(theme: kosm.Theme) Module {
+pub fn from(theme: kosm.Theme) App {
     return .{
         .colors = .{ .border_active = theme.palette.cyan, .glow = theme.palette.red },
         .inactive = theme.variations.state.inactive,
@@ -272,16 +283,16 @@ pub fn from(theme: kosm.Theme) Module {
 }
 ```
 
-- **D25. Local modules: kosm owns whatever you tell it to own.** Any `.zig` file in `~/.config/kosm/modules/` with the same shape is a module, just not packaged. Use it to point kosm at *your* files:
+- **D25. Local apps: kosm owns whatever you tell it to own.** Any `.zig` file in `~/.config/kosm/apps/` with the same shape is an app, just not packaged. Use it to point kosm at *your* files:
 
   ```zig
-  // ~/.config/kosm/modules/hypr_defs.zig
-  pub const Module = struct {
+  // ~/.config/kosm/apps/hypr_defs.zig
+  pub const App = struct {
       blur: bool = true,
       border_active: kosm.Color,
       terminal: []const u8 = "ghostty",
 
-      pub fn apply(self: Module, output: *kosm.Output) !void {
+      pub fn apply(self: App, output: *kosm.Output) !void {
           var file = try output.edit(.{ .files = "~/.config/hypr/defs.lua" }); // lang from .lua
           try file.set("M.blur.enabled", self.blur);
           try file.set("M.border.active_col", self.border_active.format("rgba({})", &.{.hex8}));
@@ -289,23 +300,23 @@ pub fn from(theme: kosm.Theme) Module {
       }
   };
 
-  pub fn from(theme: kosm.Theme) Module {
+  pub fn from(theme: kosm.Theme) App {
       return .{ .border_active = theme.palette.cyan };
   }
   ```
 
-  Packaged modules are just local modules that someone shared. Non-color values (terminal, main_mod, …) are just module fields, so a kosmos can hold anything.
+  Packaged apps are just local apps that someone shared. Non-color values (terminal, main_mod, …) are just app fields, so a kosmos can hold anything.
 - **D26.** The adapter is inferred from the file extension unless `.lang` is given. If several installed adapters claim the same extension, that's an error asking for `.lang`.
-- **D27. Conventions for module authors (non-binding).** These keep independent modules consistent:
+- **D27. Conventions for app authors (non-binding).** These keep independent apps consistent:
   - background/foreground come from `black`/`white`, swapped in light mode;
   - comment/muted text uses `emphasis.muted` on the foreground;
   - error/warning/success/info are `red`/`yellow`/`green`/`blue`;
   - accent and active border are `cyan`;
-  - every field and its default is listed in the module's README.
+  - every field and its default is listed in the app's README.
 
 ## 7. Writers
 
-Four writers. A module chooses whichever fits each target.
+Four writers. An app chooses whichever fits each target.
 
 | Writer | Use when | Needs from adapter |
 |---|---|---|
@@ -313,6 +324,9 @@ Four writers. A module chooses whichever fits each target.
 | `template` | the output is mostly structure rather than values (nvim colorscheme, fastfetch) | nothing |
 | `block` | a line format, no includes, comments allowed: kosm owns `# kosm:begin <id>` … `# kosm:end` | `comment` syntax |
 | `edit` (path) | set exact keys in a file you also edit by hand | `parse` + `match` + `format` |
+
+- **D57. Kosm never wires files together.** It writes what an app tells it to write and nothing else. Making the program read a generated file (kitty's `include`, a Lua `require`, a CSS `@import`) is the user's job, done once in their own config. Kosm never inserts include or source lines.
+- **D58. No backups.** Kosm never writes `.backup` copies. Git, the all-or-nothing commit (D36) and `--diff` (D37) cover it.
 
 ### 7.1 Path editing semantics
 
@@ -340,16 +354,17 @@ Four writers. A module chooses whichever fits each target.
 
 ### 7.2 Transactional apply
 
-- **D36.** `kosm apply` happens in two phases. **Plan:** call the kosmos function, apply `--set`, call every module's `apply`, and compute every edit in memory. Any error aborts, and nothing is touched. **Commit:** write temp files, then rename them all. Then run the reload hooks.
+- **D36.** `kosm apply` happens in two phases. **Plan:** call the kosmos function, apply `--set`, call every app's `apply`, and compute every edit in memory. Any error aborts, and nothing is touched. **Commit:** write temp files, then rename them all. Reloading apps afterwards is D59.
 - **D37.** `kosm apply frost --diff` prints the plan as a unified diff and writes nothing.
-- **D38.** Two modules editing the same byte range in the same apply is a plan-time error.
+- **D38.** Two apps editing the same byte range in the same apply is a plan-time error.
+- **D59. Reloading is the app's job, not core's.** Each app knows how its program reloads. The mechanism is designed in step 6 (Q16); core only provides whatever hook an app needs to run after the commit, since `apply` runs before anything is written.
 
 ## 8. Language adapters
 
-- **D39.** An adapter is a package exporting a declaration that matches the adapter interface. **Every capability is optional**, and kosm reports clearly when a module needs a capability that an adapter lacks.
+- **D39.** An adapter is a package exporting a declaration that matches the adapter interface. **Every capability is optional**, and kosm reports clearly when an app needs a capability that an adapter lacks.
 
 ```zig
-// kosm-lua/src/root.zig
+// kosm_lua/src/root.zig
 pub const adapter = kosm.Adapter{
     .name = "lua",
     .extensions = &.{".lua"},
@@ -369,23 +384,25 @@ pub const adapter = kosm.Adapter{
 
 - **D40.** Most tree-sitter adapters should be **declarative** (node names, as above). Hand-written `match` functions are allowed for strange grammars. Adapters may skip tree-sitter entirely (e.g. a 40-line INI parser).
 - **D41.** **Kosm core owns the tree-sitter runtime.** Adapters depend on core and ship only their grammar's C sources, which avoids duplicate symbols.
-- **D42.** Value formatting has two cases: `string`, which the adapter quotes and escapes, and `kosm.raw(text)`, which is inserted verbatim. Colors are formatted by the **module** (`color.format("rgba({})", &.{.hex8})`, D47), because only the module knows the app's color syntax.
+- **D42.** Value formatting has two cases: `string`, which the adapter quotes and escapes, and `kosm.raw(text)`, which is inserted verbatim. Colors are formatted by the **app** (`color.format("rgba({})", &.{.hex8})`, D47), because only the app knows the app's color syntax.
 
 ## 9. Packages and the config project
 
 ```
 ~/.config/kosm/              # a Zig project, generated by `kosm init`
-├── build.zig                # generic; reads build.zig.zon, exposes every package to kosmoi + modules
+├── build.zig                # generic; reads build.zig.zon, exposes every package to kosmoi + apps
 ├── build.zig.zon            # `kosm add` writes dependencies here
 ├── packages.zon             # refs to follow for `kosm update` (D46)
-├── modules/                 # optional: local modules (D25)
+├── apps/                    # optional: local apps (D25)
 └── kosmoi/
     ├── base.zig
     ├── frost.zig
     └── …
 ```
 
-- **D43. Seamless install:** `build.zig` imports `build.zig.zon` at comptime, iterates `.dependencies`, and makes every package importable by name from `kosmoi/` and `modules/` (`@import("kosm-hyprland")`). It also discovers every `pub fn` kosmos (D17). No hand-editing of build.zig. **Verify on Zig 0.17 first.**
+- **D43. Seamless install:** `build.zig` imports `build.zig.zon` at comptime, iterates `.dependencies`, and makes every package importable by name from `kosmoi/` and `apps/` (`@import("kosm_hyprland")`). It also discovers every `pub fn` kosmos (D17). No hand-editing of build.zig. **Verify on Zig 0.17 first.**
+- **D51. Package names are Zig identifiers, the same everywhere.** A package's manifest name, its module name and its import are all one snake_case identifier: `.name = .kosm_hyprland`, `@import("kosm_hyprland")`, and `kosm add` saves it under that name. (Zig requires the manifest name to be a bare identifier.) The git repo's name is up to the author.
+- **D52. One kosm for every package.** Each package pins its own `kosm` by hash, and two copies make Zig see two different `Theme` types. So the config's `build.zig` re-points every package's `kosm` import, and its imports of any other package the config has, to the config's own copy. A package that doesn't fit the user's kosm fails with a normal compile error. No version checks in v1.
 - **D44.** Pin a tagged Zig (currently 0.17.0) via `minimum_zig_version`. Never track master.
 - **D45.** `kosm apply <kosmos>` = `zig build` in the config dir (cached), then run. Error output should point at the user's kosmos file, not at generated code.
 
@@ -403,7 +420,7 @@ kosm remove <name>
 kosm update [name]                   # re-fetch packages at their tracked ref, rebuild
 ```
 
-- **D46. Package commands wrap `zig fetch`.** No custom package format or registry. `add` checks that the package provides at least one module or adapter, and reports what it provides. `build.zig.zon` stores only the resolved URL + hash, which loses "follow branch `main`", so kosm keeps that intent in `packages.zon` (name → url + ref), and `update` re-runs `zig fetch --save=<name>` from it.
+- **D46. Package commands wrap `zig fetch`.** No custom package format or registry. `add` checks that the package provides at least one app or adapter, and reports what it provides. `build.zig.zon` stores only the resolved URL + hash, which loses "follow branch `main`", so kosm keeps that intent in `packages.zon` (name → url + ref), and `update` re-runs `zig fetch --save=<name>` from it.
 
 ## 11. Build order
 
@@ -411,16 +428,18 @@ Each step is usable on its own.
 
 1. **Core data:** Color (OKLCH, formatting), Modifier, Variations, Palette + wheel resolution, Theme. Pure, with tests and no files.
 2. **Packaging spike:** prove D43 (package imports + kosmos discovery + D19 params) on Zig 0.17. If it fails, redesign §9 before going further.
-3. **Writers:** `generate` + `template`, plus 3 built-in modules (kitty, one CSS app, nvim). Rice the real Frost end to end. Implement D36–D38 here.
+3. **Writers:** `generate` + `template`, plus 3 built-in apps (kitty, one CSS app, nvim). Rice the real Frost end to end. Implement D36–D38 here.
 4. **`block` writer.**
-5. **`edit` writer:** tree-sitter runtime in core, then `kosm-json`, then `kosm-lua`, then `kosm-hyprlang`.
-6. `kosm add/remove/update`, reload hooks, `current`, `--set`.
+5. **`edit` writer:** tree-sitter runtime in core, then `kosm_json`, then `kosm_lua`, then `kosm_hyprlang`.
+6. `kosm add/remove/update`, app reloads (D59), `current`, `--set`.
 
 ## 12. Non-goals (v1)
 
-- Inserting missing keys (D28).
+- Inserting missing keys (D28), or include/source lines (D57).
+- Backup files (D58).
+- Checking package versions against the user's kosm (D52).
 - `**`, predicates or regex in paths.
-- Global semantic colors (bg, fg, roles): these belong to modules (D11).
+- Global semantic colors (bg, fg, roles): these belong to apps (D11).
 - `.with` / `.override` patch APIs (D4, G8).
 - Wallpaper → palette generation (could be a package later).
 - Any custom configuration language.

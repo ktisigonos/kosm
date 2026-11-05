@@ -1,81 +1,65 @@
-# Kosm — Open Questions
+# Kosm - Open Questions
 
-Answer inline under each question (`**A:** …`). Once one is answered, the
+Answer inline under each question (`**A:** ...`). Once one is answered, the
 answer becomes a `D#` in [DESIGN.md](DESIGN.md) and the question is deleted.
 An agent must not start on a section whose questions are still open.
 
-Steps 1 and 2 are done. Q10-Q14 came out of the packaging spike (step 2) and block step 3.
+Steps 1 and 2 are done. Answered in v0.5: Q6 (D56, D59), Q7 (D57), Q8 (D58),
+Q10 (D50), Q11 (D51), Q12 (D52), Q13 (D53, D54), Q14 (D55).
 
 ---
 
-## Blocking before step 3 (writers)
+## Blocking step 3 (writers)
 
-### Q4. Template syntax
-Templates are needed for nvim colorschemes, fastfetch, etc.
-- (a) Mustache-like: `{{ palette.red }}`, `{{ colors.links | hex }}`, rendered against the module's own fields. Readable in any file type.
-- (b) Zig `std.fmt` style. You get no syntax highlighting for the target language, and it gets ugly fast.
-- Loops/conditionals? Every feature added here is how Ricer-style engines balloon.
-- *Recommendation:* (a), values + filters only, plus at most `{{#each …}}`.
+### Q4. Template placeholder syntax
+Ricer's `ricer.col.red` was clean; its only flaw was not knowing where a name ended.
+Proposal: keep the prefix and make the end unambiguous, with two forms.
 
-**A:**
+- **Bare:** `kosm.palette.red`. The prefix `kosm.` is what marks a placeholder, so
+  nothing else in the file is ever touched. The name ends at the first character
+  that can't continue a path. Since a template is rendered against the app's own
+  typed fields, a name glued to text (`kosm.roundingpx`) is not a silent mistake:
+  it's an error, "unknown field `roundingpx`, did you mean `{kosm.rounding}px`?" (G6).
+- **Braced:** `{kosm.palette.red}` for when text follows directly: `{kosm.rounding}px`.
+  The end is the `}`. Only a `{` directly followed by `kosm.` counts, so JSON, CSS,
+  Lua and mustache braces are left alone.
+- Color formats are trailing components, as in Ricer: `kosm.palette.red.hex8`,
+  `{kosm.colors.links.red_255}` (the D47 component names).
+- Per template, an app may change the prefix word (`.prefix = "theme"`) or the
+  brace pair (`.open = "<", .close = ">"`) for the rare file where `kosm.` or `{kosm.`
+  genuinely occurs.
+- Templates shipped inside a package are checked at compile time against the
+  app's fields, so a typo in a template is a compile error.
+- Scanning is cheap: one substring search for `kosm.` per file.
 
-### Q6. Per-host differences
-nous, egregoros, ergasterion and synekdemos have different apps and paths. With kosmos-as-function, the options are:
-- (a) Kosmos functions get the host via a param (`Params.host` filled automatically from the hostname) and branch on it.
-- (b) A separate base per host (`base_nous.zig`), and a kosmos picks one.
-- (c) Kosm passes the host to every module's `from`, and modules skip themselves if they aren't installed there.
-- Reload hooks: declared by each module (`pkill -USR1 kitty`, `hyprctl reload`), overridable by assignment like any other field?
-
-**A:**
-
-### Q7. Include lines
-`generate` writes `~/.config/kitty/kosm.conf`, but kitty.conf needs `include kosm.conf` once.
-- (a) `output.ensureLine(file, "include kosm.conf")`. Idempotent, but it's an *insert*, which D28 forbids for keys.
-- (b) Never insert. Error with "add `include kosm.conf` to kitty.conf".
-- *Recommendation:* (b), plus `kosm apply --fix` that does (a) after asking.
-
-**A:**
-
-### Q8. Backups
-Ricer made `.backup` files. Your dotfiles are in git, and D36 makes applies atomic. Are backups still wanted, opt-in, or is `--diff` enough?
+Loops/conditionals stay out of v1. Is this the shape you want?
 
 **A:**
 
-### Q10. How kosmoi import each other
-The spike showed `@import("base.zig")` cannot work when every kosmoi file is its own module (Zig: "file exists in modules 'kosmos:base' and 'kosmos:frost'"), and every file must be a module so kosm can find its kosmoi without copying them (copies would break D45's error locations).
-- (a) Import by name: `@import("base")`, like packages. Works in the spike (cyclic imports are fine). Local modules are imported the same way: `@import("hypr_defs")`. Names must not collide; kosm errors if they do.
-- (b) `kosm init` writes a fixed root file at the config root; kosm regenerates it whenever `kosmoi/` changes. Keeps relative imports, but writes into the config dir.
-- *Recommendation:* (a), and update the section 5 examples.
+## Blocking step 6 (CLI completion)
+
+### Q15. Sharing kosmoi as packages
+Kosmoi you write live as files in your config. To share them, they need to be a package.
+Proposal: **a package has the same layout as the config project** (`apps/`, `kosmoi/`,
+optionally adapters), built by the same kosm build helper. Then:
+- your whole Ktisis kosm config is publishable as a package as it is;
+- someone else's kosmoi are imported like any package, `@import("kosm_nord").frost.iced()`,
+  so you can wrap one in your own kosmos and tweak it (D4);
+- they can also be applied directly: `kosm apply kosm_nord.frost.iced`;
+- no sub-projects inside your own config are needed. If you want to develop one
+  kosmos as its own package before publishing it, Zig's path dependencies
+  (`.path = "kosmoi/nord"`) already allow that.
+
+Is that right?
 
 **A:**
 
-### Q11. Package names
-A package's own `.name` in its `build.zig.zon` must be a bare identifier (`kosm_hyprland`; Zig rejects `kosm-hyprland`). The module name and the consumer's dependency key may contain dashes (`zig fetch --save=kosm-hyprland` works).
-- (a) Keep `@import("kosm-hyprland")`: the manifest is `.name = .kosm_hyprland`, the module is `kosm-hyprland`, and `kosm add` saves under the module name. 
-- (b) Use underscores everywhere: `@import("kosm_hyprland")`.
-- *Recommendation:* (a), it keeps G9's readable names; `kosm add` maps `_` to `-`.
-
-**A:**
-
-### Q12. One kosm for every package
-Each package pins its own `kosm` by hash; two copies give "expected type 'Theme', found 'Theme'". The spike fixes this by re-pointing every package's `kosm` import (and imports of any other package the config has) to the config's copy, so a package always compiles against the user's kosm. An incompatible package then fails to compile with a normal error.
-- Accept this as part of D43? Or should `kosm add` also refuse packages whose pinned kosm differs?
-- *Recommendation:* accept, and later have `kosm add` warn when the pinned kosm differs.
-
-**A:**
-
-### Q13. What counts as a kosmos, and as a module
-`kosm.Modifier` has `pub fn apply(Color) Color`, so D18's "any field whose type has `pub fn apply`" would treat modifiers as modules. The spike uses:
-- module: a struct with `pub fn apply(self, *kosm.Output) !void`;
-- kosmos (D17): a `pub fn` taking nothing or one struct whose fields all have defaults (that is what makes it `Params`), returning (possibly via `!`) a struct that contains at least one module. So `frostTheme(palette)` and `build(theme)` are skipped.
-- *Recommendation:* write both into D17/D18 as they are.
-
-**A:**
-
-### Q14. Params details (D19)
-- Colors by palette name (`--accent sky`): which palette? The kosmos builds its palette itself, so kosm cannot know it before calling. Options: (a) only hex in v1, (b) a `kosm.ColorChoice` type holding hex or a `Palette.Hue` that the kosmos resolves against its own palette with one call.
-- Flag spelling: `--border_size` (the field name) or `--border-size`?
-- *Recommendation:* (b) and `--border-size`, accepting both spellings.
+### Q16. How apps reload their program (D59)
+`apply` runs before anything is written, so an app can't reload its program itself.
+Something has to run after the commit. Options:
+- (a) An app has a field like `reload: ?[]const []const u8 = &.{ "pkill", "-USR1", "kitty" }`, which kosm runs after the commit, and which you can override or set to `null`.
+- (b) An app may define `pub fn reload(self) !void`, which kosm calls after the commit. That's more flexible, but it's code running with real side effects.
+- Only apps whose files actually changed reload?
 
 **A:**
 
