@@ -21,55 +21,13 @@ contrast: ?Contrast = null,
 chain: Chain = .{},
 
 /// Mixing toward a color in OKLCH (D15).
-pub const Mix = struct {
-    /// The color to mix toward.
-    toward: Color,
-    /// 0 keeps the color, 1 gives `toward`.
-    amount: f64,
-};
-
+pub const Mix = @import("Modifier/Mix.zig");
 /// Picks whichever of two colors reads better on top of the color, by WCAG 2 contrast ratio (D15).
-pub const Contrast = struct {
-    /// The dark candidate. `Theme.from` sets it to the palette's black.
-    dark: Color = .{ .lightness = 0, .chroma = 0, .hue = 0 },
-    /// The light candidate. `Theme.from` sets it to the palette's white.
-    light: Color = .{ .lightness = 1, .chroma = 0, .hue = 0 },
-    /// How far the pick mixes back toward the original color: 0 is full contrast.
-    toward_original: f64 = 0,
-};
-
+pub const Contrast = @import("Modifier/Contrast.zig");
 /// One link of a composed modifier: the same fields as `Modifier`, minus the chain.
-pub const Step = struct {
-    lightness: f64 = 0,
-    chroma: f64 = 0,
-    hue: f64 = 0,
-    alpha: ?f64 = null,
-    mix: ?Mix = null,
-    contrast: ?Contrast = null,
-
-    /// Applies the deltas, then the mix, then the contrast pick, then the alpha (D15).
-    pub fn apply(step: Step, color: Color) Color {
-        var result: Color = .{
-            .lightness = color.lightness + step.lightness,
-            .chroma = @max(0, color.chroma + step.chroma),
-            .hue = Color.wrapHue(color.hue + step.hue),
-            .alpha = color.alpha,
-        };
-        if (step.mix) |mixing| result = result.mix(mixing.toward, mixing.amount);
-        if (step.contrast) |contrast| {
-            const readable = if (result.contrastRatio(contrast.dark) >= result.contrastRatio(contrast.light)) contrast.dark else contrast.light;
-            result = readable.mix(result, contrast.toward_original);
-        }
-        if (step.alpha) |alpha| result.alpha = alpha;
-        return result;
-    }
-};
-
+pub const Step = @import("Modifier/Step.zig");
 /// Extra steps of a composed modifier, stored inline so composing needs no memory (D16).
-pub const Chain = struct {
-    steps: [max_steps - 1]Step = undefined,
-    length: usize = 0,
-};
+pub const Chain = @import("Modifier/Chain.zig");
 
 /// The most steps one modifier can hold, counting its own.
 pub const max_steps = 8;

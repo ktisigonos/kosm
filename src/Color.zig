@@ -13,20 +13,17 @@ hue: f64,
 /// Opacity: 0 is transparent, 1 is opaque.
 alpha: f64 = 1,
 
+/// A color in gamma-encoded sRGB.
+pub const Rgb = @import("Color/Rgb.zig");
+/// Formatted color text.
+pub const Text = @import("Color/Text.zig");
+
 /// Below this chroma a color counts as gray, and mixing takes the other color's hue.
 const gray_chroma = 1e-6;
 /// Floats print with at most this many decimals.
 const float_decimals = 6;
 /// Formatted float components are clamped to this magnitude so they always fit in `Text`.
 const max_float_magnitude = 1e12;
-
-/// A color in gamma-encoded sRGB, one f64 per channel. Channels may leave 0..1 (D48).
-pub const Rgb = struct {
-    red: f64,
-    green: f64,
-    blue: f64,
-    alpha: f64 = 1,
-};
 
 /// Builds a color from gamma-encoded sRGB channels, nominally 0..1.
 pub fn fromRgb(rgb: Rgb) Color {
@@ -139,25 +136,6 @@ pub const Component = enum {
     chroma,
     /// OKLCH hue in degrees, 0..360.
     hue,
-};
-
-/// Formatted color text with fixed capacity, so formatting needs no allocator.
-pub const Text = struct {
-    buffer: [capacity]u8 = undefined,
-    length: usize = 0,
-
-    /// Maximum formatted length in bytes, checked at compile time by `format`.
-    pub const capacity = 256;
-
-    /// The formatted text. Valid while this `Text` lives.
-    pub fn slice(text: *const Text) []const u8 {
-        return text.buffer[0..text.length];
-    }
-
-    fn append(text: *Text, bytes: []const u8) void {
-        @memcpy(text.buffer[text.length..][0..bytes.len], bytes);
-        text.length += bytes.len;
-    }
 };
 
 /// Space reserved per component; the longest is a float clamped to `max_float_magnitude`.

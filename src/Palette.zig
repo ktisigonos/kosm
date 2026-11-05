@@ -34,37 +34,13 @@ magenta: ?Color = null,
 /// Wheel position 330 deg. Null: mixed from the nearest set hues (D7).
 pink: ?Color = null,
 
+/// The palette modules see, every hue filled in (D9).
+pub const Resolved = @import("Palette/Resolved.zig");
+
 /// The 12 wheel positions in order, 30 deg apart starting at red.
 pub const Hue = enum { red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink };
 
 const hue_count = @typeInfo(Hue).@"enum".field_names.len;
-
-/// The palette modules see: every hue filled in, plus gray (D9).
-pub const Resolved = struct {
-    black: Color,
-    white: Color,
-    /// Halfway between black and white (D8).
-    gray: Color,
-    red: Color,
-    orange: Color,
-    yellow: Color,
-    lime: Color,
-    green: Color,
-    teal: Color,
-    cyan: Color,
-    sky: Color,
-    blue: Color,
-    purple: Color,
-    magenta: Color,
-    pink: Color,
-
-    /// The color at a wheel position.
-    pub fn get(resolved: Resolved, hue: Hue) Color {
-        return switch (hue) {
-            inline else => |tag| @field(resolved, @tagName(tag)),
-        };
-    }
-};
 
 /// Fills every missing hue by mixing the nearest set hues on either side, by wheel
 /// position (D7). No set hues gives gray everywhere; gray is mix(black, white) (D8).

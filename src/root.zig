@@ -21,6 +21,10 @@ pub fn hex(comptime text: []const u8) Color {
 
 test {
     std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(Color);
+    std.testing.refAllDecls(Palette);
+    std.testing.refAllDecls(Modifier);
+    std.testing.refAllDecls(Variations);
 }
 
 const test_palette: Palette = .{
