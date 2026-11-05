@@ -1,0 +1,33 @@
+//! Support for one language or file format (D39, D54). Every capability is optional, and kosm
+//! names the missing one when an app needs it. An adapter never knows about any app (D1).
+
+const Adapter = @This();
+
+const std = @import("std");
+const ColorFormat = @import("ColorFormat.zig");
+const Value = @import("value.zig").Value;
+
+/// The language name apps pass as `.lang`, e.g. "css".
+name: []const u8,
+/// File extensions this adapter claims, with the dot (".css"). Picked from the file name
+/// unless the app passes `.lang` (D26).
+extensions: []const []const u8 = &.{},
+/// The color format for this language when neither the app nor the user sets one (D61).
+color_format: ?ColorFormat = null,
+/// Writes a whole file from a value tree; enables the `generate` writer.
+serialize: ?*const fn (writer: *std.Io.Writer, root: Value, context: *Context) Error!void = null,
+
+/// What a capability gets besides its input: the file's color format and a place to explain
+/// a failure.
+pub const Context = @import("Adapter/Context.zig");
+
+/// Errors a capability may return. Return `UnsupportedValue` through `Context.unsupported`.
+pub const Error = std.Io.Writer.Error || error{UnsupportedValue};
+
+/// Whether this adapter claims `extension` (".css").
+pub fn claims(adapter: Adapter, extension: []const u8) bool {
+    for (adapter.extensions) |claimed| {
+        if (std.mem.eql(u8, claimed, extension)) return true;
+    }
+    return false;
+}

@@ -42,6 +42,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **Untyped file-level number constants break mixed division:** `const h = 2;` then `h / @tan(x)` at comptime is "ambiguous coercion of division operands"; give such constants a type (`const h: f32 = 2;`).
 - **`@max` of comptime-known lengths takes the smallest fitting type:** `@max(a.len, b.len) + 2` with lengths 14 and 10 is a `u4`, so the `+ 2` overflows at comptime. Widen first: `@as(usize, @max(a.len, b.len)) + 2`.
 - **`@abs` of a signed integer returns the unsigned type:** `@intCast` it back before mixing with signed values.
+- **Anonymous struct literals passed as `anytype` keep comptime fields:** `.{ .text = @embedFile("x"), .format = runtime_value }` gives `text` a comptime field (`@typeInfo(T).@"struct".field_attrs[i].@"comptime"`), so `comptime options.text` works next to runtime fields.
 - **`@floatCast` from f64 to f32 never traps:** out-of-range values become +/-inf, so check `std.math.isFinite` after narrowing. A widened f32 keeps its exact binary value (`6.4` prints as `6.400000095367432`).
 
 ### std
@@ -49,6 +50,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`std.fs` is a deprecated shim - the filesystem lives in `std.Io`:** use `std.Io.Dir`/`std.Io.File`. Whole-file read: `std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(n))`; stdin: `std.Io.File.stdin().reader(io, &buf)` then `.interface`; buffered stdout: `std.Io.File.stdout().writer(io, &buf)` then `.interface` and `flush()`. All take an `Io`.
 - **`std.fs.path` is a deprecated shim:** path helpers (`dirname`, `stem`, `basename`) live in `std.Io.Dir.path`.
 - **`std.Io.Dir.cwd()` cannot iterate:** iterating it is *illegal behavior with no error*. Open a real handle with `openDir(io, ".", .{ .iterate = true })` first.
+- **`readFileAlloc` of a path under a regular file is `error.NotDir`, not `FileNotFound`:** treat only `FileNotFound` as "missing". To make only a later write fail in a test, use a read-only folder (`setFilePermissions(io, "locked", .fromMode(0o500), .{})`): reading a missing file there still gives `FileNotFound`.
 - **`std.Io.Dir` shape notes:** `openDir` rejects an empty sub_path; mkdir -p is `createDirPath(io, path)`; `writeFile(io, .{ .sub_path, .data })` does not create parent directories.
 - **Atomic file replace is `Dir.createFileAtomic` + `File.Atomic.replace`:** pass `.replace = true` at creation or `replace` hits an assertion; `.make_path = true` creates missing folders. Always `deinit` it (it deletes the temp file when the write was abandoned). Write through `file.file.writer(io, &buf)`, whose `.err` holds the real error behind `error.WriteFailed`.
 - **`std.Io.File.Permissions` differs per OS:** on POSIX it is a mode enum with `fromMode(0o600)`/`toMode`. `createFileAtomic` takes it as `.permissions`, and the replaced file gets the new mode, so copy the original file's mode when replacing a user's config.

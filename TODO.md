@@ -21,7 +21,7 @@ Markers:
   - Do: prove D43 (package imports from `build.zig.zon`, kosmos discovery D17) and D19 params on Zig 0.17, in a throwaway config project under the scratch directory.
   - Done when: a sample kosmos importing a sample app package by name builds and runs with a `--param` parsed into its `Params`. If D43 does not work, stop and report: section 9 is redesigned before going further.
 
-- [ ] **3a. Writers in core** (plan approved)
+- [x] **3a. Writers in core** (plan approved)
   - Do: `ColorFormat` (D61), `Adapter` (D39 without `parser`), `Value` (D64), `Output` with `generate` and `template` (D64, D65; `~` expands against an injected home), D60 template placeholders, `Plan` (D35, D38), all-or-nothing commit keeping file modes (D36), unified diff (D37), diagnostics naming kosmos, app, file.
   - Done when: tests prove a failing plan writes nothing, two apps writing one file is an error, unchanged files are not rewritten, and cover template placeholders and diff output.
 
@@ -38,10 +38,13 @@ Markers:
 
 - [ ] **4. `block` writer**
   - Do: `# kosm:begin <id>` ... `# kosm:end` blocks using the adapter's comment syntax (section 7).
+  - Do: add the `comment` capability to `kosm.Adapter` (D39); 3a left it out until it has a user.
+  - Do: `Plan` entries become byte ranges inside a file, so D38 rejects only overlapping ranges instead of any second writer of a file.
   - Done when: tests cover creating, replacing, and malformed or duplicate markers.
 
 - [ ] **5. `edit` writer** `PLAN FIRST` `BLOCKED: Q9`
   - Do: tree-sitter runtime in core (D41, dependency approval is `ASK`), then `kosm_json`, `kosm_lua`, `kosm_hyprlang` (D28-D35, D39-D40).
+  - Do: add the `format` and `parser` capabilities to `kosm.Adapter` (D39, D42).
   - Done when: path matching, cardinality, and byte-preserving edits are tested per adapter on real-world snippets.
 
 - [ ] **6. CLI completion** `BLOCKED: Q16`

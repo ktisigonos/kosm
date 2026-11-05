@@ -1,4 +1,4 @@
-//! Kosm core: colors, palettes, modifiers and themes.
+//! Kosm core: colors, palettes, modifiers and themes, and the writers apps plan files through.
 
 const std = @import("std");
 
@@ -8,6 +8,20 @@ pub const Modifier = @import("Modifier.zig");
 pub const Variations = @import("Variations.zig");
 pub const Theme = @import("Theme.zig");
 pub const Mode = Theme.Mode;
+pub const ColorFormat = @import("ColorFormat.zig");
+pub const Raw = @import("Raw.zig");
+pub const Value = @import("value.zig").Value;
+pub const Adapter = @import("Adapter.zig");
+pub const Output = @import("Output.zig");
+pub const Diagnostics = @import("Diagnostics.zig");
+pub const Plan = @import("Plan.zig");
+pub const commit = @import("commit.zig");
+pub const diff = @import("diff.zig");
+
+/// Text written into a file verbatim, with no quoting or escaping (D42).
+pub fn raw(text: []const u8) Raw {
+    return .{ .text = text };
+}
 
 /// A color from hex text known at compile time: `rgb`, `rgba`, `rrggbb` or `rrggbbaa`,
 /// with an optional `#`. Bad text is a compile error; use `Color.parseHex` at runtime.
@@ -25,6 +39,16 @@ test {
     std.testing.refAllDecls(Palette);
     std.testing.refAllDecls(Modifier);
     std.testing.refAllDecls(Variations);
+    std.testing.refAllDecls(ColorFormat);
+    std.testing.refAllDecls(@import("value.zig"));
+    std.testing.refAllDecls(Adapter);
+    std.testing.refAllDecls(Adapter.Context);
+    std.testing.refAllDecls(Output);
+    std.testing.refAllDecls(Diagnostics);
+    std.testing.refAllDecls(Plan);
+    std.testing.refAllDecls(commit);
+    std.testing.refAllDecls(diff);
+    std.testing.refAllDecls(@import("template.zig"));
 }
 
 const test_palette: Palette = .{

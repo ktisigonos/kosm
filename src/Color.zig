@@ -175,7 +175,8 @@ pub fn hex8(color: Color) Text {
     return color.format("#{}", &.{.hex8});
 }
 
-fn checkTemplate(comptime template: []const u8, comptime component_count: usize) void {
+/// Compile error unless `template` has exactly `component_count` placeholders and fits `Text` (D47).
+pub fn checkTemplate(comptime template: []const u8, comptime component_count: usize) void {
     var placeholders: usize = 0;
     var literal_bytes: usize = 0;
     var index: usize = 0;
