@@ -325,6 +325,12 @@ Four writers. An app chooses whichever fits each target.
 | `block` | a line format, no includes, comments allowed: kosm owns `# kosm:begin <id>` ... `# kosm:end` | `comment` syntax |
 | `edit` (path) | set exact keys in a file you also edit by hand | `parse` + `match` + `format` |
 
+- **D60. Template placeholders are fixed: `kosm.<path>` or `{kosm.<path>}`.** Neither the prefix nor the braces are configurable.
+  - **Bare:** `kosm.palette.red`. The prefix is what marks a placeholder, so no other text is ever touched. It ends at the first character that can't continue a path (letters, digits and `_`, plus `.` only when a letter follows, so a sentence-ending `.` is left alone).
+  - **Braced:** `{kosm.palette.red}` or `{ kosm.palette.red }`, for text glued on: `{kosm.rounding}px`. It ends at the `}`. Only a `{` followed by optional spaces and `kosm.` counts; every other brace (JSON, CSS, Lua, mustache) is plain text.
+  - Paths resolve against the app's own fields. Color components are trailing segments with the D47 names (`kosm.palette.red.hex8`, `{kosm.colors.links.red_255}`); a color without one prints as `hex`.
+  - An unknown path is an error naming the template, line and nearest field (`kosm.roundingpx`: did you mean `{kosm.rounding}px`?), never a silent pass-through (G6). Templates shipped inside a package are checked at compile time.
+  - No loops or conditionals in v1.
 - **D57. Kosm never wires files together.** It writes what an app tells it to write and nothing else. Making the program read a generated file (kitty's `include`, a Lua `require`, a CSS `@import`) is the user's job, done once in their own config. Kosm never inserts include or source lines.
 - **D58. No backups.** Kosm never writes `.backup` copies. Git, the all-or-nothing commit (D36) and `--diff` (D37) cover it.
 

@@ -21,7 +21,7 @@ Markers:
   - Do: prove D43 (package imports from `build.zig.zon`, kosmos discovery D17) and D19 params on Zig 0.17, in a throwaway config project under the scratch directory.
   - Done when: a sample kosmos importing a sample app package by name builds and runs with a `--param` parsed into its `Params`. If D43 does not work, stop and report: section 9 is redesigned before going further.
 
-- [ ] **3. Writers: `generate` + `template`** `PLAN FIRST` `BLOCKED: Q4`
+- [ ] **3. Writers: `generate` + `template`** `PLAN FIRST`
   - Do: both writers, transactional apply and `--diff` (D36-D38), and 3 built-in apps (kitty, one CSS app, nvim) written exactly like third-party packages (D2).
   - Do: turn the step 2 spike into real code: `addConfigProject` in kosm's `build.zig` (dependency walk, package unification, `dependOnDirectoryContents`, one module per kosmoi file) and the reflection runner (kosmos discovery, `Params` parsing, tree walk).
   - Do: the runner's comptime walks set `@setEvalBranchQuota`; nested app trees exceed the default 1000.
