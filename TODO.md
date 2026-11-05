@@ -36,7 +36,7 @@ Markers:
   - Do: port `~/.config/Ricer/Kyanos.toml` (the theme in use) to a Kyanos kosmos in a scratch config project; it assigns fields to reproduce the current look (G2). Read the human's current files, never write them.
   - Done when: Kyanos rices those apps end to end in `--diff` mode against the real files, and every difference the kosmos can't close is reported (missing app field or deliberate D27 change). Nothing is applied for real until kosm is finished.
 
-- [ ] **3d. Color spaces and formatting** `PLAN FIRST`
+- [x] **3d. Color spaces and formatting** `PLAN FIRST`
   - Do: modifier parts for HSV/HSB, HSL, RGB and CMYK (D68), converting from and back to the stored OKLCH (D48).
   - Do: `kosm.Format` per file (D69, D70): hex letter case, bool spelling, number precision; it replaces `color_format` in `Output`, the adapters and the kitty, css, zen and nvim apps.
   - Do: the Kyanos port uses HSV `value +10` / `-15` like Ricer, so its bright and inactive colors match exactly.
