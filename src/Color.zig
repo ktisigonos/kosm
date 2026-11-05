@@ -16,6 +16,12 @@ alpha: f64 = 1,
 
 /// A color in gamma-encoded sRGB.
 pub const Rgb = @import("Color/Rgb.zig");
+/// A color in HSV (= HSB) over sRGB.
+pub const Hsv = @import("Color/Hsv.zig");
+/// A color in HSL over sRGB.
+pub const Hsl = @import("Color/Hsl.zig");
+/// A color in naive CMYK over sRGB.
+pub const Cmyk = @import("Color/Cmyk.zig");
 /// Formatted color text.
 pub const Text = @import("Color/Text.zig");
 

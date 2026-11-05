@@ -37,6 +37,9 @@ pub fn hex(comptime text: []const u8) Color {
 test {
     std.testing.refAllDecls(@This());
     std.testing.refAllDecls(Color);
+    std.testing.refAllDecls(Color.Hsv);
+    std.testing.refAllDecls(Color.Hsl);
+    std.testing.refAllDecls(Color.Cmyk);
     std.testing.refAllDecls(@import("Color/parse.zig"));
     std.testing.refAllDecls(@import("color_choice.zig"));
     std.testing.refAllDecls(Palette);

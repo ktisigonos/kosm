@@ -41,9 +41,8 @@ pub fn parse(text: []const u8) Error!Color {
         });
     }
     if (std.ascii.eqlIgnoreCase(name, "hsl") or std.ascii.eqlIgnoreCase(name, "hsla")) {
-        var rgb = rgbFromHsl(try hueFrom(values[0]), try percentFrom(values[1]), try percentFrom(values[2]));
-        rgb.alpha = alpha;
-        return Color.fromRgb(rgb);
+        const hsl: Color.Hsl = .{ .hue = try hueFrom(values[0]), .saturation = try percentFrom(values[1]), .lightness = try percentFrom(values[2]), .alpha = alpha };
+        return Color.fromRgb(hsl.toRgb());
     }
     if (std.ascii.eqlIgnoreCase(name, "oklch")) {
         return .{ .lightness = try fractionFrom(values[0]), .chroma = try chromaFrom(values[1]), .hue = try hueFrom(values[2]), .alpha = alpha };
@@ -107,23 +106,6 @@ fn chromaFrom(number: Number) Error!f64 {
     };
     if (chroma < 0) return error.InvalidColor;
     return chroma;
-}
-
-/// `hue` in degrees 0..360, `saturation` and `lightness` 0..1.
-fn rgbFromHsl(hue: f64, saturation: f64, lightness: f64) Color.Rgb {
-    const chroma = (1 - @abs(2 * lightness - 1)) * saturation;
-    const sector = hue / 60;
-    const second = chroma * (1 - @abs(@mod(sector, 2) - 1));
-    const base = lightness - chroma / 2;
-    const red: f64, const green: f64, const blue: f64 = switch (@as(u3, @intFromFloat(@min(@floor(sector), 5)))) {
-        0 => .{ chroma, second, 0 },
-        1 => .{ second, chroma, 0 },
-        2 => .{ 0, chroma, second },
-        3 => .{ 0, second, chroma },
-        4 => .{ second, 0, chroma },
-        else => .{ chroma, 0, second },
-    };
-    return .{ .red = red + base, .green = green + base, .blue = blue + base };
 }
 
 const testing = std.testing;

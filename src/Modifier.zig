@@ -1,4 +1,5 @@
-//! A transform applied to any color: OKLCH deltas, alpha, a mix, a contrast pick, or a chain of these (D15).
+//! A transform applied to any color: OKLCH deltas, deltas in another color space (D68), a mix,
+//! a contrast pick, alpha, or a chain of these (D15).
 
 const Modifier = @This();
 
@@ -11,15 +12,31 @@ lightness: f64 = 0,
 chroma: f64 = 0,
 /// Added to the hue, in degrees. The result wraps into 0..360.
 hue: f64 = 0,
+/// Deltas in HSV (= HSB), after the OKLCH ones: `.{ .value = 0.1 }` is Ricer's `v+10`. Null: none.
+hsv: ?Hsv = null,
+/// Deltas in HSL, after HSV. Null: none.
+hsl: ?Hsl = null,
+/// Deltas to the sRGB channels, after HSL. Null: none.
+rgb: ?Rgb = null,
+/// Deltas in naive CMYK, after RGB. Null: none.
+cmyk: ?Cmyk = null,
 /// Replaces the alpha (0..1) last, after any mix or contrast pick. Null keeps the alpha.
 alpha: ?f64 = null,
-/// Mixes toward a color after the deltas. Null: no mix.
+/// Mixes toward a color after every delta. Null: no mix.
 mix: ?Mix = null,
 /// Replaces the color with a readable one on top of it, after the mix. Null: no contrast pick.
 contrast: ?Contrast = null,
 /// Steps run after this one, filled by `then`. Not meant to be set by hand.
 chain: Chain = .{},
 
+/// Deltas in HSV (= HSB) (D68).
+pub const Hsv = @import("Modifier/Hsv.zig");
+/// Deltas in HSL (D68).
+pub const Hsl = @import("Modifier/Hsl.zig");
+/// Deltas to sRGB channels (D68).
+pub const Rgb = @import("Modifier/Rgb.zig");
+/// Deltas in naive CMYK (D68).
+pub const Cmyk = @import("Modifier/Cmyk.zig");
 /// Mixing toward a color in OKLCH (D15).
 pub const Mix = @import("Modifier/Mix.zig");
 /// Picks whichever of two colors reads better on top of the color, by WCAG 2 contrast ratio (D15).
@@ -63,6 +80,10 @@ fn ownStep(modifier: Modifier) Step {
         .lightness = modifier.lightness,
         .chroma = modifier.chroma,
         .hue = modifier.hue,
+        .hsv = modifier.hsv,
+        .hsl = modifier.hsl,
+        .rgb = modifier.rgb,
+        .cmyk = modifier.cmyk,
         .alpha = modifier.alpha,
         .mix = modifier.mix,
         .contrast = modifier.contrast,
@@ -131,6 +152,63 @@ test "then applies steps in order, including nested chains" {
     const result = composed.apply(test_blue);
     try testing.expectApproxEqAbs(0.6, result.lightness, 1e-12);
     try testing.expectEqual(0.0, result.chroma);
+}
+
+fn expectHex(expected: []const u8, color: Color) !void {
+    try testing.expectEqualStrings(expected, color.hex8().slice());
+}
+
+test "hsv value scales every channel, like Ricer's v+20 and v-15 but rounded" {
+    const brighter: Modifier = .{ .hsv = .{ .value = 0.2 } };
+    const inactive: Modifier = .{ .hsv = .{ .value = -0.15 } };
+    try expectHex("#ccf6ffff", brighter.apply(try Color.parseHex("a3c5cc")));
+    try expectHex("#84a0a6ff", inactive.apply(try Color.parseHex("a3c5cc")));
+    try expectHex("#041c2680", (Modifier{ .hsv = .{} }).apply(try Color.parseHex("041c2680")));
+}
+
+test "hsv hue and saturation deltas, with the hue wrapping" {
+    const red = try Color.parseHex("ff0000");
+    try expectHex("#ff00ffff", (Modifier{ .hsv = .{ .hue = -60 } }).apply(red));
+    try expectHex("#ffffffff", (Modifier{ .hsv = .{ .saturation = -1 } }).apply(red));
+    try expectHex("#ffff00ff", (Modifier{ .hsv = .{ .hue = 420 } }).apply(red));
+}
+
+test "a gray has hsv hue 0 despite the noise of its trip through OKLCH" {
+    const saturate: Modifier = .{ .hsv = .{ .saturation = 1 } };
+    try expectHex("#ff0000ff", saturate.apply(try Color.parseHex("ffffff")));
+    try expectHex("#7f0000ff", saturate.apply(try Color.parseHex("7f7f7f")));
+    try expectHex("#ff0101ff", (Modifier{ .hsl = .{ .saturation = 1 } }).apply(try Color.parseHex("808080")));
+}
+
+test "hsl, rgb and cmyk deltas" {
+    const teal = try Color.parseHex("008080");
+    try expectHex("#00ffffff", (Modifier{ .hsl = .{ .lightness = 0.249 } }).apply(teal));
+    try expectHex("#338080ff", (Modifier{ .rgb = .{ .red = 0.2 } }).apply(teal));
+    try expectHex("#004040ff", (Modifier{ .cmyk = .{ .key = 0.25 } }).apply(teal));
+    try expectHex("#808080ff", (Modifier{ .cmyk = .{ .cyan = -1 } }).apply(teal));
+}
+
+test "space deltas are not clamped, so values past 1 survive in float components" {
+    const white = try Color.parseHex("ffffff");
+    const brighter = (Modifier{ .hsv = .{ .value = 0.5 } }).apply(white);
+    try testing.expectEqualStrings("1.5 255", brighter.format("{} {}", &.{ .red_01, .red_255 }).slice());
+    const back = (Modifier{ .hsv = .{ .value = -0.5 } }).apply(brighter);
+    try expectHex("#ffffffff", back);
+}
+
+test "space parts run in a fixed order after the OKLCH deltas" {
+    const black = try Color.parseHex("000000");
+    // Black -> white (OKLCH), -> 0.6 gray (HSV), -> red 0.8 (RGB). RGB first would give #ccaaaa.
+    const modifier: Modifier = .{ .lightness = 1, .hsv = .{ .value = -0.4 }, .rgb = .{ .red = 0.2 } };
+    try expectHex("#cc9999ff", modifier.apply(black));
+    const later: Modifier = .{ .rgb = .{ .red = 1 }, .mix = .{ .toward = black, .amount = 1 } };
+    try expectHex("#000000ff", later.apply(black));
+}
+
+test "space parts are kept through then" {
+    const composed = (Modifier{ .hsv = .{ .value = 0.1 } }).then(.{ .cmyk = .{ .key = 0.5 } });
+    try testing.expect(composed.chain.steps[0].cmyk != null);
+    try expectHex("#333333ff", composed.apply(try Color.parseHex("999999")));
 }
 
 test "then copies, so later changes to an input do not leak in" {
