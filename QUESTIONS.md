@@ -12,10 +12,17 @@ Step 3 has no open questions.
 
 ## Blocking step 3d (color spaces and formatting)
 
-### Q17. What D68 and D69 look like in code
-Directions are decided (D68, D69); the shapes are not.
-- Modifiers (D68): (a) one optional part per space, `hovered.hsv = .{ .value = 0.1 }`, `.hsl = .{ .lightness = -0.05 }`, `.cmyk = ...`, applied in a fixed order after the OKLCH deltas; or (b) one `space` field plus generic deltas, `.{ .space = .hsv, .deltas = .{ 0, 0, 0.1 } }`. (a) completes better (G8); (b) is shorter. Are deltas absolute (`+0.1`) or also relative (`*1.1`)? Which spaces in v1 (HSV, HSL, CMYK, RGB, linear RGB, LAB, ...)?
-- Formatting (D69): extend `ColorFormat` with uppercase components (`.hex_upper`) and add a sibling `kosm.ValueFormat` (bool spelling, float precision) that a file's options and the adapter default carry like D61? Or one `kosm.Format` holding colors and everything else?
+### Q17. Where D69's formatting settings live
+Today a file has one formatting setting, its color format (D61: a template plus components,
+`#{}` with `.hex` prints `#a3c5cc`). D69 adds more: uppercase hex (`#A3C5CC`), bool spelling
+(`true`/`yes`/`1`/`on`), number precision (`0.5` vs `0.50196`). Each is set by the adapter,
+then the app, then the user, like D61. Options:
+- (a) Separate pieces: `ColorFormat` gains components like `.hex_upper`, and a new
+  `kosm.ValueFormat` holds bools and numbers. An app exposes two fields per file
+  (`color_format`, `value_format`).
+- (b) One `kosm.Format` per file holding everything: `.color` (today's `ColorFormat`),
+  `.boolean`, `.float_precision`, ... An app exposes one field per file (`format`), and a user
+  writes `kitty.format.boolean = .yes_no` or `kitty.format.color = .hex_upper`.
 
 **A:**
 

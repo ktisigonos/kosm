@@ -37,7 +37,7 @@ Markers:
   - Done when: Kyanos rices those apps end to end in `--diff` mode against the real files, and every difference the kosmos can't close is reported (missing app field or deliberate D27 change). Nothing is applied for real until kosm is finished.
 
 - [ ] **3d. Color spaces and formatting** `PLAN FIRST` `BLOCKED: Q17`
-  - Do: modifiers in HSV/HSB, HSL, CMYK, RGB and the other spaces Q17 settles (D68), converting from and back to the stored OKLCH (D48).
+  - Do: modifier parts for HSV/HSB, HSL, RGB and CMYK (D68), converting from and back to the stored OKLCH (D48).
   - Do: per-file value formatting beyond colors (D69): hex letter case, bool spelling, number precision; the kitty, css, zen and nvim apps expose it as overridable fields.
   - Do: the Kyanos port uses HSV `value +10` / `-15` like Ricer, so its bright and inactive colors match exactly.
   - Done when: round trips sRGB <-> each space are tested (hue wrap, gray hue, gamut edges), each modifier space is tested, and Kyanos `--diff` shows no color differences from Ricer except deliberate D27 ones.
