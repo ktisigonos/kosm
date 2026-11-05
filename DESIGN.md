@@ -317,7 +317,11 @@ pub fn from(theme: kosm.Theme) App {
   - comment/muted text uses `emphasis.muted` on the foreground;
   - error/warning/success/info are `red`/`yellow`/`green`/`blue`;
   - accent and active border are `cyan`;
-  - every field and its default is listed in the app's README.
+  - every field and its default is listed in the app's README;
+  - an app covers every setting of its program, not only colors. `from` fills what derives from the theme; every other setting is `?T = null`, and `null` is not written, so the program's own default applies and the file stays minimal;
+  - fields keep the program's own names, adjusted only to Zig's casing (`kitty_mod` stays `kitty_mod`, the value `thin-sparse` becomes the enum tag `thin_sparse`). G9's full-words rule never renames a program's setting;
+  - fields are typed: a width in points is a float and the app writes the `pt`, a choice is an enum, a color is a `kosm.Color`. Plain strings are only for free text (commands, paths, templates);
+  - settings are grouped into nested structs following the program's own documentation sections.
 
 ## 7. Writers
 

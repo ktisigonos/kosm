@@ -70,6 +70,8 @@ When unsure about any std function, grep the std source for its definition befor
 - **`Allocator.dupeZ` is gone:** use `allocator.dupeSentinel(u8, slice, 0)`.
 - **`std.fmt.bufPrintZ` is gone:** use `std.mem.printSentinel(buf, fmt, args, 0)` for a `[:0]u8`.
 - **`std.ascii.indexOf*` are now `find*`:** `findIgnoreCase`, `findIgnoreCasePos`.
+- **`std.fmt.allocPrint` is deprecated:** use `allocator.print(format, args)`.
+- **Custom formatting is a `format` method plus `{f}`:** `pub fn format(self: T, writer: *std.Io.Writer) std.Io.Writer.Error!void`, printed with `"{f}"`; `std.meta.hasMethod(T, "format")` detects it. A union switch can capture both payload and tag: `inline else => |payload, tag|`.
 - **`std.BoundedArray` is gone:** use a fixed array with a length, or an `std.ArrayList` with an allocator.
 - **`std.EnumSet` has no `initEmpty`:** use the decl literal `.empty` (or `.full`, `initMany`, `initOne`).
 - **`std.DynamicBitSetUnmanaged` is deprecated:** it is `std.bit_set.Dynamic` (`initEmpty(gpa, len)`, `deinit(gpa)`).
