@@ -328,9 +328,16 @@ Four writers. An app chooses whichever fits each target.
 - **D60. Template placeholders are fixed: `kosm.<path>` or `{kosm.<path>}`.** Neither the prefix nor the braces are configurable.
   - **Bare:** `kosm.palette.red`. The prefix is what marks a placeholder, so no other text is ever touched. It ends at the first character that can't continue a path (letters, digits and `_`, plus `.` only when a letter follows, so a sentence-ending `.` is left alone).
   - **Braced:** `{kosm.palette.red}` or `{ kosm.palette.red }`, for text glued on: `{kosm.rounding}px`. It ends at the `}`. Only a `{` followed by optional spaces and `kosm.` counts; every other brace (JSON, CSS, Lua, mustache) is plain text.
-  - Paths resolve against the app's own fields. Color components are trailing segments with the D47 names (`kosm.palette.red.hex8`, `{kosm.colors.links.red_255}`); a color without one prints as `hex`.
+  - Paths resolve against the app's own fields. Color components are trailing segments with the D47 names (`kosm.palette.red.hex8`, `{kosm.colors.links.red_255}`); a color without one prints in the file's color format (D61).
   - An unknown path is an error naming the template, line and nearest field (`kosm.roundingpx`: did you mean `{kosm.rounding}px`?), never a silent pass-through (G6). Templates shipped inside a package are checked at compile time.
   - No loops or conditionals in v1.
+- **D61. Every written file has a color format, set in layers.** A color printed without an explicit component (a template's `kosm.palette.red`, a `generate`d value, an `edit` value) uses the first of:
+  1. the file's own setting, an ordinary app field (e.g. `color_format: kosm.ColorFormat`), which users override by assignment like any other field (D3);
+  2. the app's default for that file, set in `from`;
+  3. the adapter's default for its language (e.g. CSS -> `hex8`);
+  4. `hex`.
+
+  `kosm.ColorFormat` is a runtime value with the same template-and-components shape as D47, so it can be stored in a field. Predefined ones (`.hex`, `.hex8`, ...) are constants. An explicit component in a placeholder (`kosm.palette.red.red_255`) always wins.
 - **D57. Kosm never wires files together.** It writes what an app tells it to write and nothing else. Making the program read a generated file (kitty's `include`, a Lua `require`, a CSS `@import`) is the user's job, done once in their own config. Kosm never inserts include or source lines.
 - **D58. No backups.** Kosm never writes `.backup` copies. Git, the all-or-nothing commit (D36) and `--diff` (D37) cover it.
 

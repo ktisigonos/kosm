@@ -12,33 +12,35 @@ Step 3 has no open questions.
 
 ## Blocking step 6 (CLI completion)
 
-### Q15. Sharing kosmoi as packages
-Your kosmoi and apps are plain files, never sub-projects. The config project has
-exactly one `build.zig` and one `build.zig.zon`, both written by `kosm init` and never
-hand-edited, and those two files already make the whole config a Zig package. So
-sharing is "share the config":
+### Q15. Sharing: a kosmos is the unit
+A rice is what people share (like nvim colorschemes or base16 schemes: one repo per
+theme), so **each kosmos is its own package**, named after the rice, not its author.
 
-- **Config is its own repo:** others run `kosm add git+https://github.com/you/kosm-config#main --name you`.
-  Zig fetches it and its dependencies (the app packages your kosmoi use) as usual.
-- **Config lives inside a dotfiles repo** (yours: `~` is the repo, the config is at
-  `.config/kosm`, one branch per host): `kosm add git+https://github.com/you/dotfiles#nous --path .config/kosm --name you`.
-  Zig can fetch a repo with no `build.zig.zon` at its root; a dependency without a
-  `build.zig` is allowed (verified in the 0.17 std: `run_build` is optional). Zig won't
-  see the nested `build.zig.zon`, so `kosm add` reads it and adds the app packages it
-  lists to your config (one copy each, as D52 needs anyway). `packages.zon` records
-  the `--path` for `kosm update`.
-- **Just one kosmos:** copy the file into your `kosmoi/`. No package involved.
+- **A kosmos is a file or a directory** in `kosmoi/`:
+  - `kosmoi/frost.zig`: a private one-file kosmos. Nothing else needed.
+  - `kosmoi/nord/` with a `root.zig`: a kosmos that can be shared. Files inside it
+    import each other relatively (`@import("colors.zig")`), because the whole
+    directory is one Zig module. Templates can live next to it.
+- **A shared kosmos needs one extra file, its `build.zig.zon`** (name + the app
+  packages it uses), and **no `build.zig`** (a dependency without one is allowed,
+  verified in the 0.17 std). Kosm writes and updates it (`kosm share nord`, or
+  automatically on build, from the packages `nord` imports), so nobody edits it.
+- **Publishing:** push `kosmoi/nord/` as its own git repo.
+- **Installing:** `kosm add git+https://github.com/someone/nord#main`, then
+  `kosm apply nord`, `kosm apply nord.iced`, or wrap it in your own kosmos with
+  `@import("nord").build(...)` and tweak it (D4). The import name is the rice's name.
+- **Sharing a base works the same way:** a base is just a kosmos (it picks apps),
+  so `@import("someone_base")` is possible too.
+- A local kosmos and an installed one with the same name is an error naming both.
+- The whole-config route (`--path .config/kosm`) is dropped: it shares someone's
+  personal apps and paths along with the rice.
 
-What you get after `kosm add`: `@import("you").frost.iced()` to wrap and tweak it
-in your own kosmos (D4), or `kosm apply you.frost.iced` directly. Their local apps
-come along too.
+This replaces D50's "unique across everything" with: names are unique among your
+local kosmoi, local apps and installed packages; files inside a directory kosmos
+are private to it.
 
-This needs one change to D50: kosmoi and local-app names only have to be unique
-*within* one package. A package's own `@import("base")` resolves inside that
-package, and other packages are reached through the package name, so your `base`
-and theirs never collide.
-
-Is that right?
+Is that right? And which do you prefer for the `build.zig.zon`: written on demand by
+`kosm share nord`, or kept up to date automatically on every build?
 
 **A:**
 
