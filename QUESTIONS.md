@@ -19,14 +19,6 @@ Templates are needed for nvim colorschemes, fastfetch, etc.
 
 **A:**
 
-### Q5. Color formatting syntax
-D42 has modules write `color.format("rgba({hex8})")`. The old spec had an enum-based form: `color.format("rgba({}, {}, {}, {})", .{ .r255, .g255, .b255, .a01 })`.
-- String placeholders are shorter and readable.
-- The enum form catches typos at compile time.
-- *Recommendation:* the enum form (G8: completion and compile errors), plus a few shortcuts (`color.hex()`, `color.hex8()`, `color.rgba01()`).
-
-**A:**
-
 ### Q6. Per-host differences
 nous, egregoros, ergasterion and synekdemos have different apps and paths. With kosmos-as-function, the options are:
 - (a) Kosmos functions get the host via a param (`Params.host` filled automatically from the hostname) and branch on it.

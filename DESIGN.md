@@ -151,6 +151,10 @@ pub const Variations = struct {
   - a **composition** of sibling variations (`.compose = &.{ .state_selected, .state_inactive }`).
 - **D16. Compositions are references, resolved when applied.** That's the one exception to D3, and it's what makes tweaking `state.selected` also change `state.selected_inactive`. Users can write their own: `variations.state.selected.then(variations.state.hovered)`.
 
+### 4.4 Color
+
+- **D47. Colors are formatted with a template and a list of components.** `color.format("rgba({}, {}, {}, {})", &.{ .red_255, .green_255, .blue_255, .alpha_01 })`: each `{}` takes the next component, `{{` and `}}` are literal braces. The template and the list are comptime, so a typo in a component or a count mismatch is a compile error (G8). Shortcuts: `color.hex()` (`#rrggbb`) and `color.hex8()` (`#rrggbbaa`).
+
 ## 5. Kosmoi
 
 - **D17. A kosmos is a public function returning a struct of modules.**
@@ -252,9 +256,9 @@ pub const Module = struct {
     pub fn apply(self: Module, output: *kosm.Output) !void {
         var file = try output.edit(.{ .files = "~/.config/hypr/**/*.lua" });
         const inactive_border = self.colors.border_inactive orelse self.inactive.apply(self.colors.border_active);
-        try file.set("general.active_border", self.colors.border_active.format("rgba({hex8})"));
-        try file.set("general.inactive_border", inactive_border.format("rgba({hex8})"));
-        try file.set("decoration.glow.color", self.colors.glow.format("rgba({hex8})"));
+        try file.set("general.active_border", self.colors.border_active.format("rgba({})", &.{.hex8}));
+        try file.set("general.inactive_border", inactive_border.format("rgba({})", &.{.hex8}));
+        try file.set("decoration.glow.color", self.colors.glow.format("rgba({})", &.{.hex8}));
         try file.set("decoration.blur.enabled", self.blur.enabled);
         try file.set("decoration.blur.passes", self.blur.passes);
     }
@@ -280,7 +284,7 @@ pub fn from(theme: kosm.Theme) Module {
       pub fn apply(self: Module, output: *kosm.Output) !void {
           var file = try output.edit(.{ .files = "~/.config/hypr/defs.lua" }); // lang from .lua
           try file.set("M.blur.enabled", self.blur);
-          try file.set("M.border.active_col", self.border_active.format("rgba({hex8})"));
+          try file.set("M.border.active_col", self.border_active.format("rgba({})", &.{.hex8}));
           try file.set("M.apps.terminal", self.terminal);
       }
   };
@@ -365,7 +369,7 @@ pub const adapter = kosm.Adapter{
 
 - **D40.** Most tree-sitter adapters should be **declarative** (node names, as above). Hand-written `match` functions are allowed for strange grammars. Adapters may skip tree-sitter entirely (e.g. a 40-line INI parser).
 - **D41.** **Kosm core owns the tree-sitter runtime.** Adapters depend on core and ship only their grammar's C sources, which avoids duplicate symbols.
-- **D42.** Value formatting has two cases: `string`, which the adapter quotes and escapes, and `kosm.raw(text)`, which is inserted verbatim. Colors are formatted by the **module** (`color.format("rgba({hex8})")`), because only the module knows the app's color syntax.
+- **D42.** Value formatting has two cases: `string`, which the adapter quotes and escapes, and `kosm.raw(text)`, which is inserted verbatim. Colors are formatted by the **module** (`color.format("rgba({})", &.{.hex8})`, D47), because only the module knows the app's color syntax.
 
 ## 9. Packages and the config project
 
