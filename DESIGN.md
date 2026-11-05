@@ -343,6 +343,8 @@ Four writers. An app chooses whichever fits each target.
   4. `hex`.
 
   `kosm.ColorFormat` is a runtime value with the same template-and-components shape as D47, so it can be stored in a field. Predefined ones (`.hex`, `.hex8`, ...) are constants. An explicit component in a placeholder (`kosm.palette.red.red_255`) always wins.
+- **D64. `generate` takes a plain struct.** `try output.generate(.{ .file = "~/.config/kitty/kosm.conf" }, .{ .foreground = self.foreground, .color0 = ... })`: the second argument is any plain struct (strings, numbers, bools, colors, nested structs), which kosm turns into a `kosm.Value` tree by reflection and hands to the adapter's `serialize`. It's an `anytype`, but a value, not a patch API (G8).
+- **D65. `template` takes the app and comptime text.** `try output.template(self, .{ .file = "~/.config/nvim/lua/theme.lua", .text = @embedFile("templates/theme.lua"), .color_format = self.color_format })`. Placeholders resolve against `self`'s fields, and since `.text` is comptime, they're checked at compile time (D60). `.color_format` is the file's format (D61). Templates live in the app's own package directory (`templates/`), so `@embedFile` stays inside the module root.
 - **D57. Kosm never wires files together.** It writes what an app tells it to write and nothing else. Making the program read a generated file (kitty's `include`, a Lua `require`, a CSS `@import`) is the user's job, done once in their own config. Kosm never inserts include or source lines.
 - **D58. No backups.** Kosm never writes `.backup` copies. Git, the all-or-nothing commit (D36) and `--diff` (D37) cover it.
 
@@ -448,6 +450,8 @@ kosm remove <name>
 kosm update [name]                   # re-fetch packages at their tracked ref, rebuild
 ```
 
+- **D66. `--config <dir>` picks the config project**, for every command, defaulting to `~/.config/kosm`. Tests and experiments always pass it.
+- **D67. Built-in packages live in this repo under `packages/`** (`packages/kosm_kitty/`, `packages/kosm_zen/`, ...), as directory packages exactly like third-party ones (D2, D62). While kosm is developed, configs use them by `.path`; they move to their own repos later.
 - **D63. `kosm new` scaffolds the full directory.** `kosm new kosmos frost` creates `kosmoi/frost/` with `root.zig` (a commented starting kosmos), `build.zig` and `build.zig.zon`; `kosm new app` and `kosm new adapter` do the same in `apps/` and `adapters/`. Nobody writes build files by hand. A single-file kosmos, app or adapter (D62) is still valid for personal use; you just create the file yourself.
 - **D46. Package commands wrap `zig fetch`.** No custom package format or registry. `add` checks that the package provides at least one app or adapter, and reports what it provides. `build.zig.zon` stores only the resolved URL + hash, which loses "follow branch `main`", so kosm keeps that intent in `packages.zon` (name -> url + ref), and `update` re-runs `zig fetch --save=<name>` from it.
 

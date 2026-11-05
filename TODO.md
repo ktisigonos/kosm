@@ -21,11 +21,20 @@ Markers:
   - Do: prove D43 (package imports from `build.zig.zon`, kosmos discovery D17) and D19 params on Zig 0.17, in a throwaway config project under the scratch directory.
   - Done when: a sample kosmos importing a sample app package by name builds and runs with a `--param` parsed into its `Params`. If D43 does not work, stop and report: section 9 is redesigned before going further.
 
-- [ ] **3. Writers: `generate` + `template`** `PLAN FIRST`
-  - Do: both writers, transactional apply and `--diff` (D36-D38), and 3 built-in apps (kitty, one CSS app, nvim) written exactly like third-party packages (D2).
-  - Do: turn the step 2 spike into real code: `addConfigProject` in kosm's `build.zig` (dependency walk, package unification, `dependOnDirectoryContents`, one module per single-file kosmos, app or adapter, and one per directory rooted at its `root.zig`, D62) and the reflection runner (kosmos discovery, `Params` parsing, tree walk).
+- [ ] **3a. Writers in core** (plan approved)
+  - Do: `ColorFormat` (D61), `Adapter` (D39 without `parser`), `Value` (D64), `Output` with `generate` and `template` (D64, D65; `~` expands against an injected home), D60 template placeholders, `Plan` (D35, D38), all-or-nothing commit keeping file modes (D36), unified diff (D37), diagnostics naming kosmos, app, file.
+  - Done when: tests prove a failing plan writes nothing, two apps writing one file is an error, unchanged files are not rewritten, and cover template placeholders and diff output.
+
+- [ ] **3b. Build and runner**
+  - Do: turn the step 2 spike into real code: `addConfigProject` in kosm's `build.zig` (dependency walk, package unification, `dependOnDirectoryContents`, one module per single-file kosmos, app or adapter, and one per directory rooted at its `root.zig`, D62), the `package(b)` helper (D62), and the reflection runner (kosmos discovery, `Params` parsing with D55 and D56, tree walk).
   - Do: the runner's comptime walks set `@setEvalBranchQuota`; nested app trees exceed the default 1000.
-  - Done when: the real Frost kosmos rices those apps end to end in `--diff` mode, and tests prove a failing plan writes nothing. Running it for real is `ASK`.
+  - Do: the `kosm` binary with only `kosm apply <kosmos> [--param value]... [--diff] [--config dir]` (D45, D66).
+  - Done when: a scratch config project's kosmos plans, diffs and commits into a temp directory through `kosm apply --config`.
+
+- [ ] **3c. Built-in apps and Frost**
+  - Do: `packages/kosm_kitty` (adapter + app, `generate`), `packages/kosm_css` (adapter), `packages/kosm_zen` (app, `generate`), `packages/kosm_nvim` (app, `template`) as directory packages (D2, D62, D67). Apps use D27 defaults and never copy Ricer's choices.
+  - Do: port `~/.config/Ricer/Frost.toml` to a Frost kosmos in a scratch config project; it assigns fields to reproduce the current look (G2). Read the human's current files, never write them.
+  - Done when: Frost rices those apps end to end in `--diff` mode against the real files, and every difference the kosmos can't close is reported (missing app field or deliberate D27 change). Running it for real is `ASK`.
 
 - [ ] **4. `block` writer**
   - Do: `# kosm:begin <id>` ... `# kosm:end` blocks using the adapter's comment syntax (section 7).
