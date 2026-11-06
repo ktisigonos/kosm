@@ -17,7 +17,8 @@ context: *Adapter.Context,
 /// Deeper nesting is refused rather than risking the stack.
 const max_depth = 256;
 
-/// Parses `source` with `language` into a table of its top-level keys. Nodes point into `source`.
+/// Parses `source` with `language`: its one table or list, or else a table of its top-level keys.
+/// Nodes point into `source`.
 pub fn parse(allocator: std.mem.Allocator, language: *const c.TSLanguage, spec: Spec, source: []const u8, context: *Adapter.Context) Adapter.ParseError!Node {
     if (source.len > std.math.maxInt(u32)) return context.invalidSyntax("the file is larger than tree-sitter reads (4 GiB)", .{});
     const ts_parser = c.ts_parser_new() orelse return error.OutOfMemory;
@@ -33,7 +34,28 @@ pub fn parse(allocator: std.mem.Allocator, language: *const c.TSLanguage, spec: 
         return context.invalidSyntax("line {d}, column {d}: syntax error; kosm edits only files that parse", .{ point.row + 1, point.column + 1 });
     }
     var builder: Builder = .{ .allocator = allocator, .spec = spec, .source = source, .context = context };
+    if (builder.soleValue(root)) |value| return builder.valueNode(value, 0);
     return .{ .key = null, .kind = .table, .position = 0, .value = .{ .start = 0, .end = source.len }, .children = try builder.tableEntries(root, 0) };
+}
+
+/// The table or list that is a file's whole content (a JSON object or array), if any.
+fn soleValue(builder: *const Builder, root: c.TSNode) ?c.TSNode {
+    var found: ?c.TSNode = null;
+    var cursor = c.ts_tree_cursor_new(root);
+    defer c.ts_tree_cursor_delete(&cursor);
+    if (!c.ts_tree_cursor_goto_first_child(&cursor)) return null;
+    while (true) {
+        const child = c.ts_tree_cursor_current_node(&cursor);
+        if (isEntry(child)) {
+            if (found != null) return null;
+            found = child;
+        }
+        if (!c.ts_tree_cursor_goto_next_sibling(&cursor)) break;
+    }
+    const value = found orelse return null;
+    const kind = nodeType(value);
+    if (contains(builder.spec.nest, kind) or contains(builder.spec.list, kind)) return value;
+    return null;
 }
 
 /// The deepest node starting the first error, so the reported position is the real one.

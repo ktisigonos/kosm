@@ -78,9 +78,18 @@ pub fn setOptions(selection: *Selection, path: anytype, value: anytype, options:
 }
 
 /// Every value at `path`, in match order; empty when there is none (D34). For reading, for
-/// `elements`, and for `replace`.
+/// `elements`, and for `replace`. The empty path `""` is each file's top-level value (D80).
 pub fn nodes(selection: *Selection, path: anytype) Error![]const Match {
+    if (comptime Path.isText(@TypeOf(path))) {
+        if (path.len == 0) return selection.roots();
+    }
     return selection.find(try selection.parsePath(path));
+}
+
+fn roots(selection: *Selection) Error![]const Match {
+    const result = try selection.output.allocator.alloc(Match, selection.files.len);
+    for (selection.files, result, 0..) |*file, *match, file_index| match.* = toMatch(file.*, file_index, &file.root);
+    return result;
 }
 
 /// The elements of list `match`, in file order (D80). Paths never step into lists (D77).
