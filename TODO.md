@@ -48,7 +48,7 @@ Markers:
   - Do: `Plan` entries become byte ranges inside a file, so D38 rejects only overlapping ranges instead of any second writer of a file.
   - Done when: tests cover creating, replacing, and malformed or duplicate markers.
 
-- [ ] **5. `edit` writer** `PLAN FIRST` `BLOCKED: Q9`
+- [ ] **5. `edit` writer** `PLAN FIRST`
   - Do: tree-sitter runtime in core (D41, dependency approval is `ASK`), then `kosm_json`, `kosm_lua`, `kosm_hyprlang` (D28-D35, D39-D40).
   - Do: add the `format` and `parser` capabilities to `kosm.Adapter` (D39, D42).
   - Done when: path matching, cardinality, and byte-preserving edits are tested per adapter on real-world snippets.

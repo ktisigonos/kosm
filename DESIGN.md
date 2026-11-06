@@ -390,6 +390,7 @@ Four writers. An app chooses whichever fits each target.
 - **D32. Path syntax:** dot-separated segments. A segment containing a dot is quoted: `general."col.active_border"`. `*` matches exactly one level. **No `**`, predicates or regex in v1.** Tuple form `.{ "general", "col.active_border" }` is also accepted.
 - **D33. Scope narrowing** goes through the file selector (`files`, `exclude`), not the path language.
 - **D34. Escape hatch:** `file.nodes(path)` returns the raw matches (file, byte range, adapter node).
+- **D77. Paths never step into lists.** A segment always names a key; there is no list indexing (`monitors[0].scale`) in v1. List elements are reached through the escape hatch (D34). D31's indices pick among matches, never list elements.
 - **D35. Byte-preserving:** only the value's byte range is replaced. If a value is unchanged, the file isn't rewritten.
 
 ### 7.2 Transactional apply
