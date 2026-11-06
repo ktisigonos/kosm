@@ -87,7 +87,7 @@ fn splitRef(argument: []const u8) Packages.Package {
 /// Fetches `package` without saving it and names it after its manifest name (D51), which leads
 /// its package hash (`kosm_kitty-0.1.0-...`).
 fn fetchName(context: Context, package: Packages.Package) Error!Packages.Package {
-    const result = try runZig(context, &.{ "fetch", try package.fetchArgument(context.arena) });
+    const result = try context.runZig(&.{ "fetch", try package.fetchArgument(context.arena) });
     if (!result.term.success()) return failRun(context, result, "zig fetch could not fetch {s}", .{package.url});
     const hash = std.mem.trim(u8, result.stdout, " \t\r\n");
     const dash = std.mem.findScalar(u8, hash, '-') orelse
@@ -99,17 +99,17 @@ fn fetchName(context: Context, package: Packages.Package) Error!Packages.Package
 
 /// `zig fetch --save=<name>`: writes the package's url and hash into build.zig.zon.
 fn save(context: Context, package: Packages.Package) Error!void {
-    const result = try runZig(context, &.{ "fetch", try context.arena.print("--save={s}", .{package.name}), try package.fetchArgument(context.arena) });
+    const result = try context.runZig(&.{ "fetch", try context.arena.print("--save={s}", .{package.name}), try package.fetchArgument(context.arena) });
     if (!result.term.success()) return failRun(context, result, "zig fetch could not save {s}", .{package.name});
 }
 
 /// Builds the package against the config and prints what it provides; fails when it does not
 /// compile there or provides no app, adapter or kosmos (D46).
 fn check(context: Context, name: []const u8) Error!void {
-    const build = try runZig(context, &.{ "build", try context.arena.print("-Dinspect={s}", .{name}) });
+    const build = try context.runZig(&.{ "build", try context.arena.print("-Dinspect={s}", .{name}) });
     if (!build.term.success()) return failRun(context, build, "package '{s}' does not build in this config project", .{name});
     const inspector = try std.Io.Dir.path.join(context.arena, &.{ context.config, inspector_path });
-    const result = try run(context, &.{inspector});
+    const result = try context.run(&.{inspector});
     if (!result.term.success()) {
         try context.stderr.writeAll(result.stderr);
         return error.Failed;
@@ -123,22 +123,6 @@ fn isInstalled(context: Context, source: [:0]const u8, name: []const u8) Error!b
 }
 
 const RunResult = std.process.RunResult;
-
-fn runZig(context: Context, arguments: []const []const u8) Error!RunResult {
-    return run(context, try std.mem.concat(context.arena, []const u8, &.{ &.{"zig"}, arguments }));
-}
-
-/// Runs `argv` in the config directory and collects its output; a program that cannot start fails.
-fn run(context: Context, argv: []const []const u8) Error!RunResult {
-    return std.process.run(context.arena, context.io, .{
-        .argv = argv,
-        .cwd = .{ .path = context.config },
-        .environ_map = context.environ_map,
-    }) catch |err| switch (err) {
-        error.OutOfMemory => error.OutOfMemory,
-        else => fail(context, "cannot run {s}: {s}", .{ argv[0], @errorName(err) }),
-    };
-}
 
 fn readManifest(context: Context) Error![:0]const u8 {
     const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, manifest_name });
@@ -446,18 +430,18 @@ test "a kosmos from an installed package applies by the package's name" {
     const context = fixture.context();
     const runner = try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" });
 
-    const iced_build = try runZig(context, &.{ "build", "-Dkosmos=test_kosmoi.iced" });
+    const iced_build = try context.runZig(&.{ "build", "-Dkosmos=test_kosmoi.iced" });
     try testing.expect(iced_build.term.success());
-    try testing.expect((try run(context, &.{ runner, "--config", context.config })).term.success());
+    try testing.expect((try context.run(&.{ runner, "--config", context.config })).term.success());
     try testing.expectEqualStrings("size 9\n", try fixture.tmp.dir.readFileAlloc(testing.io, "home/probe.txt", arena, .limited(64)));
 
-    const default_build = try runZig(context, &.{ "build", "-Dkosmos=test_kosmoi" });
+    const default_build = try context.runZig(&.{ "build", "-Dkosmos=test_kosmoi" });
     try testing.expect(default_build.term.success());
-    const diff = try run(context, &.{ runner, "--size", "4", "--diff", "--config", context.config });
+    const diff = try context.run(&.{ runner, "--size", "4", "--diff", "--config", context.config });
     try testing.expect(diff.term.success());
     try testing.expect(std.mem.find(u8, diff.stdout, "+size 4") != null);
 
-    const missing = try runZig(context, &.{ "build", "-Dkosmos=test_missing" });
+    const missing = try context.runZig(&.{ "build", "-Dkosmos=test_missing" });
     try testing.expect(!missing.term.success());
     try testing.expect(std.mem.find(u8, missing.stderr, "installed packages: test_kosmoi") != null);
 }

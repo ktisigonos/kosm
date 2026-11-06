@@ -24,3 +24,22 @@ pub fn fail(context: Context, comptime format: []const u8, arguments: anytype) (
     context.stderr.print("error: " ++ format ++ "\n", arguments) catch |err| return err;
     return error.Failed;
 }
+
+pub const RunError = Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
+
+/// Runs `zig` with `arguments` in the config directory; see `run`.
+pub fn runZig(context: Context, arguments: []const []const u8) RunError!std.process.RunResult {
+    return context.run(try std.mem.concat(context.arena, []const u8, &.{ &.{"zig"}, arguments }));
+}
+
+/// Runs `argv` in the config directory and collects its output; a program that cannot start fails.
+pub fn run(context: Context, argv: []const []const u8) RunError!std.process.RunResult {
+    return std.process.run(context.arena, context.io, .{
+        .argv = argv,
+        .cwd = .{ .path = context.config },
+        .environ_map = context.environ_map,
+    }) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => context.fail("cannot run {s}: {s}", .{ argv[0], @errorName(err) }),
+    };
+}

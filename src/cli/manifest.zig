@@ -9,6 +9,14 @@ const Zoir = std.zig.Zoir;
 /// `InvalidManifest`: the source is not ZON, or not a struct; `zig build` explains why.
 pub const Error = error{ OutOfMemory, InvalidManifest };
 
+/// Zig's package fingerprint: the name's CRC-32 in the high half, a random id in the low half,
+/// never 0 or all ones.
+pub fn fingerprint(io: std.Io, name: []const u8) u64 {
+    var id: u32 = 0;
+    while (id == 0 or id == std.math.maxInt(u32)) io.random(std.mem.asBytes(&id));
+    return @as(u64, std.hash.Crc32.hash(name)) << 32 | id;
+}
+
 /// The names in `.dependencies`, in file order.
 pub fn dependencyNames(arena: std.mem.Allocator, source: [:0]const u8) Error![]const []const u8 {
     const parsed = try parse(arena, source);

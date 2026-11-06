@@ -106,15 +106,7 @@ fn newManifest(context: Context, name: []const u8, config_manifest: [:0]const u8
         \\    .minimum_zig_version = "{f}",
         \\}}
         \\
-    , .{ name, fingerprint(context.io, name), std.zig.fmtString(minimum_zig_version) }), 0);
-}
-
-/// Zig's package fingerprint: the name's CRC-32 in the high half, a random id in the low half,
-/// never 0 or all ones.
-fn fingerprint(io: std.Io, name: []const u8) u64 {
-    var id: u32 = 0;
-    while (id == 0 or id == std.math.maxInt(u32)) io.random(std.mem.asBytes(&id));
-    return @as(u64, std.hash.Crc32.hash(name)) << 32 | id;
+    , .{ name, manifest.fingerprint(context.io, name), std.zig.fmtString(minimum_zig_version) }), 0);
 }
 
 /// What a directory kosmos holds: its files, relative and with `/`, and every name its Zig
