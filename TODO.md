@@ -73,13 +73,44 @@ Markers:
 - [x] **6d. Kosmoi from packages** `PLAN FIRST`
   - Do: apply kosmoi from installed packages and keep directory manifests up to date (D62).
   - Done when: a temp config project applies a packaged kosmos, and building a directory kosmos rewrites only its own manifest.
+
+- [ ] **7a. `kosm init` and `kosm list`** `PLAN FIRST`
+  - Do: `kosm init [--config dir]` creates a config project (section 9): `build.zig`, `build.zig.zon` depending on `kosm`, `packages.zon`, and empty `kosmoi/`, `apps/`, `adapters/`. The plan settles what happens when the directory exists and how the config finds `kosm` and the built-in packages while they live in this repo (D67).
+  - Do: `kosm list [--config dir]` prints every kosmos with its variants, and the installed packages with what each provides.
+  - Done when: tests init a temp config, apply a kosmos in it, and list it; init refuses to overwrite an existing project.
+
+- [ ] **7b. `kosm new`**
+  - Do: `kosm new kosmos|app|adapter <name>` scaffolds a directory package with a commented `root.zig`, `build.zig` and `build.zig.zon` (D62, D63).
+  - Do: keep the manifests of directory apps and adapters (`apps/my_bar/build.zig.zon`) up to date when a kosmos using them is applied; D76 refreshes only the applied kosmos' own.
+  - Done when: each kind is scaffolded in a temp config and builds there, a scaffolded kosmos applies with `--diff`, and an existing name is refused.
+
+- [ ] **8a. Warnings** `PLAN FIRST`
+  - Do: a way for core and apps to report a warning that doesn't fail the apply, printed with the kosmos, app and file like an error (G6). The plan proposes the `D#`.
+  - Do: warn when a printed color is clipped to the gamut (D48).
+  - Done when: tests show a clipped color warns naming the app and file, still writes, and an in-gamut one doesn't warn.
+
+- [ ] **8b. `kosm_kitty` formatting fix**
+  - Do: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
+  - Done when: tests show a compound value follows a changed `float_precision` and `boolean`.
+
+- [ ] **9a. `kosm_ghostty`** `PLAN FIRST`
+  - Do: a hand-written ghostty adapter (D40: `key = value` lines, repeated keys such as `palette` and `font-family`, `#` comments) with `serialize`, `format` and `comment`, and a ghostty app that `generate`s a file the user includes with `config-file` (D57), following D27.
+  - Done when: the adapter round trips real ghostty config snippets, and the app's output for Kyanos matches `~/.config/ghostty/Ricer` except deliberate D27 changes (read only).
+
+- [ ] **9b. `kosm_hyprland`** `PLAN FIRST`
+  - Do: a Hyprland app that sets `hl.config` keys in any Lua file through `output.edit` and `kosm_lua` (D25, D30), following D27; a user whose values live in a defs table writes a local app instead (D25).
+  - Do: `kosm_lua`: positional tables (`{ "a", "b" }`) as lists for `elements` (D80); `Spec.list` picks lists by node type, and Lua's lists and tables are one node type.
+  - Done when: the app is tested on real-world `hl.config` snippets in a temp directory, including gradients (`{ colors = { ... } }`) and values split across files.
+
+- [ ] **9c. Zen prefs through `kosm_userjs`** `PLAN FIRST`
+  - Do: a `user.js` adapter (`user_pref("name", value);`) and `kosm_zen` fields for Zen's about:config prefs (D27). The plan asks which prefs to cover first.
+  - Done when: the adapter round trips real `user.js` snippets and `kosm_zen` writes its prefs in a temp profile.
+
+- [ ] **10. Kyanos for real** `PLAN FIRST` `ASK`
+  - Do: a config project made by `kosm init` holding the Kyanos kosmos (ghostty, Hyprland through a local `hypr_defs` app on `defs.lua`, nvim, Zen, plus anything else Ricer rices today) and the local apps it needs. Where the project lives (in the Ktisis or `~/.config/kosm`) is the human's choice.
+  - Done when: `kosm apply kyanos --diff` against the real files shows only deliberate differences, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 8).
+
 ---
 
-Follow-ups with no step yet (the human places them):
-- `kosm_kitty`: cover `map` and `mouse_map` (keyboard and mouse mappings), and `modify_font size`.
-- `kosm_zen`: Zen's about:config prefs through a `user.js` adapter (`kosm_userjs`).
-- `kosm_kitty`: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
-- Warn when a printed color is clipped to the gamut (D48); core has no way to warn yet, only to error.
-- Keep the manifests of directory apps and adapters (`apps/my_bar/build.zig.zon`) up to date; D76 refreshes only the applied kosmos' own.
-- `kosm_lua`: positional tables (`{ "a", "b" }`) as lists for `elements` (D80); `Spec.list` picks lists by node type, and Lua's lists and tables are one node type.
+Follow-ups with no step yet:
 - `output.templateBlock` (D71): the text form of `block`, with `template`'s call shape; build it when the first real app needs it.

@@ -373,6 +373,7 @@ Four writers. An app chooses whichever fits each target.
 - **D28. Missing means error.** Zero matches is always an error, whatever the cardinality. (G6.)
 - **D29. Literal or not, we overwrite.** If the current value is an expression (`defs.blur.enabled`), it still gets replaced. Being careful is the user's job. The usual way to avoid it is to target the file where the literal lives (D25).
 - **D30. Paths follow the language, not just tables.** Adapters map *every* way a language nests keys onto the same path, so `M.blur = { enabled = true }`, `M.blur.enabled = true` and `hl.config({ M = { blur = { enabled = true } } })` all match `M.blur.enabled`. Code inside function bodies (keybind callbacks, `function ... end`) runs later, not when the file loads, so paths never see it.
+- **D82. Values inside function bodies are out of reach in v1.** Neither paths nor the escape hatch (D34, D80) enter a function body, whether it runs later (a keybind callback) or at once (`(function() ... end)()`). A value meant to be riced lives outside any function, e.g. as a plain field of a defs table (D25) that the function reads. An opt-in way in can be added later without breaking anything.
 - **D31. Cardinality is explicit**, as one concept with sugar on top:
 
   | Call | Matches allowed | Edits |
@@ -508,6 +509,10 @@ Each step is usable on its own.
 4. **`block` writer.**
 5. **`edit` writer:** tree-sitter runtime in core, then `kosm_json`, then `kosm_lua`.
 6. `kosm add/remove/update`, app reloads (D59), `current`, `--set`.
+7. **The rest of the CLI:** `kosm init`, `kosm new`, `kosm list`.
+8. **Warnings and fixes:** core can warn without failing (gamut clipping, D48).
+9. **Apps for the programs in use:** `kosm_ghostty`, `kosm_hyprland`, Zen's prefs through `kosm_userjs`.
+10. **Kyanos for real:** the human's own config project rices their desktop.
 
 ## 12. Non-goals (v1)
 
