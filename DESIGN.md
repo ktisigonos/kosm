@@ -389,7 +389,14 @@ Four writers. An app chooses whichever fits each target.
   A real example of why `set` defaults to exactly-one: `decoration.blur.enabled` exists in **both** `hypr/hyprland/decoration/blur.lua` and `hypr/hyprland/gamemode.lua`. A blind `setAll` would break gamemode. `set` errors and tells you to narrow the file scope.
 - **D32. Path syntax:** dot-separated segments. A segment containing a dot is quoted: `general."col.active_border"`. `*` matches exactly one level. **No `**`, predicates or regex in v1.** Tuple form `.{ "general", "col.active_border" }` is also accepted.
 - **D33. Scope narrowing** goes through the file selector (`files`, `exclude`), not the path language.
+- **D79. The file selector.** `output.edit(.{ .files = "~/.config/hypr/**/*.lua", .exclude = &.{"~/.config/hypr/old/**"} })` returns a `kosm.Output.Selection`, which the D31 calls run on.
+  - `files` is one glob and `exclude` a list of globs; both start with `~/` or `/`. One glob per selection keeps D31's counts across the whole selection.
+  - `*` matches any part of a name inside one directory; `**`, as a whole segment, matches zero or more directories. Nothing else is special in v1 (`?`, `[...]` and `{a,b}` can be added later).
+  - Hidden entries are skipped unless the pattern segment itself starts with a dot, so `**` never walks into `.git`.
+  - Symlinks are followed. A file reached twice (a link and its target) counts once, by its real path, and a directory already visited is not entered again.
+  - Files are sorted by path, the match order of D31. A selector matching no file, or a literal path that does not exist, is an error naming the glob (G6, D28).
 - **D34. Escape hatch:** `file.nodes(path)` returns the raw matches (file, byte range, adapter node).
+- **D80. The escape hatch can write, and knows no tree-sitter types.** `selection.nodes(path)` returns `[]const Match`, each with its file, byte range and source text (to read, never to parse). `selection.elements(match)` returns a list's elements as matches in file order; the adapter declares which nodes are lists. `selection.replace(match, value)` writes a value formatted like `set` does, checked like any edit (D38). Since D77 leaves lists to the escape hatch, this is how an app reaches `monitors` or keybind lists.
 - **D77. Paths never step into lists.** A segment always names a key; there is no list indexing (`monitors[0].scale`) in v1. List elements are reached through the escape hatch (D34). D31's indices pick among matches, never list elements.
 - **D35. Byte-preserving:** only the value's byte range is replaced. If a value is unchanged, the file isn't rewritten.
 
@@ -427,6 +434,7 @@ pub const adapter = kosm.Adapter{
 - **D40.** Most tree-sitter adapters should be **declarative** (node names, as above). Hand-written `match` functions are allowed for strange grammars. Adapters may skip tree-sitter entirely (e.g. a 40-line INI parser).
 - **D41.** **Kosm core owns the tree-sitter runtime.** Adapters depend on core and ship only their grammar's C sources, which avoids duplicate symbols.
 - **D42.** Value formatting has two cases: `string`, which the adapter quotes and escapes, and `kosm.raw(text)`, which is inserted verbatim. Colors are formatted by the **app** (`color.format("rgba({})", &.{.hex8})`, D47), because only the app knows the app's color syntax.
+- **D78. A grammar is a dependency, compiled by kosm's package helper.** An adapter package fetches its tree-sitter grammar with `zig fetch --save` like any package; nobody writes C. `package(b)` (D62) compiles `src/parser.c`, and `src/scanner.c` when present, of every dependency that has one into the package's module, so a grammar adapter keeps the one-line `build.zig`. Core compiles the runtime (D41) and wraps it in Zig (`kosm.treesitter`).
 
 ## 9. Packages and the config project
 
