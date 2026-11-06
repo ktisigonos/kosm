@@ -39,9 +39,14 @@ pub const Provided = struct {
     /// One line per kind: `name provides:` then `  app kosm_kitty.App` and so on.
     pub fn write(self: Provided, name: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try writer.print("{s} provides:\n", .{name});
-        for (self.apps) |app| try writer.print("  app      {s}\n", .{app});
-        for (self.adapters) |adapter| try writer.print("  adapter  {s}\n", .{adapter});
-        for (self.kosmoi) |kosmos| try writer.print("  kosmos   {s}\n", .{kosmos});
+        try self.writeItems("  ", writer);
+    }
+
+    /// One line per app, adapter and kosmos, each after `indent`: `  app      kosm_kitty.App`.
+    pub fn writeItems(self: Provided, indent: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        for (self.apps) |app| try writer.print("{s}app      {s}\n", .{ indent, app });
+        for (self.adapters) |adapter| try writer.print("{s}adapter  {s}\n", .{ indent, adapter });
+        for (self.kosmoi) |kosmos| try writer.print("{s}kosmos   {s}\n", .{ indent, kosmos });
     }
 };
 

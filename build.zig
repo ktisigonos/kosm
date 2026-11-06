@@ -35,12 +35,16 @@ pub fn build(b: *std.Build) void {
             .{ .name = "kosm_current", .module = current_module },
         },
     });
-    // The command line only drives zig build and the runner; it imports nothing but kosm_current.
+    // The command line only drives zig build and the runner; it imports nothing but kosm_current
+    // and where this repo is, for kosm init (D83).
     const cli_module = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "kosm_current", .module = current_module }},
+        .imports = &.{
+            .{ .name = "kosm_current", .module = current_module },
+            .{ .name = "kosm_repository", .module = repositoryOptions(b).createModule() },
+        },
     });
     const cli = b.addExecutable(.{ .name = "kosm", .root_module = cli_module });
     b.installArtifact(cli);
@@ -59,6 +63,25 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
     }
     addPackageTests(b, test_step, kosm_module, target, optimize);
+}
+
+/// This repo's absolute path, its built-in package names and its Zig pin, for kosm init (D67, D83).
+fn repositoryOptions(b: *std.Build) *std.Build.Step.Options {
+    const options = b.addOptions();
+    const relative_root = b.root.toString(b.allocator) catch @panic("OOM");
+    const root = std.Io.Dir.cwd().realPathFileAlloc(b.graph.io, if (relative_root.len == 0) "." else relative_root, b.allocator) catch |err|
+        std.debug.panic("cannot resolve the kosm repository {s}: {s}", .{ relative_root, @errorName(err) });
+    var names: [built_in_packages.len][]const u8 = undefined;
+    for (built_in_packages, &names) |built_in, *name| name.* = built_in.name;
+    std.mem.sort([]const u8, &names, {}, stringLessThan);
+    options.addOption([]const u8, "root", root);
+    options.addOption([]const []const u8, "built_in_packages", &names);
+    options.addOption([]const u8, "minimum_zig_version", @import("build.zig.zon").minimum_zig_version);
+    return options;
+}
+
+fn stringLessThan(_: void, left: []const u8, right: []const u8) bool {
+    return std.mem.lessThan(u8, left, right);
 }
 
 /// Compiles the tree-sitter runtime into core and imports its C API as `tree_sitter_api` (D41).
@@ -110,4 +133,29 @@ fn addPackageTests(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.
         }
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .name = built_in_packages[index].name })).step);
     }
+    addStartingKosmosTest(b, test_step, kosm_module, &modules, target, optimize);
+}
+
+/// Builds the kosmos `kosm init` writes (D84) against the built-in packages, so it can't go stale.
+fn addStartingKosmosTest(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.Build.Module, packages: []const *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const kyanos = b.createModule(.{
+        .root_source_file = b.path("src/cli/kosmoi/kyanos.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "kosm", .module = kosm_module }},
+    });
+    for (built_in_packages, packages) |built_in, module| kyanos.addImport(built_in.name, module);
+    const test_root = b.addWriteFiles().add("kyanos_test.zig",
+        \\test "the starting kosmos builds its tree" {
+        \\    _ = @import("kyanos").kosmos();
+        \\}
+        \\
+    );
+    const test_module = b.createModule(.{
+        .root_source_file = test_root,
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "kyanos", .module = kyanos }},
+    });
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = test_module, .name = "kyanos" })).step);
 }

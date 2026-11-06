@@ -74,10 +74,11 @@ Markers:
   - Do: apply kosmoi from installed packages and keep directory manifests up to date (D62).
   - Done when: a temp config project applies a packaged kosmos, and building a directory kosmos rewrites only its own manifest.
 
-- [ ] **7a. `kosm init` and `kosm list`** `PLAN FIRST`
+- [x] **7a. `kosm init` and `kosm list`** `PLAN FIRST`
   - Do: `kosm init [--config dir]` creates a config project (section 9): `build.zig`, `build.zig.zon` depending on `kosm`, `packages.zon`, and empty `kosmoi/`, `apps/`, `adapters/`. The plan settles what happens when the directory exists and how the config finds `kosm` and the built-in packages while they live in this repo (D67).
-  - Do: `kosm list [--config dir]` prints every kosmos with its variants, and the installed packages with what each provides.
-  - Done when: tests init a temp config, apply a kosmos in it, and list it; init refuses to overwrite an existing project.
+  - Do: `kosm init` fills in only what is missing (D83) and adds the Kyanos kosmos to an empty `kosmoi/` (D84).
+  - Do: `kosm list [kosmos] [--config dir]` prints every kosmos with its variants, and the installed packages with what each provides (D85).
+  - Done when: tests init a temp config, apply a kosmos in it, and list it; init on a complete project changes no byte, and init on a partial one adds only what is missing.
 
 - [ ] **7b. `kosm new`**
   - Do: `kosm new kosmos|app|adapter <name>` scaffolds a directory package with a commented `root.zig`, `build.zig` and `build.zig.zon` (D62, D63).

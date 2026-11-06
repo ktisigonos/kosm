@@ -16,6 +16,12 @@ const walk = @import("walk.zig");
 pub const Target = @import("Target.zig");
 /// Reports what an installed package provides, for `kosm add` and `kosm update` (D46).
 pub const inspect = @import("inspect.zig").inspect;
+/// Lists every kosmos and installed package in a config, for `kosm list` (D85).
+pub const list = list_module.list;
+/// A module `list` looks into.
+pub const ListSource = list_module.Source;
+
+const list_module = @import("list.zig");
 
 /// Runs the kosmos in `target` with the process arguments
 /// (`[--param value]... [--set path=value]... [--diff] [--config dir]`).
@@ -182,6 +188,7 @@ test {
     std.testing.refAllDecls(set);
     std.testing.refAllDecls(discovery);
     std.testing.refAllDecls(@import("inspect.zig"));
+    std.testing.refAllDecls(list_module);
     std.testing.refAllDecls(params);
     std.testing.refAllDecls(walk);
 }

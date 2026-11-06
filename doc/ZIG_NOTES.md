@@ -97,6 +97,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **A file can be the root of only one module:** if `kosmoi/base.zig` is a module root and `kosmoi/frost.zig` does `@import("base.zig")`, the build fails with "file exists in modules 'a' and 'b'". Import it by module name instead; cyclic module imports are fine.
 - **Each pinned copy of a package is a separate module:** a package built against another `kosm` hash gives "expected type 'Theme', found 'Theme'". `module.addImport(name, other)` overwrites an existing entry in `module.import_table`, so a root build can re-point a dependency's import to its own copy.
 - **A dependency's `build.zig` is importable from `build.zig`:** `@import("kosm").addConfigProject(b, @import("build.zig.zon"))` works, and `@import("build.zig.zon")` without a result type is an anonymous struct whose `.dependencies` field names can be walked with `inline for`.
+- **`@typeName` of a file struct is relative to its module, not its package:** `packages/kosm_kitty/App.zig` is just `"App"`. To print it as the user imports it (`kosm_kitty.App`), search the package root's decls for the type.
 - **`decl_names` lists only `pub` declarations:** private functions in a file never show up when walking `@typeInfo(File).@"struct".decl_names`.
 
 - **`zig fetch` takes a branch as `#name`, not `?ref=name`:** `git+https://host/repo?ref=main` ignores the query and pins the default branch with no error. Fetch `git+https://host/repo#main`; `--save` then writes `?ref=main#<commit>`. (Relevant to D46.)
