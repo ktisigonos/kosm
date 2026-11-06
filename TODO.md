@@ -57,10 +57,6 @@ Markers:
   - Do: `kosm.treesitter.Spec` gains what Lua needs (`assign`, `transparent`, D39); dotted assignments build tables with no value (`Adapter.Node.value` null), so test `Selection` refusing to replace one (`error.NoValue`).
   - Done when: path matching, cardinality and byte-preserving edits are tested on real-world snippets, including the D30 nestings.
 
-- [ ] **5c. `kosm_hyprlang`**
-  - Do: the hyprlang adapter (D39-D40).
-  - Done when: path matching, cardinality and byte-preserving edits are tested on real-world snippets.
-
 - [x] **6a. Reloads and `--set`** `PLAN FIRST`
   - Do: apps' optional `reload`, called after the commit for every applied app, never on `--diff` (D59, D74); `kosm_kitty` reloads kitty.
   - Do: `--set path=value` on the returned tree (D20), with `set` reserved as a parameter name (D19).

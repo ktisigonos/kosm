@@ -506,7 +506,7 @@ Each step is usable on its own.
 2. **Packaging spike:** prove D43 (package imports + kosmos discovery + D19 params) on Zig 0.17. If it fails, redesign section 9 before going further.
 3. **Writers:** `generate` + `template`, plus 3 built-in apps (kitty, one CSS app, nvim). Rice the real Frost end to end. Implement D36-D38 here.
 4. **`block` writer.**
-5. **`edit` writer:** tree-sitter runtime in core, then `kosm_json`, then `kosm_lua`, then `kosm_hyprlang`.
+5. **`edit` writer:** tree-sitter runtime in core, then `kosm_json`, then `kosm_lua`.
 6. `kosm add/remove/update`, app reloads (D59), `current`, `--set`.
 
 ## 12. Non-goals (v1)
