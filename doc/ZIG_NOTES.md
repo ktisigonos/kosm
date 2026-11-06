@@ -73,6 +73,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`std.ascii.indexOf*` are now `find*`:** `findIgnoreCase`, `findIgnoreCasePos`.
 - **`std.fmt.allocPrint` is deprecated:** use `allocator.print(format, args)`.
 - **Custom formatting is a `format` method plus `{f}`:** `pub fn format(self: T, writer: *std.Io.Writer) std.Io.Writer.Error!void`, printed with `"{f}"`; `std.meta.hasMethod(T, "format")` detects it. A union switch can capture both payload and tag: `inline else => |payload, tag|`.
+- **Running a command takes an `Io`:** `std.process.spawn(io, .{ .argv = argv, .stdout = .ignore })` then `child.wait(io)` gives a `Child.Term` union (`exited`, `signal`, ...); `term.success()` checks for exit 0, and `Term` prints itself with `{f}` ("exited with code 1"). A missing program is `error.FileNotFound` from `spawn`.
 - **`std.BoundedArray` is gone:** use a fixed array with a length, or an `std.ArrayList` with an allocator.
 - **`std.EnumSet` has no `initEmpty`:** use the decl literal `.empty` (or `.full`, `initMany`, `initOne`).
 - **`std.DynamicBitSetUnmanaged` is deprecated:** it is `std.bit_set.Dynamic` (`initEmpty(gpa, len)`, `deinit(gpa)`).

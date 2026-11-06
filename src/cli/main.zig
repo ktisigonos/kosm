@@ -4,7 +4,7 @@
 const std = @import("std");
 
 const usage =
-    \\usage: kosm apply <kosmos>[.<variant>] [--<param> value]... [--diff] [--config dir]
+    \\usage: kosm apply <kosmos>[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
     \\
 ;
 
@@ -64,7 +64,7 @@ const Apply = struct {
     kosmos: []const u8,
     /// The `--config` directory, or null for the default.
     config: ?[]const u8,
-    /// Parameters and `--diff`, in order, for the kosmos runner.
+    /// Parameters, `--set`s and `--diff`, in order, for the kosmos runner.
     runner_arguments: []const []const u8,
 
     const ParseError = error{ NoCommand, UnknownCommand, MissingKosmos, MissingConfigDirectory, OutOfMemory };

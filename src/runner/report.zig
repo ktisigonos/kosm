@@ -11,3 +11,9 @@ pub fn wrote(writer: *std.Io.Writer, path: []const u8) std.Io.Writer.Error!void 
 pub fn nothingToChange(writer: *std.Io.Writer) std.Io.Writer.Error!void {
     try writer.writeAll("nothing to change\n");
 }
+
+/// A reload that failed after the commit (D74): a warning, since the files are written and the
+/// program may simply not be running.
+pub fn reloadFailed(writer: *std.Io.Writer, kosmos: []const u8, app: []const u8, reason: []const u8) std.Io.Writer.Error!void {
+    try writer.print("warning: kosmos '{s}', app '{s}': reload failed: {s}\n", .{ kosmos, app, reason });
+}

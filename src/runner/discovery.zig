@@ -24,6 +24,26 @@ pub fn isApp(comptime T: type) bool {
     };
 }
 
+/// Whether app `T` declares a reload (D74). A `reload` of any other shape than
+/// `pub fn reload(self: T, reloader: *kosm.Reloader) !void` is a compile error, so it is never skipped silently.
+pub fn hasReload(comptime T: type) bool {
+    @setEvalBranchQuota(branch_quota);
+    if (!@hasDecl(T, "reload")) return false;
+    const wrong_shape = @typeName(T) ++ ".reload must be `pub fn reload(self: " ++ @typeName(T) ++ ", reloader: *kosm.Reloader) !void` (D74)";
+    const function = switch (@typeInfo(@TypeOf(T.reload))) {
+        .@"fn" => |function| function,
+        else => @compileError(wrong_shape),
+    };
+    if (function.is_generic or function.param_types.len != 2) @compileError(wrong_shape);
+    if (function.param_types[0] != T or function.param_types[1] != *kosm.Reloader) @compileError(wrong_shape);
+    const Return = function.return_type orelse @compileError(wrong_shape);
+    switch (@typeInfo(Return)) {
+        .error_union => |error_union| if (error_union.payload != void) @compileError(wrong_shape),
+        else => @compileError(wrong_shape),
+    }
+    return true;
+}
+
 /// Whether a kosmos tree of type `T` holds at least one app, looking through structs and optionals.
 pub fn containsApp(comptime T: type) bool {
     @setEvalBranchQuota(branch_quota);
@@ -144,6 +164,22 @@ test "an app needs exactly apply(self, *Output) !void" {
     try testing.expect(!isApp(NotAnApp));
     try testing.expect(!isApp(kosm.Modifier));
     try testing.expect(!isApp(u8));
+}
+
+const ReloadingApp = struct {
+    pub fn apply(self: ReloadingApp, output: *kosm.Output) !void {
+        _ = self;
+        _ = output;
+    }
+    pub fn reload(self: ReloadingApp, reloader: *kosm.Reloader) !void {
+        _ = self;
+        _ = reloader;
+    }
+};
+
+test "an app reloads only when it declares reload" {
+    try testing.expect(hasReload(ReloadingApp));
+    try testing.expect(!hasReload(TestApp));
 }
 
 test "kosmoi are found by shape, and the rest say why not" {

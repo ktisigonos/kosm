@@ -8,7 +8,7 @@ const kosm = @import("kosm");
 pub const Error = error{InvalidParams};
 
 /// Flags kosm itself takes, which no `Params` field may shadow.
-const reserved_names = [_][]const u8{ "diff", "config" };
+const reserved_names = [_][]const u8{ "diff", "config", "set" };
 
 /// Fills a `Params` from `arguments` (`--blur false --accent sky`), starting from its defaults.
 /// Flags may be spelled `--border-size` or `--border_size`. A `host` enum field not given as
@@ -82,7 +82,8 @@ fn hostFrom(comptime Host: type, hostname: []const u8, diagnostics: *kosm.Diagno
         fail(diagnostics, "the hostname '{s}' is not one of {s} ({s})", .{ hostname, @typeName(Enum), comptime enumList(Enum) });
 }
 
-fn parseValue(comptime T: type, text: []const u8) !T {
+/// Reads one value of `T` from text: what a flag or `--set` value may be (D19, D55).
+pub fn parseValue(comptime T: type, text: []const u8) !T {
     if (T == kosm.Color) return kosm.Color.parse(text);
     if (T == kosm.ColorChoice) return kosm.ColorChoice.parse(text);
     if (T == []const u8) return text;
@@ -101,7 +102,7 @@ fn parseValue(comptime T: type, text: []const u8) !T {
 }
 
 /// What a value of `T` looks like, for "--x 'y' is not ...".
-fn describe(comptime T: type) []const u8 {
+pub fn describe(comptime T: type) []const u8 {
     if (T == kosm.Color) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...))";
     if (T == kosm.ColorChoice) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...)) or a hue (" ++ enumList(kosm.Palette.Hue) ++ ")";
     if (T == []const u8) return "text";
@@ -112,6 +113,15 @@ fn describe(comptime T: type) []const u8 {
         .float => "a number",
         .@"enum" => "one of " ++ enumList(T),
         else => @typeName(T),
+    };
+}
+
+/// Whether `parseValue` reads a `T` (not counting optionals): a color, text, bool, number or enum.
+pub fn isParseable(comptime T: type) bool {
+    if (T == kosm.Color or T == kosm.ColorChoice or T == []const u8) return true;
+    return switch (@typeInfo(T)) {
+        .bool, .int, .float, .@"enum" => true,
+        else => false,
     };
 }
 

@@ -17,6 +17,9 @@ are enums in Zig spelling (`.thin_sparse` for `thin-sparse`); structured values 
 (`window_padding_width = .all(10)`, `window_border_width = .{ .pixels = 1 }`); the types live in
 `kosm_kitty.values`. Keyboard and mouse mappings (`map`, `mouse_map`) are not covered yet.
 
+After every apply the app reloads every running kitty by sending it SIGUSR1
+(`pkill -USR1 -x kitty`, D74). If no kitty is running, kosm prints a warning and carries on.
+
 ## App fields
 
 | Field | Default |

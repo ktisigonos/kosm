@@ -53,7 +53,7 @@ Markers:
   - Do: add the `format` and `parser` capabilities to `kosm.Adapter` (D39, D42).
   - Done when: path matching, cardinality, and byte-preserving edits are tested per adapter on real-world snippets.
 
-- [ ] **6a. Reloads and `--set`** `PLAN FIRST`
+- [x] **6a. Reloads and `--set`** `PLAN FIRST`
   - Do: apps' optional `reload`, called after the commit for every applied app, never on `--diff` (D59, D74); `kosm_kitty` reloads kitty.
   - Do: `--set path=value` on the returned tree (D20), with `set` reserved as a parameter name (D19).
   - Done when: tests show reloads run only after a successful commit, a failing reload is a warning naming its app while the rest still reload and the exit status stays 0, and `--set` covers nested paths, unknown fields, bad values, optionals and colors.

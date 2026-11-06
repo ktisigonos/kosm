@@ -1,9 +1,11 @@
-//! Walks a kosmos tree and plans every app in it (D18): each app's `apply` writes into one
-//! shared plan, named by its path in the tree ("terminal.kitty"). Null optional apps are skipped.
+//! Walks a kosmos tree (D18): plans every app in it, each `apply` writing into one shared plan
+//! under its path in the tree ("terminal.kitty"), and later reloads them (D74). Null optional
+//! apps are skipped.
 
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
+const report = @import("report.zig");
 
 /// Everything an app's `Output` shares with the others.
 pub const Context = struct {
@@ -53,6 +55,41 @@ fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void
         if (context.diagnostics.message().len == 0) context.diagnostics.set(path, "", "apply failed: {s}", .{@errorName(err)});
         return error.ApplyFailed;
     };
+}
+
+/// Calls `reload` on every app in `tree` that has one, in field order. A failure is a warning
+/// on `warnings` naming `kosmos` and the app, and the rest still reload.
+pub fn reloadTree(tree: anytype, io: std.Io, kosmos: []const u8, warnings: *std.Io.Writer) std.Io.Writer.Error!void {
+    try reloadNode(tree, "", .{ .io = io, .kosmos = kosmos, .warnings = warnings });
+}
+
+const ReloadContext = struct {
+    io: std.Io,
+    kosmos: []const u8,
+    warnings: *std.Io.Writer,
+};
+
+fn reloadNode(node: anytype, comptime path: []const u8, context: ReloadContext) std.Io.Writer.Error!void {
+    @setEvalBranchQuota(discovery.branch_quota);
+    const Node = @TypeOf(node);
+    if (@typeInfo(Node) == .optional) {
+        if (node) |present| try reloadNode(present, path, context);
+        return;
+    }
+    if (comptime discovery.isApp(Node)) {
+        if (comptime !discovery.hasReload(Node)) return;
+        var reloader: kosm.Reloader = .{ .io = context.io };
+        node.reload(&reloader) catch |err| {
+            const reason = if (reloader.failure().len != 0) reloader.failure() else @errorName(err);
+            try report.reloadFailed(context.warnings, context.kosmos, path, reason);
+        };
+        return;
+    }
+    if (comptime !discovery.containsApp(Node)) return;
+    inline for (@typeInfo(Node).@"struct".field_names) |name| {
+        const child_path = if (path.len == 0) name else path ++ "." ++ name;
+        try reloadNode(@field(node, name), child_path, context);
+    }
 }
 
 const testing = std.testing;
@@ -133,6 +170,38 @@ test "an app's own error is reported with its path" {
     try testing.expectError(error.ApplyFailed, planTree(.{ .bar = .{ .waybar = FailingApp{} } }, fixture.context("/home/test")));
     try testing.expectEqualStrings("bar.waybar", fixture.diagnostics.app);
     try testing.expectEqualStrings("apply failed: GlowMissing", fixture.diagnostics.message());
+}
+
+const ReloadingApp = struct {
+    command: []const []const u8,
+    reloads: *usize,
+
+    pub fn apply(self: ReloadingApp, output: *kosm.Output) !void {
+        _ = self;
+        _ = output;
+    }
+
+    pub fn reload(self: ReloadingApp, reloader: *kosm.Reloader) !void {
+        self.reloads.* += 1;
+        try reloader.run(self.command);
+    }
+};
+
+test "every app with reload reloads, and a failing one is a warning while the rest go on" {
+    var reloads: usize = 0;
+    const tree = .{
+        .terminal = .{
+            .kitty = ReloadingApp{ .command = &.{"false"}, .reloads = &reloads },
+            .foot = @as(?ReloadingApp, null),
+        },
+        .bar = ReloadingApp{ .command = &.{"true"}, .reloads = &reloads },
+        .editor = WritingApp{ .file = "~/a.lines" },
+    };
+    var buffer: [256]u8 = undefined;
+    var warnings: std.Io.Writer = .fixed(&buffer);
+    try reloadTree(tree, testing.io, "frost", &warnings);
+    try testing.expectEqual(2, reloads);
+    try testing.expectEqualStrings("warning: kosmos 'frost', app 'terminal.kitty': reload failed: 'false' exited with code 1\n", warnings.buffered());
 }
 
 test "an Output error keeps the message Output wrote" {

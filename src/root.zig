@@ -16,6 +16,7 @@ pub const Value = @import("value.zig").Value;
 pub const Adapter = @import("Adapter.zig");
 pub const Output = @import("Output.zig");
 pub const Diagnostics = @import("Diagnostics.zig");
+pub const Reloader = @import("Reloader.zig");
 pub const Plan = @import("Plan.zig");
 pub const commit = @import("commit.zig");
 pub const diff = @import("diff.zig");
@@ -55,6 +56,7 @@ test {
     std.testing.refAllDecls(Adapter.Context);
     std.testing.refAllDecls(Output);
     std.testing.refAllDecls(Diagnostics);
+    std.testing.refAllDecls(Reloader);
     std.testing.refAllDecls(Plan);
     std.testing.refAllDecls(Plan.Edit);
     std.testing.refAllDecls(@import("block.zig"));
