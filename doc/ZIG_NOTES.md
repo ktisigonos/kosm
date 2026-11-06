@@ -46,6 +46,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`@abs` of a signed integer returns the unsigned type:** `@intCast` it back before mixing with signed values.
 - **Anonymous struct literals passed as `anytype` keep comptime fields:** `.{ .text = @embedFile("x"), .format = runtime_value }` gives `text` a comptime field (`@typeInfo(T).@"struct".field_attrs[i].@"comptime"`), so `comptime options.text` works next to runtime fields.
 - **An anonymous struct literal inside an `anytype` argument does not coerce to a struct type later:** `options.format` from `.{ .format = .{ .boolean = .one_zero } }` is its own anonymous type, so `const own: Format = options.format;` fails. Require the typed value (`Format{ ... }`, `self.format`) and check it with `@FieldType(Options, "format") != Format` for a clear `@compileError`.
+- **Result locations alias the target:** `node = .{ .key = key, .children = try dupe(Node, &.{node}) };` writes `.key` into `node` before `dupe` reads it, so the copy holds the new key. Compute the right-hand values into a `const` first.
 - **`@floatCast` from f64 to f32 never traps:** out-of-range values become +/-inf, so check `std.math.isFinite` after narrowing. A widened f32 keeps its exact binary value (`6.4` prints as `6.400000095367432`).
 
 ### std

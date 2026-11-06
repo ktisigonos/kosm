@@ -372,7 +372,7 @@ Four writers. An app chooses whichever fits each target.
 
 - **D28. Missing means error.** Zero matches is always an error, whatever the cardinality. (G6.)
 - **D29. Literal or not, we overwrite.** If the current value is an expression (`defs.blur.enabled`), it still gets replaced. Being careful is the user's job. The usual way to avoid it is to target the file where the literal lives (D25).
-- **D30. Paths follow the language, not just tables.** Adapters map *every* way a language nests keys onto the same path, so `M.blur = { enabled = true }`, `M.blur.enabled = true` and `hl.config({ M = { blur = { enabled = true } } })` all match `M.blur.enabled`.
+- **D30. Paths follow the language, not just tables.** Adapters map *every* way a language nests keys onto the same path, so `M.blur = { enabled = true }`, `M.blur.enabled = true` and `hl.config({ M = { blur = { enabled = true } } })` all match `M.blur.enabled`. Code inside function bodies (keybind callbacks, `function ... end`) runs later, not when the file loads, so paths never see it.
 - **D31. Cardinality is explicit**, as one concept with sugar on top:
 
   | Call | Matches allowed | Edits |
@@ -386,7 +386,7 @@ Four writers. An app chooses whichever fits each target.
 
   They all lower to `setOptions(path, value, .{ .match = ... })`. Indices are 0-based, in match order (files sorted by path, then file order). **This list is closed: no more variants are ever added.** Anything fancier uses the escape hatch (D34).
 
-  A real example of why `set` defaults to exactly-one: `decoration.blur.enabled` exists in **both** `hypr/hyprland/decoration/blur.lua` and `hypr/hyprland/gamemode.lua`. A blind `setAll` would break gamemode. `set` errors and tells you to narrow the file scope.
+  A real example of why `set` defaults to exactly-one: a key such as `decoration.blur.enabled` can be set by `hl.config` calls in two files; a blind `setAll` would change both. `set` errors and tells you to narrow the file scope.
 - **D32. Path syntax:** dot-separated segments. A segment containing a dot is quoted: `general."col.active_border"`. `*` matches exactly one level. **No `**`, predicates or regex in v1.** Tuple form `.{ "general", "col.active_border" }` is also accepted.
 - **D33. Scope narrowing** goes through the file selector (`files`, `exclude`), not the path language.
 - **D79. The file selector.** `output.edit(.{ .files = "~/.config/hypr/**/*.lua", .exclude = &.{"~/.config/hypr/old/**"} })` returns a `kosm.Output.Selection`, which the D31 calls run on.
@@ -413,20 +413,27 @@ Four writers. An app chooses whichever fits each target.
 - **D39.** An adapter is a package exporting a declaration that matches the adapter interface. **Every capability is optional**, and kosm reports clearly when an app needs a capability that an adapter lacks.
 
 ```zig
-// kosm_lua/src/root.zig
-pub const adapter = kosm.Adapter{
+// kosm_lua/root.zig
+pub const adapter: kosm.Adapter = .{
     .name = "lua",
     .extensions = &.{".lua"},
     .comment = .{ .line = "--" },                        // enables `block`
-    .format = formatValue,                               // value -> source text (true, "str", 1.0)
-    .serialize = serialize,                              // value tree -> whole file (enables `generate`)
+    .format = format,                                    // value -> source text (true, "str", 1.0)
     .parser = kosm.treesitter.parser(tree_sitter_lua, .{ // enables `edit`
         .pair = "field",
         .key = "name",
         .value = "value",
         .nest = &.{"table_constructor"},
-        .assign = .{ .node = "assignment_statement", .target = "dot_index_expression" },
-        .transparent = &.{ "function_call", "arguments" }, // hl.config({...}) is path-invisible
+        .quoted_key = &.{"string"},                      // ["col.active"] = ...
+        // hl.config({...}) and `local M = {...}` are path-invisible; function bodies are not entered
+        .transparent = &.{ "function_call", "arguments", "variable_declaration" },
+        .assign = .{                                     // M.blur.enabled = true
+            .node = "assignment_statement",
+            .targets = "variable_list", .target = "name",
+            .values = "expression_list", .value = "value",
+            .name = "identifier",
+            .index = .{ .node = "dot_index_expression", .table = "table", .key = "field" },
+        },
     }),
 };
 ```

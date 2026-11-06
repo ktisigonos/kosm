@@ -52,7 +52,7 @@ Markers:
   - Do: tree-sitter runtime in core (D41, D78), the `format` and `parser` capabilities of `kosm.Adapter` (D39, D42), path syntax (D32, D77), the file selector (D79), `output.edit` with every D31 call and the escape hatch (D34, D80), then `kosm_json` (D28-D35, D39-D40).
   - Done when: path matching, cardinality, the selector and byte-preserving edits are tested, and `kosm_json` is tested on real-world snippets.
 
-- [ ] **5b. `kosm_lua`**
+- [x] **5b. `kosm_lua`**
   - Do: the Lua adapter, covering every nesting D30 lists (`M.blur = {...}`, `M.blur.enabled = ...`, `hl.config({...})`).
   - Do: `kosm.treesitter.Spec` gains what Lua needs (`assign`, `transparent`, D39); dotted assignments build tables with no value (`Adapter.Node.value` null), so test `Selection` refusing to replace one (`error.NoValue`).
   - Done when: path matching, cardinality and byte-preserving edits are tested on real-world snippets, including the D30 nestings.
@@ -85,4 +85,5 @@ Follow-ups with no step yet (the human places them):
 - `kosm_kitty`: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
 - Warn when a printed color is clipped to the gamut (D48); core has no way to warn yet, only to error.
 - Keep the manifests of directory apps and adapters (`apps/my_bar/build.zig.zon`) up to date; D76 refreshes only the applied kosmos' own.
+- `kosm_lua`: positional tables (`{ "a", "b" }`) as lists for `elements` (D80); `Spec.list` picks lists by node type, and Lua's lists and tables are one node type.
 - `output.templateBlock` (D71): the text form of `block`, with `template`'s call shape; build it when the first real app needs it.

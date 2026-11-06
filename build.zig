@@ -83,6 +83,7 @@ const built_in_packages = [_]BuiltInPackage{
     .{ .name = "kosm_zen" },
     .{ .name = "kosm_nvim" },
     .{ .name = "kosm_json", .grammars = &.{"tree_sitter_json"} },
+    .{ .name = "kosm_lua", .grammars = &.{"tree_sitter_lua"} },
 };
 
 /// A package in packages/ and the grammars it compiles (D78), which this build.zig.zon lists too.

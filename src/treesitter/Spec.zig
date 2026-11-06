@@ -16,3 +16,12 @@ list: []const []const u8 = &.{},
 /// Key node types written between delimiters ("string"); kosm drops their first and last
 /// byte, so `"editor.fontSize"` is the key `editor.fontSize`. Escapes are kept as written.
 quoted_key: []const []const u8 = &.{},
+/// Node types paths see through: the entries inside count as the enclosing table's, so
+/// `hl.config({ general = {...} })` holds `general` (D30). Anything else is invisible.
+transparent: []const []const u8 = &.{},
+/// Statements that assign values to keys (`M.blur.enabled = true`, D30); null when the
+/// language has none.
+assign: ?Assign = null,
+
+/// How a grammar spells an assignment statement.
+pub const Assign = @import("Spec/Assign.zig");

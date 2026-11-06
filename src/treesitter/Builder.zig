@@ -79,17 +79,64 @@ fn tableEntries(builder: *Builder, container: c.TSNode, depth: usize) Adapter.Pa
     if (!c.ts_tree_cursor_goto_first_child(&cursor)) return &.{};
     while (true) {
         const child = c.ts_tree_cursor_current_node(&cursor);
-        if (isEntry(child)) {
-            const kind = nodeType(child);
-            if (std.mem.eql(u8, kind, builder.spec.pair)) {
-                if (try builder.pairNode(child, depth)) |node| try entries.append(builder.allocator, node);
-            } else if (contains(builder.spec.nest, kind)) {
-                try entries.appendSlice(builder.allocator, try builder.tableEntries(child, try builder.deeper(child, depth)));
-            }
-        }
+        if (isEntry(child)) try builder.appendEntries(&entries, child, depth);
         if (!c.ts_tree_cursor_goto_next_sibling(&cursor)) break;
     }
     return entries.items;
+}
+
+/// The keys `child` adds to the table holding it: a pair, assignments, or the entries of a
+/// keyless nested table or a transparent node.
+fn appendEntries(builder: *Builder, entries: *std.ArrayList(Node), child: c.TSNode, depth: usize) Adapter.ParseError!void {
+    const kind = nodeType(child);
+    if (std.mem.eql(u8, kind, builder.spec.pair)) {
+        if (try builder.pairNode(child, depth)) |node| try entries.append(builder.allocator, node);
+        return;
+    }
+    if (builder.spec.assign) |assign| {
+        if (std.mem.eql(u8, kind, assign.node)) return builder.appendAssignments(entries, child, assign, depth);
+    }
+    if (contains(builder.spec.nest, kind) or contains(builder.spec.transparent, kind))
+        try entries.appendSlice(builder.allocator, try builder.tableEntries(child, try builder.deeper(child, depth)));
+}
+
+/// One entry per target of `statement` whose keys are known, paired with values by position.
+fn appendAssignments(builder: *Builder, entries: *std.ArrayList(Node), statement: c.TSNode, assign: Spec.Assign, depth: usize) Adapter.ParseError!void {
+    const target_list = childOfType(statement, assign.targets) orelse return;
+    const value_list = childOfType(statement, assign.values) orelse return;
+    const targets = try builder.fieldChildren(target_list, assign.target);
+    const values = try builder.fieldChildren(value_list, assign.value);
+    const count = @min(targets.len, values.len);
+    for (targets[0..count], values[0..count]) |target, value| {
+        if (try builder.assignedNode(target, value, assign, depth)) |node| try entries.append(builder.allocator, node);
+    }
+}
+
+/// `value` under the keys `target` spells, so `M.blur.enabled = true` is the table `M` holding
+/// the table `blur` holding `enabled`. The outer tables have no bytes of their own.
+fn assignedNode(builder: *Builder, target: c.TSNode, value: c.TSNode, assign: Spec.Assign, depth: usize) Adapter.ParseError!?Node {
+    var keys: std.ArrayList([]const u8) = .empty;
+    var current = target;
+    while (!std.mem.eql(u8, nodeType(current), assign.name)) {
+        if (!std.mem.eql(u8, nodeType(current), assign.index.node)) return null;
+        const key = fieldNode(current, assign.index.key) orelse return null;
+        try keys.append(builder.allocator, builder.keyText(key));
+        current = fieldNode(current, assign.index.table) orelse return null;
+    }
+    try keys.append(builder.allocator, builder.keyText(current));
+
+    var inner_depth = depth;
+    for (keys.items[1..]) |_| inner_depth = try builder.deeper(target, inner_depth);
+    const position = c.ts_node_start_byte(target);
+    var node = try builder.valueNode(value, inner_depth);
+    node.key = keys.items[0];
+    node.position = position;
+    for (keys.items[1..]) |key| {
+        // A literal assigned to `node` would write its fields before `dupe` reads `node`.
+        const children = try builder.allocator.dupe(Node, &.{node});
+        node = .{ .key = key, .kind = .table, .position = position, .value = null, .children = children };
+    }
+    return node;
 }
 
 fn pairNode(builder: *Builder, pair: c.TSNode, depth: usize) Adapter.ParseError!?Node {
@@ -155,6 +202,33 @@ fn fieldNode(node: c.TSNode, field: []const u8) ?c.TSNode {
     const child = c.ts_node_child_by_field_name(node, field.ptr, @intCast(field.len));
     if (c.ts_node_is_null(child)) return null;
     return child;
+}
+
+/// The first named child of `node` with type `kind`.
+fn childOfType(node: c.TSNode, kind: []const u8) ?c.TSNode {
+    var cursor = c.ts_tree_cursor_new(node);
+    defer c.ts_tree_cursor_delete(&cursor);
+    if (!c.ts_tree_cursor_goto_first_child(&cursor)) return null;
+    while (true) {
+        const child = c.ts_tree_cursor_current_node(&cursor);
+        if (c.ts_node_is_named(child) and std.mem.eql(u8, nodeType(child), kind)) return child;
+        if (!c.ts_tree_cursor_goto_next_sibling(&cursor)) return null;
+    }
+}
+
+/// Every child of `node` in `field`, in file order.
+fn fieldChildren(builder: *Builder, node: c.TSNode, field: []const u8) Adapter.ParseError![]const c.TSNode {
+    var found: std.ArrayList(c.TSNode) = .empty;
+    var cursor = c.ts_tree_cursor_new(node);
+    defer c.ts_tree_cursor_delete(&cursor);
+    if (!c.ts_tree_cursor_goto_first_child(&cursor)) return &.{};
+    while (true) {
+        const name = c.ts_tree_cursor_current_field_name(&cursor);
+        if (name != null and std.mem.eql(u8, std.mem.span(name), field))
+            try found.append(builder.allocator, c.ts_tree_cursor_current_node(&cursor));
+        if (!c.ts_tree_cursor_goto_next_sibling(&cursor)) break;
+    }
+    return found.items;
 }
 
 fn contains(names: []const []const u8, name: []const u8) bool {
