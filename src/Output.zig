@@ -18,7 +18,7 @@ const planning = @import("Output/planning.zig");
 allocator: std.mem.Allocator,
 /// Absolute home directory that `~` expands to.
 home: []const u8,
-/// Every installed adapter.
+/// Every adapter the applied kosmos can use: from packages, adapters/ and the locals it reaches (D87).
 adapters: []const Adapter,
 plan: *Plan,
 diagnostics: *Diagnostics,
@@ -245,7 +245,7 @@ fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapt
         for (output.adapters) |adapter| {
             if (std.mem.eql(u8, adapter.name, name)) return adapter;
         }
-        return output.fail(error.UnknownLanguage, file, "no installed adapter is named '{s}'", .{name});
+        return output.fail(error.UnknownLanguage, file, "no adapter is named '{s}'", .{name});
     }
     const extension = std.Io.Dir.path.extension(file);
     var found: ?Adapter = null;
@@ -254,7 +254,7 @@ fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapt
         if (found) |first| return output.fail(error.AmbiguousLanguage, file, "adapters '{s}' and '{s}' both handle '{s}' files; pass .lang", .{ first.name, adapter.name, extension });
         found = adapter;
     }
-    return found orelse output.fail(error.UnknownLanguage, file, "no installed adapter handles '{s}' files; pass .lang", .{extension});
+    return found orelse output.fail(error.UnknownLanguage, file, "no adapter handles '{s}' files; pass .lang", .{extension});
 }
 
 /// A hand-built color format whose template does not match its components, or a float

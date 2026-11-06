@@ -458,3 +458,146 @@ test "apply without a kosmos, a dangling --config or another command is an error
     try testing.expectError(error.MissingKosmos, Apply.parse(arena.allocator(), &.{ "apply", "--diff" }));
     try testing.expectError(error.MissingConfigDirectory, Apply.parse(arena.allocator(), &.{ "apply", "frost", "--config" }));
 }
+
+/// An adapter `name` for `.name` files, writing one `name key` line per value, so a diff shows
+/// which adapter wrote a file.
+fn testAdapter(comptime name: []const u8) []const u8 {
+    return
+    \\pub const adapter: kosm.Adapter = .{ .name = "
+    ++ name ++
+        \\", .extensions = &.{".
+    ++ name ++
+        \\"}, .serialize = serialize };
+        \\
+        \\fn serialize(writer: *std.Io.Writer, root: kosm.Value, context: *kosm.Adapter.Context) kosm.Adapter.Error!void {
+        \\    _ = context;
+        \\    for (root.table) |entry| try writer.print("
+    ++ name ++
+        \\ {s}\n", .{entry.key});
+        \\}
+        \\
+        \\/// Writes `~/out.
+    ++ name ++
+        \\` through the adapter above.
+        \\pub const Writer = struct {
+        \\    pub fn apply(self: Writer, output: *kosm.Output) !void {
+        \\        _ = self;
+        \\        try output.generate(.{ .file = "~/out.
+    ++ name ++
+        \\" }, .{ .written = 1 });
+        \\    }
+        \\};
+        \\
+    ;
+}
+
+const test_header =
+    \\const std = @import("std");
+    \\const kosm = @import("kosm");
+    \\
+;
+
+/// A directory kosmos with its own adapter, importing a directory app from a private file.
+const test_nord_root = test_header ++ testAdapter("nord") ++
+    \\const parts = @import("parts.zig");
+    \\
+    \\pub fn kosmos() struct { own: Writer, bar: parts.Bar } {
+    \\    return .{ .own = .{}, .bar = .{} };
+    \\}
+    \\
+;
+const test_nord_parts =
+    \\pub const Bar = @import("my_bar").Writer;
+    \\
+;
+/// A directory app with its own adapter and its own kosmos (D87).
+const test_my_bar_root = test_header ++ testAdapter("bar") ++
+    \\pub fn kosmos() struct { bar: Writer } {
+    \\    return .{ .bar = .{} };
+    \\}
+    \\
+;
+/// A single-file kosmos with its own adapter.
+const test_frost = test_header ++ testAdapter("frost") ++
+    \\pub fn kosmos() struct { own: Writer } {
+    \\    return .{ .own = .{} };
+    \\}
+    \\
+;
+/// A kosmos nothing imports, which does not compile.
+const test_broken =
+    \\const kosm = @import("kosm");
+    \\pub const adapter: kosm.Adapter = .{ .name = 7 };
+    \\
+;
+
+test "local packages provide their adapters and kosmoi wherever they live, and only what an apply reaches is built" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var stdout: std.Io.Writer.Allocating = .init(arena);
+    var stderr: std.Io.Writer.Allocating = .init(arena);
+    const root = try tmp.dir.realPathFileAlloc(testing.io, ".", arena);
+    // Assumes the tests run from the repository root, as `zig build test` does.
+    const repository_root = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, ".", arena);
+    var environ = try testing.environ.createMap(arena);
+    _ = environ.swapRemove("ZIG_PROGRESS");
+    // Shared with the other config tests, so the compiled std stays warm.
+    try environ.put("ZIG_GLOBAL_CACHE_DIR", try std.Io.Dir.path.join(arena, &.{ repository_root, ".zig-cache/kosm-test-global-cache" }));
+    try environ.put("HOME", try std.Io.Dir.path.join(arena, &.{ root, "home" }));
+    try tmp.dir.createDirPath(testing.io, "home");
+    try tmp.dir.createDirPath(testing.io, "project");
+    const context: Context = .{
+        .io = testing.io,
+        .arena = arena,
+        .config = try std.Io.Dir.path.join(arena, &.{ root, "project" }),
+        .environ_map = &environ,
+        .stdout = &stdout.writer,
+        .stderr = &stderr.writer,
+    };
+    try init_command.init(context, .{ .root = repository_root, .built_in_packages = repository.built_in_packages, .minimum_zig_version = repository.minimum_zig_version });
+    const files = [_]struct { []const u8, []const u8 }{
+        .{ "project/kosmoi/nord/root.zig", test_nord_root },
+        .{ "project/kosmoi/nord/parts.zig", test_nord_parts },
+        .{ "project/apps/my_bar/root.zig", test_my_bar_root },
+        .{ "project/kosmoi/frost.zig", test_frost },
+        .{ "project/apps/broken.zig", test_broken },
+    };
+    for (files) |file| {
+        try tmp.dir.createDirPath(testing.io, std.Io.Dir.path.dirname(file[0]).?);
+        try tmp.dir.writeFile(testing.io, .{ .sub_path = file[0], .data = file[1] });
+    }
+
+    const nord = try testApplyDiff(context, "nord");
+    try testing.expect(std.mem.find(u8, nord, "+nord written\n") != null);
+    try testing.expect(std.mem.find(u8, nord, "+bar written\n") != null);
+    try testing.expect(std.mem.find(u8, try testApplyDiff(context, "frost"), "+frost written\n") != null);
+    try testing.expect(std.mem.find(u8, try testApplyDiff(context, "my_bar"), "+bar written\n") != null);
+
+    try tmp.dir.deleteFile(testing.io, "project/apps/broken.zig");
+    stdout.clearRetainingCapacity();
+    try list_command.list(context, null);
+    try testing.expect(std.mem.startsWith(u8, stdout.written(),
+        \\kosmoi:
+        \\  frost   kosmoi/frost.zig
+        \\  kyanos  kosmoi/kyanos.zig
+        \\  nord    kosmoi/nord/
+        \\  my_bar  apps/my_bar/
+        \\
+    ));
+    try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "home/out.nord", .{}));
+}
+
+/// Builds kosmos `name` in the config and runs it with `--diff`; returns the diff.
+fn testApplyDiff(context: Context, name: []const u8) ![]const u8 {
+    const built = try context.runZig(&.{ "build", try context.arena.print("-Dkosmos={s}", .{name}) });
+    if (!built.term.success()) std.debug.print("{s}\n", .{built.stderr});
+    try testing.expect(built.term.success());
+    const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, runner_path });
+    const applied = try context.run(&.{ runner, "--diff", "--config", context.config });
+    if (!applied.term.success()) std.debug.print("{s}\n", .{applied.stderr});
+    try testing.expect(applied.term.success());
+    return applied.stdout;
+}

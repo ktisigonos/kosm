@@ -15,7 +15,8 @@ pub const Source = struct {
     kind: Kind,
     module: type,
 
-    pub const Kind = enum { kosmos, package };
+    /// A local kosmos, app or adapter (D87), or an installed package.
+    pub const Kind = enum { local, package };
 };
 
 /// Prints the listing for the process arguments (`[kosmos] [--config dir]`) and returns the exit
@@ -250,8 +251,8 @@ const ProbePackage = struct {
 };
 
 const test_table = collect(&.{
-    .{ .name = "base", .origin = "kosmoi/base.zig", .kind = .kosmos, .module = Base },
-    .{ .name = "frost", .origin = "kosmoi/frost.zig", .kind = .kosmos, .module = Frost },
+    .{ .name = "base", .origin = "kosmoi/base.zig", .kind = .local, .module = Base },
+    .{ .name = "frost", .origin = "kosmoi/frost.zig", .kind = .local, .module = Frost },
     .{ .name = "kosm_probe", .origin = "package kosm_probe", .kind = .package, .module = ProbePackage },
 });
 

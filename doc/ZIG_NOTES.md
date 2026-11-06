@@ -85,6 +85,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **Tests in imported files need a reference:** a `pub const foo = @import("foo.zig")` re-export is lazily analyzed, so `foo.zig`'s tests are silently never run. Put `test { std.testing.refAllDecls(@This()); }` in the module root and check the summary counts.
 - **A function no test calls is never compiled:** `zig build test` can pass while `zig build` fails. Always run both.
 - **`refAllDecls` is not recursive and does not lay out every type:** `refAllDeclsRecursive` no longer exists; force layouts with `@sizeOf(T)` on types you depend on. On big APIs it can hit the branch quota; put `@setEvalBranchQuota(100_000)` before it.
+- **A test that runs `zig build` on other files is cached on its own inputs only:** editing just `build/config_project.zig` leaves `run test cached`, so a check of that file never reruns. Change the test file too (or the cache key) before trusting a pass.
 - **Tests run in random order** (the runner takes a `--seed`): tests sharing state must set and restore it themselves.
 - **`+- run test w` plus `failed command:` is not a failure:** the build runner prints a passing step that wrote to stderr this way. Check the `Build Summary` line and the exit code.
 - **Never delete files inside `.zig-cache/o/`:** the cache manifests still point at them and cached steps then fail with no useful message. Remove the whole `.zig-cache` or nothing.

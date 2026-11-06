@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const Context = @import("Context.zig");
 const files = @import("files.zig");
+const import_scanner = @import("import_scanner.zig");
 const manifest = @import("manifest.zig");
 
 pub const Error = Context.Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
@@ -32,11 +33,11 @@ const max_file_size = 16 * 1024 * 1024;
 
 /// Before kosmos `name` ("nord" or "nord.iced") is applied, brings up to date the build files
 /// of every local directory package it reaches through imports, itself included when it is a
-/// directory kosmos (D76). With `.report` it only prints which files would change. Every
+/// directory, in any of the local folders (D76, D87). With `.report` it only prints which files would change. Every
 /// manifest is checked before any is written, so a failure writes nothing.
 pub fn refreshApplied(context: Context, name: []const u8, mode: Mode) Error!void {
     const kosmos_name = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len];
-    const start = try findIn(context, "kosmoi", kosmos_name) orelse return;
+    const start = try find(context, kosmos_name) orelse return;
 
     var reached: std.ArrayList(Local) = .empty;
     try reached.append(context.arena, start);
@@ -126,7 +127,7 @@ fn isReached(reached: []const Local, name: []const u8) bool {
 fn fileImports(context: Context, path: []const u8) Error![]const []const u8 {
     const source = try read(context, path) orelse return context.fail("cannot read {s}: it disappeared", .{path});
     var imports: std.ArrayList([]const u8) = .empty;
-    try appendImports(context.arena, source, &imports);
+    try import_scanner.appendImports(context.arena, source, &imports);
     return imports.items;
 }
 
@@ -239,32 +240,12 @@ fn listContents(context: Context, directory: []const u8) Error!Contents {
                 if (!std.mem.endsWith(u8, path, ".zig")) continue;
                 const source = entry.dir.readFileAllocOptions(io, entry.basename, context.arena, .limited(max_file_size), .of(u8), 0) catch |err|
                     return context.fail("cannot read {s}/{s}: {s}", .{ directory, path, @errorName(err) });
-                try appendImports(context.arena, source, &imports);
+                try import_scanner.appendImports(context.arena, source, &imports);
             },
             else => {},
         }
     }
     return .{ .files = found.items, .imports = imports.items };
-}
-
-/// Appends the text of every `@import("...")` in `source`. A literal that does not parse is
-/// skipped: the compiler has reported it already.
-fn appendImports(arena: std.mem.Allocator, source: [:0]const u8, imports: *std.ArrayList([]const u8)) std.mem.Allocator.Error!void {
-    var tokenizer: std.zig.Tokenizer = .init(source);
-    var previous: [2]std.zig.Token = undefined;
-    var count: usize = 0;
-    while (true) : (count += 1) {
-        const token = tokenizer.next();
-        if (token.tag == .eof) return;
-        defer previous = .{ previous[1], token };
-        if (count < 2 or token.tag != .string_literal or previous[1].tag != .l_paren or previous[0].tag != .builtin) continue;
-        if (!std.mem.eql(u8, source[previous[0].loc.start..previous[0].loc.end], "@import")) continue;
-        const text = std.zig.string_literal.parseAlloc(arena, source[token.loc.start..token.loc.end]) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            else => continue,
-        };
-        try imports.append(arena, text);
-    }
 }
 
 /// kosm first, then every installed or local directory package in `imports`, sorted by name.
@@ -620,4 +601,13 @@ test "single-file and installed kosmoi have no manifest to refresh" {
     try refreshApplied(test_config.context(), "base.iced", .write);
     try refreshApplied(test_config.context(), "kosm_kitty", .write);
     try testing.expectEqualStrings("", test_config.stdout.written());
+}
+
+test "applying a kosmos that lives in apps/ refreshes its own build files (D87)" {
+    var test_config: TestConfig = undefined;
+    try test_config.init();
+    defer test_config.deinit();
+
+    try refreshApplied(test_config.context(), "bar.dark", .write);
+    try testing.expectEqualStrings("created apps/bar/build.zig\nupdated apps/bar/build.zig.zon\n", test_config.stdout.written());
 }
