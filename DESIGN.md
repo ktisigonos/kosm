@@ -389,10 +389,11 @@ Four writers. An app chooses whichever fits each target.
 
 ### 7.2 Transactional apply
 
-- **D36.** `kosm apply` happens in two phases. **Plan:** call the kosmos function, apply `--set`, call every app's `apply`, and compute every edit in memory. Any error aborts, and nothing is touched. **Commit:** write temp files, then rename them all. Reloading apps afterwards is D59.
+- **D36.** `kosm apply` happens in two phases. **Plan:** call the kosmos function, apply `--set`, call every app's `apply`, and compute every edit in memory. Any error aborts, and nothing is touched. **Commit:** write temp files, then rename them all. Reloading apps afterwards is D59 and D74.
 - **D37.** `kosm apply frost --diff` prints the plan as a unified diff and writes nothing.
 - **D38.** Two apps editing the same byte range in the same apply is a plan-time error.
-- **D59. Reloading is the app's job, not core's.** Each app knows how its program reloads. The mechanism is designed in step 6 (Q16); core only provides whatever hook an app needs to run after the commit, since `apply` runs before anything is written.
+- **D59. Reloading is the app's job, not core's.** Each app knows how its program reloads. The mechanism is D74; core only provides the hook an app needs to run after the commit, since `apply` runs before anything is written.
+- **D74. An app reloads its program through an optional `reload` function.** An app may declare `pub fn reload(self) !void` next to `apply`; kosm calls it after the commit, for every app in the applied tree that has one, whether or not its files changed. `--diff` never reloads. An app without `reload` is never reloaded.
 
 ## 8. Language adapters
 

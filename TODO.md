@@ -53,8 +53,8 @@ Markers:
   - Do: add the `format` and `parser` capabilities to `kosm.Adapter` (D39, D42).
   - Done when: path matching, cardinality, and byte-preserving edits are tested per adapter on real-world snippets.
 
-- [ ] **6. CLI completion** `BLOCKED: Q16`
-  - Do: `kosm add/remove/update` (D46), app reloads (D59), applying kosmoi from packages and keeping directory manifests up to date (D62), `current`, `--set` (D20).
+- [ ] **6. CLI completion** `PLAN FIRST`
+  - Do: `kosm add/remove/update` (D46), app reloads (D59, D74), applying kosmoi from packages and keeping directory manifests up to date (D62), `current`, `--set` (D20).
   - Done when: each command is tested against a temp config project; nothing touches `~/.config/kosm`.
 
 ---
