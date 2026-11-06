@@ -1,6 +1,6 @@
-//! Keeps a directory kosmos' own manifest up to date when kosm applies it (D62): its
-//! `build.zig.zon` depends on kosm and exactly the packages the kosmos imports, and lists every
-//! file it holds. Nothing else is touched, including other directory packages' manifests.
+//! Keeps the manifests of local directory packages up to date (D62, D76): each `build.zig.zon`
+//! depends on kosm and exactly the packages its directory imports, and lists every file it
+//! holds. An apply refreshes the applied kosmos and every directory package it reaches.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -26,38 +26,136 @@ const build_name = "build.zig";
 const manifest_name = "build.zig.zon";
 const kosm_name = "kosm";
 /// The directories holding local kosmoi, apps and adapters, as the config build reads them.
-const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
+pub const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
 /// Kosmos files and manifests are small; this only guards against reading something huge.
 const max_file_size = 16 * 1024 * 1024;
 
-/// When kosmos `name` ("nord" or "nord.iced") is a directory kosmos (`kosmoi/nord/`), writes
-/// its `build.zig` if missing and brings its `build.zig.zon` up to date, or with `.report`
-/// only prints which of them would change. A single-file or installed kosmos has no manifest.
-pub fn refresh(context: Context, name: []const u8, mode: Mode) Error!void {
-    const package_name = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len];
-    const directory = try std.Io.Dir.path.join(context.arena, &.{ "kosmoi", package_name });
-    if (try find(context, directory) != .directory) return;
+/// Before kosmos `name` ("nord" or "nord.iced") is applied, brings up to date the build files
+/// of every local directory package it reaches through imports, itself included when it is a
+/// directory kosmos (D76). With `.report` it only prints which files would change. Every
+/// manifest is checked before any is written, so a failure writes nothing.
+pub fn refreshApplied(context: Context, name: []const u8, mode: Mode) Error!void {
+    const kosmos_name = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len];
+    const start = try findIn(context, "kosmoi", kosmos_name) orelse return;
+
+    var reached: std.ArrayList(Local) = .empty;
+    try reached.append(context.arena, start);
+    var directories: std.ArrayList(Reached) = .empty;
+    var index: usize = 0;
+    while (index < reached.items.len) : (index += 1) {
+        const local = reached.items[index];
+        const imports = switch (local.kind) {
+            .file => try fileImports(context, local.path),
+            .directory => blk: {
+                const contents = try listContents(context, local.path);
+                try directories.append(context.arena, .{ .directory = local.path, .contents = contents });
+                break :blk contents.imports;
+            },
+        };
+        for (imports) |import_name| {
+            if (isReached(reached.items, import_name)) continue;
+            if (try find(context, import_name)) |found| try reached.append(context.arena, found);
+        }
+    }
+    // The applied kosmos first, then the rest by path, so the output does not depend on walk order.
+    const first_sorted: usize = if (start.kind == .directory) 1 else 0;
+    std.mem.sort(Reached, directories.items[first_sorted..], {}, reachedLessThan);
+
+    var changes: std.ArrayList(Change) = .empty;
+    for (directories.items) |directory| try planPackage(context, directory, directories.items, &changes);
+    for (changes.items) |change| try save(context, mode, change);
+}
+
+/// Writes the build files of directory package `directory` ("apps/my_bar"), relative to the
+/// config: `build.zig` if missing, and `build.zig.zon` when it is missing or stale.
+pub fn refresh(context: Context, directory: []const u8, mode: Mode) Error!void {
+    var changes: std.ArrayList(Change) = .empty;
+    const package: Reached = .{ .directory = directory, .contents = try listContents(context, directory) };
+    try planPackage(context, package, &.{package}, &changes);
+    for (changes.items) |change| try save(context, mode, change);
+}
+
+/// A local kosmos, app or adapter: a single file (`kosmoi/frost.zig`) or a directory package
+/// (`apps/my_bar`).
+const Local = struct {
+    name: []const u8,
+    /// Relative to the config.
+    path: []const u8,
+    kind: enum { file, directory },
+};
+
+/// A directory package reached from the applied kosmos, with what it holds.
+const Reached = struct {
+    directory: []const u8,
+    contents: Contents,
+};
+
+/// A file to write, decided before anything is written.
+const Change = struct {
+    path: []const u8,
+    bytes: []const u8,
+    kind: enum { create, update },
+};
+
+/// The local kosmos, app or adapter `name`, or null when there is none (an installed package,
+/// `std`, a relative file).
+fn find(context: Context, name: []const u8) Error!?Local {
+    for (local_directories) |directory| {
+        if (try findIn(context, directory, name)) |found| return found;
+    }
+    return null;
+}
+
+/// `name` in local directory `directory` ("kosmoi"), as a file or a directory, or null.
+fn findIn(context: Context, directory: []const u8, name: []const u8) Error!?Local {
+    const file = try context.arena.print("{s}/{s}.zig", .{ directory, name });
+    if (try kindOf(context, file) == .file) return .{ .name = name, .path = file, .kind = .file };
+    const package = try std.Io.Dir.path.join(context.arena, &.{ directory, name });
+    if (try kindOf(context, package) == .directory) return .{ .name = name, .path = package, .kind = .directory };
+    return null;
+}
+
+fn isReached(reached: []const Local, name: []const u8) bool {
+    for (reached) |local| {
+        if (std.mem.eql(u8, local.name, name)) return true;
+    }
+    return false;
+}
+
+/// Every `@import` of single-file package `path`.
+fn fileImports(context: Context, path: []const u8) Error![]const []const u8 {
+    const source = try read(context, path) orelse return context.fail("cannot read {s}: it disappeared", .{path});
+    var imports: std.ArrayList([]const u8) = .empty;
+    try appendImports(context.arena, source, &imports);
+    return imports.items;
+}
+
+/// Adds the build files `package` needs to `changes`, or nothing when they are up to date.
+/// `refreshed` are the packages getting a manifest in the same run, `package` among them.
+fn planPackage(context: Context, package: Reached, refreshed: []const Reached, changes: *std.ArrayList(Change)) Error!void {
+    const directory = package.directory;
+    const contents = package.contents;
+    const package_name = std.Io.Dir.path.basename(directory);
     if (!std.zig.isValidId(package_name)) {
         return context.fail("{s}/ cannot be a package: its name must be a Zig identifier (D51)", .{directory});
     }
 
     const config_manifest = try read(context, manifest_name) orelse return context.fail("{s} has no {s}", .{ context.config, manifest_name });
-    const contents = try listContents(context, directory);
-    const dependencies = try packageDependencies(context, package_name, directory, config_manifest, contents.imports);
+    const dependencies = try packageDependencies(context, package_name, directory, config_manifest, contents.imports, refreshed);
 
     const build_path = try std.Io.Dir.path.join(context.arena, &.{ directory, build_name });
     const manifest_path = try std.Io.Dir.path.join(context.arena, &.{ directory, manifest_name });
-    const create_build = try find(context, build_path) == .missing;
+    const create_build = try kindOf(context, build_path) == .missing;
     const existing = try read(context, manifest_path);
     const base = existing orelse try newManifest(context, package_name, config_manifest);
-    var paths: std.ArrayList([]const u8) = .fromOwnedSlice(contents.files);
+    var paths: std.ArrayList([]const u8) = .fromOwnedSlice(try context.arena.dupe([]const u8, contents.files));
     if (create_build) try paths.append(context.arena, build_name);
     if (existing == null) try paths.append(context.arena, manifest_name);
     const updated = render(context.arena, base, dependencies, paths.items) catch |err| return invalidManifest(context, err, manifest_path);
 
-    if (create_build) try save(context, mode, build_path, build_file, .create);
+    if (create_build) try changes.append(context.arena, .{ .path = build_path, .bytes = build_file, .kind = .create });
     if (existing == null or !std.mem.eql(u8, existing.?, updated)) {
-        try save(context, mode, manifest_path, updated, if (existing == null) .create else .update);
+        try changes.append(context.arena, .{ .path = manifest_path, .bytes = updated, .kind = if (existing == null) .create else .update });
     }
 }
 
@@ -172,7 +270,7 @@ fn appendImports(arena: std.mem.Allocator, source: [:0]const u8, imports: *std.A
 /// kosm first, then every installed or local directory package in `imports`, sorted by name.
 /// Each `.path` is made relative to `directory`. Names that are neither (`std`, `colors.zig`,
 /// a typo the compiler has reported) are not dependencies.
-fn packageDependencies(context: Context, package_name: []const u8, directory: []const u8, config_manifest: [:0]const u8, imports: []const []const u8) Error![]const manifest.Dependency {
+fn packageDependencies(context: Context, package_name: []const u8, directory: []const u8, config_manifest: [:0]const u8, imports: []const []const u8, refreshed: []const Reached) Error![]const manifest.Dependency {
     const installed = manifest.dependencies(context.arena, config_manifest) catch |err|
         return invalidManifest(context, err, manifest_name);
     const kosm = for (installed) |dependency| {
@@ -187,7 +285,7 @@ fn packageDependencies(context: Context, package_name: []const u8, directory: []
         } else false) continue;
         const dependency = for (installed) |candidate| {
             if (std.mem.eql(u8, candidate.name, name)) break candidate;
-        } else try localDependency(context, directory, name) orelse continue;
+        } else try localDependency(context, directory, name, refreshed) orelse continue;
         try result.append(context.arena, dependency);
     }
     std.mem.sort(manifest.Dependency, result.items, {}, dependencyLessThan);
@@ -199,18 +297,19 @@ fn packageDependencies(context: Context, package_name: []const u8, directory: []
 }
 
 /// The dependency on local directory package `name` (`apps/my_bar/`), with its path relative
-/// to the config, or null when `name` is not local. A single file, or a directory without a
-/// manifest, cannot be a dependency, so either is an error naming the import (D62).
-fn localDependency(context: Context, directory: []const u8, name: []const u8) Error!?manifest.Dependency {
+/// to the config, or null when `name` is not local. A single file, or a directory that has no
+/// manifest and gets none in this run, cannot be a dependency, so either is an error naming
+/// the import (D62).
+fn localDependency(context: Context, directory: []const u8, name: []const u8, refreshed: []const Reached) Error!?manifest.Dependency {
     for (local_directories) |local_directory| {
         const file = try context.arena.print("{s}/{s}.zig", .{ local_directory, name });
-        if (try find(context, file) == .file) {
+        if (try kindOf(context, file) == .file) {
             return context.fail("{s}/ imports '{s}', which is the single file {s}; a published package could not resolve it, so make it a directory package (D62)", .{ directory, name, file });
         }
         const package = try std.Io.Dir.path.join(context.arena, &.{ local_directory, name });
-        if (try find(context, package) != .directory) continue;
+        if (try kindOf(context, package) != .directory) continue;
         const package_manifest = try std.Io.Dir.path.join(context.arena, &.{ package, manifest_name });
-        if (try find(context, package_manifest) != .file) {
+        if (try kindOf(context, package_manifest) != .file and !isRefreshed(refreshed, package)) {
             return context.fail("{s}/ imports '{s}', but {s}/ has no {s} yet, so it cannot be a dependency", .{ directory, name, package, manifest_name });
         }
         return .{ .name = name, .path = package };
@@ -225,18 +324,18 @@ fn rebase(context: Context, directory: []const u8, path: []const u8) Error![]con
     return std.Io.Dir.path.relativeAlloc(context.arena, context.config, null, from, to);
 }
 
-/// Writes `bytes` to `path` and says so, or with `.report` only says it would.
-fn save(context: Context, mode: Mode, path: []const u8, bytes: []const u8, change: enum { create, update }) Error!void {
-    const verb = switch (change) {
+/// Writes `change` and says so, or with `.report` only says it would.
+fn save(context: Context, mode: Mode, change: Change) Error!void {
+    const verb = switch (change.kind) {
         .create => "create",
         .update => "update",
     };
     switch (mode) {
-        .report => return context.stdout.print("would {s} {s}\n", .{ verb, path }),
+        .report => return context.stdout.print("would {s} {s}\n", .{ verb, change.path }),
         .write => {
-            const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, path });
-            files.replace(context.io, full_path, bytes) catch |err| return context.fail("cannot write {s}: {s}", .{ path, @errorName(err) });
-            try context.stdout.print("{s}d {s}\n", .{ verb, path });
+            const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, change.path });
+            files.replace(context.io, full_path, change.bytes) catch |err| return context.fail("cannot write {s}: {s}", .{ change.path, @errorName(err) });
+            try context.stdout.print("{s}d {s}\n", .{ verb, change.path });
         },
     }
 }
@@ -244,7 +343,7 @@ fn save(context: Context, mode: Mode, path: []const u8, bytes: []const u8, chang
 const Found = enum { missing, file, directory, other };
 
 /// What `path` (relative to the config) is.
-fn find(context: Context, path: []const u8) Error!Found {
+fn kindOf(context: Context, path: []const u8) Error!Found {
     const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, path });
     const stat = std.Io.Dir.cwd().statFile(context.io, full_path, .{}) catch |err| switch (err) {
         error.FileNotFound, error.NotDir => return .missing,
@@ -278,6 +377,17 @@ fn stringLessThan(_: void, left: []const u8, right: []const u8) bool {
     return std.mem.lessThan(u8, left, right);
 }
 
+fn isRefreshed(refreshed: []const Reached, directory: []const u8) bool {
+    for (refreshed) |package| {
+        if (std.mem.eql(u8, package.directory, directory)) return true;
+    }
+    return false;
+}
+
+fn reachedLessThan(_: void, left: Reached, right: Reached) bool {
+    return std.mem.lessThan(u8, left.directory, right.directory);
+}
+
 fn dependencyLessThan(_: void, left: manifest.Dependency, right: manifest.Dependency) bool {
     return std.mem.lessThan(u8, left.name, right.name);
 }
@@ -285,7 +395,7 @@ fn dependencyLessThan(_: void, left: manifest.Dependency, right: manifest.Depend
 const testing = std.testing;
 
 /// A config project in a temp directory with directory kosmoi `nord` and `other`, local
-/// directory app `bar`, single-file kosmos `base` and directory app `draft` without a manifest.
+/// directory app `bar` and single-file kosmos `base`.
 const TestConfig = struct {
     tmp: testing.TmpDir,
     arena: std.heap.ArenaAllocator,
@@ -329,7 +439,6 @@ const TestConfig = struct {
             .{ "kosmoi/base.zig", "" },
             .{ "apps/bar/build.zig.zon", ".{ .name = .bar }\n" },
             .{ "apps/bar/root.zig", "" },
-            .{ "apps/draft/root.zig", "" },
         };
         for (written) |file| try test_config.write(file[0], file[1]);
     }
@@ -387,8 +496,8 @@ test "applying a directory kosmos writes its build files, depending on exactly w
     try test_config.init();
     defer test_config.deinit();
 
-    try refresh(test_config.context(), "nord.iced", .write);
-    try testing.expectEqualStrings("created kosmoi/nord/build.zig\ncreated kosmoi/nord/build.zig.zon\n", test_config.stdout.written());
+    try refreshApplied(test_config.context(), "nord.iced", .write);
+    try testing.expectEqualStrings("created kosmoi/nord/build.zig\ncreated kosmoi/nord/build.zig.zon\ncreated apps/bar/build.zig\nupdated apps/bar/build.zig.zon\n", test_config.stdout.written());
     try testing.expectEqualStrings(build_file, (try test_config.read("kosmoi/nord/build.zig")).?);
     const written = (try test_config.read("kosmoi/nord/build.zig.zon")).?;
     try testing.expect(std.mem.startsWith(u8, written, ".{\n    .name = .nord,\n    .version = \"0.0.0\",\n    .fingerprint = 0x"));
@@ -416,8 +525,8 @@ test "a manifest is rewritten only when its dependencies or files change, keepin
     );
     try test_config.write("kosmoi/nord/build.zig", "// my own build\n");
 
-    try refresh(test_config.context(), "nord", .write);
-    try testing.expectEqualStrings("updated kosmoi/nord/build.zig.zon\n", test_config.stdout.written());
+    try refreshApplied(test_config.context(), "nord", .write);
+    try testing.expectEqualStrings("updated kosmoi/nord/build.zig.zon\ncreated apps/bar/build.zig\nupdated apps/bar/build.zig.zon\n", test_config.stdout.written());
     const first = (try test_config.read("kosmoi/nord/build.zig.zon")).?;
     try testing.expect(std.mem.startsWith(u8, first, "// nord, by hand\n.{\n    .name = .nord,\n    .version = \"1.2.3\",\n    .fingerprint = 0x1, // mine\n    .paths = .{\n        \"build.zig\",\n"));
     try testing.expect(std.mem.endsWith(u8, first, "    },\n    .dependencies = .{\n        .kosm = .{\n            .path = \"../../../kosm\",\n        },\n" ++
@@ -426,12 +535,12 @@ test "a manifest is rewritten only when its dependencies or files change, keepin
     try testing.expectEqualStrings("// my own build\n", (try test_config.read("kosmoi/nord/build.zig")).?);
 
     test_config.stdout.clearRetainingCapacity();
-    try refresh(test_config.context(), "nord", .write);
+    try refreshApplied(test_config.context(), "nord", .write);
     try testing.expectEqualStrings("", test_config.stdout.written());
     try testing.expectEqualStrings(first, (try test_config.read("kosmoi/nord/build.zig.zon")).?);
 
     try test_config.write("kosmoi/nord/colors.zig", "const css = @import(\"kosm_css\");\n");
-    try refresh(test_config.context(), "nord", .write);
+    try refreshApplied(test_config.context(), "nord", .write);
     const second = (try test_config.read("kosmoi/nord/build.zig.zon")).?;
     try testing.expect(std.mem.find(u8, second, ".kosm_kitty") != null);
     try testing.expect(std.mem.find(u8, second, ".bar") == null);
@@ -443,34 +552,64 @@ test "with --diff a manifest refresh only says what it would write" {
     try test_config.init();
     defer test_config.deinit();
 
-    try refresh(test_config.context(), "nord", .report);
-    try testing.expectEqualStrings("would create kosmoi/nord/build.zig\nwould create kosmoi/nord/build.zig.zon\n", test_config.stdout.written());
+    try refreshApplied(test_config.context(), "nord", .report);
+    try testing.expectEqualStrings("would create kosmoi/nord/build.zig\nwould create kosmoi/nord/build.zig.zon\nwould create apps/bar/build.zig\nwould update apps/bar/build.zig.zon\n", test_config.stdout.written());
     try testing.expectEqual(null, try test_config.read("kosmoi/nord/build.zig"));
     try testing.expectEqual(null, try test_config.read("kosmoi/nord/build.zig.zon"));
 
-    try refresh(test_config.context(), "nord", .write);
+    try refreshApplied(test_config.context(), "nord", .write);
     try test_config.write("kosmoi/nord/extra.txt", "");
     test_config.stdout.clearRetainingCapacity();
     const before = (try test_config.read("kosmoi/nord/build.zig.zon")).?;
-    try refresh(test_config.context(), "nord", .report);
+    try refreshApplied(test_config.context(), "nord", .report);
     try testing.expectEqualStrings("would update kosmoi/nord/build.zig.zon\n", test_config.stdout.written());
     try testing.expectEqualStrings(before, (try test_config.read("kosmoi/nord/build.zig.zon")).?);
 }
 
-test "importing a single-file or manifest-less local package is an error and writes nothing" {
+test "importing a single-file local package is an error and writes nothing" {
     var test_config: TestConfig = undefined;
     try test_config.init();
     defer test_config.deinit();
 
     try test_config.write("kosmoi/nord/colors.zig", "const base = @import(\"base\");\n");
-    try testing.expectError(error.Failed, refresh(test_config.context(), "nord", .write));
+    try testing.expectError(error.Failed, refreshApplied(test_config.context(), "nord", .write));
     try testing.expectEqualStrings("error: kosmoi/nord/ imports 'base', which is the single file kosmoi/base.zig; a published package could not resolve it, so make it a directory package (D62)\n", test_config.stderr.written());
 
-    try test_config.write("kosmoi/nord/colors.zig", "const draft = @import(\"draft\");\n");
-    try testing.expectError(error.Failed, refresh(test_config.context(), "nord", .report));
-    try testing.expect(std.mem.endsWith(u8, test_config.stderr.written(), "error: kosmoi/nord/ imports 'draft', but apps/draft/ has no build.zig.zon yet, so it cannot be a dependency\n"));
+    try test_config.write("kosmoi/nord/colors.zig", "const bar = @import(\"bar\");\n");
+    try test_config.write("apps/bar/root.zig", "const base = @import(\"base\");\n");
+    try testing.expectError(error.Failed, refreshApplied(test_config.context(), "nord", .write));
+    try testing.expect(std.mem.endsWith(u8, test_config.stderr.written(), "error: apps/bar/ imports 'base', which is the single file kosmoi/base.zig; a published package could not resolve it, so make it a directory package (D62)\n"));
     try testing.expectEqual(null, try test_config.read("kosmoi/nord/build.zig"));
     try testing.expectEqual(null, try test_config.read("kosmoi/nord/build.zig.zon"));
+    try testing.expectEqualStrings("", test_config.stdout.written());
+}
+
+test "an apply refreshes every directory package it reaches, through single files and import cycles" {
+    var test_config: TestConfig = undefined;
+    try test_config.init();
+    defer test_config.deinit();
+    try test_config.write("kosmoi/frost.zig", "const kitty = @import(\"kosm_kitty\");\nconst bar = @import(\"bar\");\n");
+    try test_config.write("apps/bar/root.zig", "const lang = @import(\"lang\");\n");
+    try test_config.write("adapters/lang/root.zig", "const kosm = @import(\"kosm\");\nconst bar = @import(\"bar\");\n");
+
+    try refreshApplied(test_config.context(), "frost", .write);
+    try testing.expectEqualStrings(
+        \\created adapters/lang/build.zig
+        \\created adapters/lang/build.zig.zon
+        \\created apps/bar/build.zig
+        \\updated apps/bar/build.zig.zon
+        \\
+    , test_config.stdout.written());
+    const bar = (try test_config.read("apps/bar/build.zig.zon")).?;
+    try testing.expect(std.mem.find(u8, bar, "        .lang = .{\n            .path = \"../../adapters/lang\",\n        },\n") != null);
+    const lang = (try test_config.read("adapters/lang/build.zig.zon")).?;
+    try testing.expect(std.mem.find(u8, lang, "        .bar = .{\n            .path = \"../../apps/bar\",\n        },\n") != null);
+    try testing.expectEqual(null, try test_config.read("kosmoi/nord/build.zig"));
+    try testing.expectEqualStrings(TestConfig.other_manifest, (try test_config.read("kosmoi/other/build.zig.zon")).?);
+
+    test_config.stdout.clearRetainingCapacity();
+    try refreshApplied(test_config.context(), "frost", .write);
+    try testing.expectEqualStrings("", test_config.stdout.written());
 }
 
 test "single-file and installed kosmoi have no manifest to refresh" {
@@ -478,7 +617,7 @@ test "single-file and installed kosmoi have no manifest to refresh" {
     try test_config.init();
     defer test_config.deinit();
 
-    try refresh(test_config.context(), "base.iced", .write);
-    try refresh(test_config.context(), "kosm_kitty", .write);
+    try refreshApplied(test_config.context(), "base.iced", .write);
+    try refreshApplied(test_config.context(), "kosm_kitty", .write);
     try testing.expectEqualStrings("", test_config.stdout.written());
 }

@@ -80,7 +80,7 @@ Markers:
   - Do: `kosm list [kosmos] [--config dir]` prints every kosmos with its variants, and the installed packages with what each provides (D85).
   - Done when: tests init a temp config, apply a kosmos in it, and list it; init on a complete project changes no byte, and init on a partial one adds only what is missing.
 
-- [ ] **7b. `kosm new`**
+- [x] **7b. `kosm new`**
   - Do: `kosm new kosmos|app|adapter <name>` scaffolds a directory package with a commented `root.zig`, `build.zig` and `build.zig.zon` (D62, D63).
   - Do: keep the manifests of directory apps and adapters (`apps/my_bar/build.zig.zon`) up to date when a kosmos using them is applied; D76 refreshes only the applied kosmos' own.
   - Done when: each kind is scaffolded in a temp config and builds there, a scaffolded kosmos applies with `--diff`, and an existing name is refused.
