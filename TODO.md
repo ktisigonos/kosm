@@ -56,7 +56,7 @@ Markers:
 - [ ] **6a. Reloads and `--set`** `PLAN FIRST`
   - Do: apps' optional `reload`, called after the commit for every applied app, never on `--diff` (D59, D74); `kosm_kitty` reloads kitty.
   - Do: `--set path=value` on the returned tree (D20), with `set` reserved as a parameter name (D19).
-  - Done when: tests show reloads run only after a successful commit, a failing reload names its app while the rest still reload, and `--set` covers nested paths, unknown fields, bad values, optionals and colors.
+  - Done when: tests show reloads run only after a successful commit, a failing reload is a warning naming its app while the rest still reload and the exit status stays 0, and `--set` covers nested paths, unknown fields, bad values, optionals and colors.
 
 - [ ] **6b. `kosm current`**
   - Do: record each successful apply in the state directory and print it with `kosm current` (D75).

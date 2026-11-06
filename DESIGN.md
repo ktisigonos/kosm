@@ -393,7 +393,7 @@ Four writers. An app chooses whichever fits each target.
 - **D37.** `kosm apply frost --diff` prints the plan as a unified diff and writes nothing.
 - **D38.** Two apps editing the same byte range in the same apply is a plan-time error.
 - **D59. Reloading is the app's job, not core's.** Each app knows how its program reloads. The mechanism is D74; core only provides the hook an app needs to run after the commit, since `apply` runs before anything is written.
-- **D74. An app reloads its program through an optional `reload` function.** An app may declare `pub fn reload(self) !void` next to `apply`; kosm calls it after the commit, for every app in the applied tree that has one, whether or not its files changed. `--diff` never reloads. An app without `reload` is never reloaded. A failing reload can't undo the commit, so kosm reports each failing app by name, still reloads the rest, and exits 1.
+- **D74. An app reloads its program through an optional `reload` function.** An app may declare `pub fn reload(self: App, reloader: *kosm.Reloader) !void` next to `apply`. Like `Output` for `apply`, `kosm.Reloader` keeps io out of the app (G7): `try reloader.run(&.{ "pkill", "-USR1", "-x", "kitty" })` runs a command and waits for it, and a command that can't start or exits non-zero fails the reload. Kosm calls `reload` after the commit, for every app in the applied tree that has one, whether or not its files changed; `--diff` and a failed plan never reload. An app without `reload` is never reloaded. A reload is not critical: a failing one is printed as a warning naming the app (the program may simply not be running), the rest still reload, and the exit status is unaffected.
 
 ## 8. Language adapters
 
