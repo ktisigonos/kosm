@@ -30,6 +30,7 @@ pub fn main(init: std.process.Init) !u8 {
             error.MissingKosmos => try stderr.interface.writeAll("error: kosm apply needs a kosmos, e.g. kosm apply frost\n"),
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
             error.UnexpectedArgument => try stderr.interface.writeAll("error: kosm current takes no arguments\n"),
+            error.CurrentWithConfig => try stderr.interface.writeAll("error: kosm current reads no config project, so it takes no --config (D66)\n"),
             error.OutOfMemory => return error.OutOfMemory,
         }
         try stderr.interface.writeAll(usage);
@@ -87,7 +88,7 @@ fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
     };
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
-    try record.writeCommand(&stdout.interface);
+    try record.writeCommand(try defaultConfig(init.io, arena, init.environ_map), &stdout.interface);
     try stdout.interface.flush();
     return 0;
 }
@@ -101,17 +102,29 @@ fn build(io: std.Io, arena: std.mem.Allocator, config: []const u8, kosmos: []con
     return term.success();
 }
 
+/// `~/.config/kosm` resolved like `kosm apply` resolves `--config`, so a symlinked default
+/// still matches the record; null without $HOME.
+fn defaultConfig(io: std.Io, arena: std.mem.Allocator, environ: *const std.process.Environ.Map) !?[]const u8 {
+    const home = environ.get("HOME") orelse return null;
+    const config = try std.Io.Dir.path.join(arena, &.{ home, default_config });
+    // A default that can't be resolved can't be the recorded config either.
+    return std.Io.Dir.cwd().realPathFileAlloc(io, config, arena) catch config;
+}
+
 /// A command line, read.
 const Command = union(enum) {
     apply: Apply,
     current,
 
-    const ParseError = Apply.ParseError || error{UnexpectedArgument};
+    const ParseError = Apply.ParseError || error{ UnexpectedArgument, CurrentWithConfig };
 
     /// Reads the arguments without the program name.
     fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Command {
         if (arguments.len == 0) return error.NoCommand;
         if (std.mem.eql(u8, arguments[0], "current")) {
+            for (arguments[1..]) |argument| {
+                if (std.mem.eql(u8, argument, "--config")) return error.CurrentWithConfig;
+            }
             if (arguments.len != 1) return error.UnexpectedArgument;
             return .current;
         }
@@ -166,7 +179,8 @@ test "current takes no arguments" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
     try testing.expectEqual(.current, try Command.parse(arena.allocator(), &.{"current"}));
-    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "current", "--config", "/c" }));
+    try testing.expectError(error.CurrentWithConfig, Command.parse(arena.allocator(), &.{ "current", "--config", "/c" }));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "current", "frost" }));
 }
 
 test "apply without a kosmos, a dangling --config or another command is an error" {

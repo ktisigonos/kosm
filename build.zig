@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "kosm_current", .module = current_module },
         },
     });
-    // The command line only drives zig build and the runner, and reads the last apply's record.
+    // The command line only drives zig build and the runner; it imports nothing but kosm_current.
     const cli_module = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,

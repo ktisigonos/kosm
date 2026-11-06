@@ -58,16 +58,20 @@ pub fn load(arena: std.mem.Allocator, io: std.Io, file_path: []const u8, diagnos
 const max_size = 1024 * 1024;
 
 /// Prints the command that applies this record again:
-/// `kosm apply frost.iced --accent '#ff0000' --config /home/user/.config/kosm`.
-pub fn writeCommand(record: Record, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+/// `kosm apply frost.iced --accent '#ff0000' --config /tmp/config`. `--config` is left out when
+/// the recorded config is `default_config` (D75).
+pub fn writeCommand(record: Record, default_config: ?[]const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     try writer.writeAll("kosm apply ");
     try writeShellWord(writer, record.kosmos);
     for (record.arguments) |argument| {
         try writer.writeByte(' ');
         try writeShellWord(writer, argument);
     }
-    try writer.writeAll(" --config ");
-    try writeShellWord(writer, record.config);
+    const is_default = if (default_config) |config| std.mem.eql(u8, config, record.config) else false;
+    if (!is_default) {
+        try writer.writeAll(" --config ");
+        try writeShellWord(writer, record.config);
+    }
     try writer.writeByte('\n');
 }
 
@@ -145,9 +149,20 @@ test "the command quotes only the words a shell would split or expand" {
     const record: Record = .{ .kosmos = "frost.iced", .arguments = &.{ "--accent", "#ff0000", "--set", "kitty.title=it's", "--name", "" }, .config = "/home/user/.config/kosm" };
     var buffer: [256]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
-    try record.writeCommand(&writer);
+    try record.writeCommand(null, &writer);
     try testing.expectEqualStrings(
         "kosm apply frost.iced --accent '#ff0000' --set 'kitty.title=it'\\''s' --name '' --config /home/user/.config/kosm\n",
         writer.buffered(),
     );
+}
+
+test "the command leaves out --config only when it is the default" {
+    const record: Record = .{ .kosmos = "frost", .arguments = &.{}, .config = "/home/user/.config/kosm" };
+    var buffer: [256]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try record.writeCommand("/home/user/.config/kosm", &writer);
+    try testing.expectEqualStrings("kosm apply frost\n", writer.buffered());
+    writer = .fixed(&buffer);
+    try record.writeCommand("/home/other/.config/kosm", &writer);
+    try testing.expectEqualStrings("kosm apply frost --config /home/user/.config/kosm\n", writer.buffered());
 }
