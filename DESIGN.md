@@ -171,10 +171,10 @@ pub const Variations = struct {
   - `kosm apply frost` -> `frost.kosmos()`; `kosm apply frost.iced` -> `frost.iced()`.
   - One file or many is your choice: nothing forces a base/frost split.
 - **D18. The returned tree is the selection.** Kosm walks the returned struct recursively. **D53:** a field is an app when its type is a struct with exactly `pub fn apply(self, *kosm.Output) !void` (so `Modifier.apply(Color) Color` doesn't count), and any other struct is recursed into. An optional app (`?hyprland.App`) set to `null` is skipped. Only apps that appear in the tree are applied. A website-only kosmos returns `struct { website: website.App }`.
-- **D19. Parameters become CLI flags.** A kosmos function may take one `Params` struct. Kosm parses `kosm apply frost --accent '#ff0000' --blur false` into it by reflection. Field types decide parsing (colors: D55). Fields should be optional with defaults. A bool flag always takes a value (`--blur false`), and no field may be named `diff` or `config`, which are kosm's own flags.
+- **D19. Parameters become CLI flags.** A kosmos function may take one `Params` struct. Kosm parses `kosm apply frost --accent '#ff0000' --blur false` into it by reflection. Field types decide parsing (colors: D55). Fields should be optional with defaults. A bool flag always takes a value (`--blur false`), and no field may be named `diff`, `config` or `set`, which are kosm's own flags.
 - **D55. Colors in flags.** A `kosm.Color` field accepts every common text form: `#rgb`, `#rrggbb`, `#rrggbbaa` (with or without `#`), `rgb(...)`, `rgba(...)`, `hsl(...)`, `hsla(...)` and `oklch(...)`. A `kosm.ColorChoice` field additionally accepts a hue name (`--accent sky`). Kosm can't know the kosmos' palette while parsing, so the kosmos resolves it with `params.accent.resolve(theme.palette)`. Flags are spelled `--border-size`; the field spelling `--border_size` is accepted too.
 - **D56. Hosts are opt-in.** If `Params` has a field `host` of an enum type the user declares (`pub const Host = enum { nous, egregoros, ergasterion, synekdemos };`), kosm fills it from the machine's hostname. An unknown hostname is an error naming the hostname and the enum. Without such a field nothing happens, so kosmoi that don't care never see hosts. Combined with optional apps (D53), `if (params.host == .ergasterion) result.hyprland = null;` skips an app on one machine.
-- **D20. `--set` pokes the final tree.** `--set hyprland.blur.size=20` runs after the kosmos function returns and walks the tree by reflection. It's for one-off tweaks: it assigns a result, so nothing derived from it changes (D3).
+- **D20. `--set` pokes the final tree.** `--set hyprland.blur.size=20` runs after the kosmos function returns and walks the tree by reflection. It's for one-off tweaks: it assigns a result, so nothing derived from it changes (D3). Values parse like `Params` flags (D19, D55). On an optional field the value `null` sets it to null; a path that goes through a struct or app that is `null` is an error.
 - **D50. Kosmoi, apps and adapters import each other by name**, like packages: `@import("base")`, `@import("hypr_defs")`, never `@import("base.zig")`. Each one is its own Zig module, and Zig doesn't allow a file in two modules. Names must be unique among your local kosmoi, apps, adapters and installed packages; kosm errors on a collision, naming both. Files *inside* a directory kosmos, app or adapter (D62) are private to it and import each other relatively (`@import("colors.zig")`).
 - **D62. A file is private, a directory is a package.** The same rule holds for `kosmoi/`, `apps/` and `adapters/`:
   - `kosmoi/frost.zig`: a single-file kosmos. It has no manifest and can't be installed by others (they can still copy the file).
@@ -393,7 +393,7 @@ Four writers. An app chooses whichever fits each target.
 - **D37.** `kosm apply frost --diff` prints the plan as a unified diff and writes nothing.
 - **D38.** Two apps editing the same byte range in the same apply is a plan-time error.
 - **D59. Reloading is the app's job, not core's.** Each app knows how its program reloads. The mechanism is D74; core only provides the hook an app needs to run after the commit, since `apply` runs before anything is written.
-- **D74. An app reloads its program through an optional `reload` function.** An app may declare `pub fn reload(self) !void` next to `apply`; kosm calls it after the commit, for every app in the applied tree that has one, whether or not its files changed. `--diff` never reloads. An app without `reload` is never reloaded.
+- **D74. An app reloads its program through an optional `reload` function.** An app may declare `pub fn reload(self) !void` next to `apply`; kosm calls it after the commit, for every app in the applied tree that has one, whether or not its files changed. `--diff` never reloads. An app without `reload` is never reloaded. A failing reload can't undo the commit, so kosm reports each failing app by name, still reloads the rest, and exits 1.
 
 ## 8. Language adapters
 
@@ -459,7 +459,7 @@ kosm init                            # create ~/.config/kosm
 kosm new kosmos|app|adapter <name>   # scaffold a directory package (D63)
 kosm apply <file>[.<variant>] [--<param> value]... [--set path=value]... [--diff]
 kosm list                            # kosmoi + variants, installed packages
-kosm current                         # what's applied (kosm records the last apply)
+kosm current                         # what's applied (kosm records the last apply, D75)
 
 kosm add <url>[#ref]                 # zig fetch --save in the config dir + validate it's a kosm package
 kosm remove <name>
@@ -468,6 +468,7 @@ kosm update [name]                   # re-fetch packages at their tracked ref, r
 
 - **D66. `--config <dir>` picks the config project**, for every command, defaulting to `~/.config/kosm`. Tests and experiments always pass it.
 - **D67. Built-in packages live in this repo under `packages/`** (`packages/kosm_kitty/`, `packages/kosm_zen/`, ...), as directory packages exactly like third-party ones (D2, D62). While kosm is developed, configs use them by `.path`; they move to their own repos later.
+- **D75. `current` lives in the state directory, not the config.** The config is usually part of a dotfiles repo, where a record of every apply would be a git change. After each successful commit (never on `--diff`) kosm writes `$XDG_STATE_HOME/kosm/current.zon`, falling back to `~/.local/state/kosm/current.zon`, holding the kosmos name, its arguments and the config path. Tests point `XDG_STATE_HOME` at a temp directory.
 - **D63. `kosm new` scaffolds the full directory.** `kosm new kosmos frost` creates `kosmoi/frost/` with `root.zig` (a commented starting kosmos), `build.zig` and `build.zig.zon`; `kosm new app` and `kosm new adapter` do the same in `apps/` and `adapters/`. Nobody writes build files by hand. A single-file kosmos, app or adapter (D62) is still valid for personal use; you just create the file yourself.
 - **D46. Package commands wrap `zig fetch`.** No custom package format or registry. `add` checks that the package provides at least one app or adapter, and reports what it provides. `build.zig.zon` stores only the resolved URL + hash, which loses "follow branch `main`", so kosm keeps that intent in `packages.zon` (name -> url + ref), and `update` re-runs `zig fetch --save=<name>` from it.
 

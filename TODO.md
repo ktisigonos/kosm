@@ -53,10 +53,22 @@ Markers:
   - Do: add the `format` and `parser` capabilities to `kosm.Adapter` (D39, D42).
   - Done when: path matching, cardinality, and byte-preserving edits are tested per adapter on real-world snippets.
 
-- [ ] **6. CLI completion** `PLAN FIRST`
-  - Do: `kosm add/remove/update` (D46), app reloads (D59, D74), applying kosmoi from packages and keeping directory manifests up to date (D62), `current`, `--set` (D20).
+- [ ] **6a. Reloads and `--set`** `PLAN FIRST`
+  - Do: apps' optional `reload`, called after the commit for every applied app, never on `--diff` (D59, D74); `kosm_kitty` reloads kitty.
+  - Do: `--set path=value` on the returned tree (D20), with `set` reserved as a parameter name (D19).
+  - Done when: tests show reloads run only after a successful commit, a failing reload names its app while the rest still reload, and `--set` covers nested paths, unknown fields, bad values, optionals and colors.
+
+- [ ] **6b. `kosm current`**
+  - Do: record each successful apply in the state directory and print it with `kosm current` (D75).
+  - Done when: tests with `XDG_STATE_HOME` in a temp directory show an apply records the kosmos, arguments and config, and `--diff` records nothing.
+
+- [ ] **6c. Package commands** `PLAN FIRST`
+  - Do: `kosm add/remove/update` wrapping `zig fetch` with `packages.zon` (D46).
   - Done when: each command is tested against a temp config project; nothing touches `~/.config/kosm`.
 
+- [ ] **6d. Kosmoi from packages** `PLAN FIRST`
+  - Do: apply kosmoi from installed packages and keep directory manifests up to date (D62).
+  - Done when: a temp config project applies a packaged kosmos, and building a directory kosmos rewrites only its own manifest.
 ---
 
 Follow-ups with no step yet (the human places them):
