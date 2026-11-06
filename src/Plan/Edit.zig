@@ -22,12 +22,14 @@ pub const Target = union(enum) {
     whole_file,
     /// The block with this id (D72).
     block: []const u8,
+    /// A value set by path (D31, D35); clashes only where the bytes overlap.
+    value,
 };
 
 /// Whether the two edits may not both be planned (D38, D73).
 pub fn clashes(edit: Edit, other: Edit) bool {
     if (edit.target == .whole_file or other.target == .whole_file) return true;
-    if (std.mem.eql(u8, edit.target.block, other.target.block)) return true;
+    if (edit.target == .block and other.target == .block and std.mem.eql(u8, edit.target.block, other.target.block)) return true;
     return edit.start < other.end and other.start < edit.end;
 }
 
@@ -43,4 +45,8 @@ test "edits clash on overlapping bytes, a shared block id or a whole file" {
     try testing.expect(testEdit("a", 10, 10).clashes(testEdit("a", 10, 10)));
     const whole: Edit = .{ .target = .whole_file, .start = 0, .end = 0, .content = "", .owner = "app" };
     try testing.expect(whole.clashes(testEdit("b", 10, 10)));
+    const value: Edit = .{ .target = .value, .start = 2, .end = 6, .content = "", .owner = "app" };
+    try testing.expect(value.clashes(testEdit("a", 5, 9)));
+    try testing.expect(!value.clashes(testEdit("a", 6, 9)));
+    try testing.expect(!value.clashes(.{ .target = .value, .start = 0, .end = 2, .content = "", .owner = "app" }));
 }

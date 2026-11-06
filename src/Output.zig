@@ -11,6 +11,8 @@ const Plan = @import("Plan.zig");
 const template_writer = @import("template.zig");
 const block_writer = @import("block.zig");
 const value = @import("value.zig");
+const glob = @import("glob.zig");
+const planning = @import("Output/planning.zig");
 
 /// Scratch memory for one apply; kosm frees it all afterwards (an arena).
 allocator: std.mem.Allocator,
@@ -27,6 +29,14 @@ app: []const u8,
 pub const GenerateOptions = @import("Output/GenerateOptions.zig");
 /// Options for `block`.
 pub const BlockOptions = @import("Output/BlockOptions.zig");
+/// Options for `edit`.
+pub const EditOptions = @import("Output/EditOptions.zig");
+/// The files `edit` picked, and the calls setting values in them by path (D31).
+pub const Selection = @import("Output/Selection.zig");
+/// One value a path matched, from the escape hatch (D34, D80).
+pub const Match = @import("Output/Match.zig");
+/// Which of a path's matches `Selection.setOptions` sets (D31).
+pub const Cardinality = @import("Output/Cardinality.zig").Cardinality;
 
 /// Errors from writing; `diagnostics` holds the message.
 pub const Error = error{
@@ -40,6 +50,15 @@ pub const Error = error{
     InvalidBlock,
     EditsOverlap,
     ReadFailed,
+    NoFile,
+    InvalidSyntax,
+    InvalidKeyPath,
+    NoMatch,
+    TooManyMatches,
+    IndexOutOfRange,
+    InvalidIndices,
+    NotAList,
+    NoValue,
     OutOfMemory,
 };
 
@@ -90,6 +109,49 @@ pub fn block(output: *Output, options: BlockOptions, values: anytype) Error!void
     if (needs_newline) appended.writer.writeByte('\n') catch return error.OutOfMemory;
     block_writer.write(&appended.writer, comment, options.id, content) catch return error.OutOfMemory;
     try output.addEdit(file, .{ .target = .{ .block = options.id }, .start = current.len, .end = current.len, .content = appended.written(), .owner = output.app });
+}
+
+/// Picks the existing files matching `options.files` (D79) to set values in by path (D31).
+/// Each file is parsed once, now; a file that does not parse is an error naming its line.
+/// Needs an adapter with `parser` and `format`.
+pub fn edit(output: *Output, options: EditOptions) Error!Selection {
+    const adapter = try output.findAdapter(options.files, options.lang);
+    if (adapter.parser == null)
+        return output.fail(error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no parser)", .{adapter.name});
+    if (adapter.format == null)
+        return output.fail(error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no format)", .{adapter.name});
+    const format = try output.checkFormat(options.files, options.format.orElse(adapter.default_format).resolve());
+
+    const pattern = try output.resolvePath(options.files);
+    const exclude = try output.allocator.alloc([]const u8, options.exclude.len);
+    for (options.exclude, exclude) |written, *resolved| resolved.* = try output.resolvePath(written);
+    var failure: glob.Failure = .{};
+    const found = glob.expand(output.allocator, output.plan.io, pattern, exclude, &failure) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Unreadable => return output.fail(error.ReadFailed, options.files, "cannot read {s}: {s}", .{ failure.path, failure.reason }),
+    };
+    if (found.len == 0) return output.fail(error.NoFile, options.files, "matches no file; edit only changes files that exist (D28)", .{});
+
+    const files = try output.allocator.alloc(Selection.File, found.len);
+    for (found, files) |file, *selected| {
+        const display_path = try output.displayPath(file.path);
+        const planned = output.plan.load(file.path, display_path) catch |err| return output.failRead(display_path, err);
+        const source = planned.current();
+        var context: Adapter.Context = .{ .format = format };
+        const root = adapter.parser.?(output.allocator, source, &context) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.InvalidSyntax => return output.fail(error.InvalidSyntax, display_path, "adapter '{s}': {s}", .{ adapter.name, context.message() }),
+        };
+        selected.* = .{ .path = file.path, .display_path = display_path, .source = source, .root = root };
+    }
+    return .{ .output = output, .selector = options.files, .adapter = adapter, .format = format, .files = files };
+}
+
+/// `path` with the home directory written as `~`, as messages and diffs show files.
+fn displayPath(output: *Output, path: []const u8) Error![]const u8 {
+    const inside_home = std.mem.startsWith(u8, path, output.home) and path.len > output.home.len and path[output.home.len] == '/';
+    if (!inside_home) return path;
+    return std.mem.concat(output.allocator, u8, &.{ "~", path[output.home.len..] });
 }
 
 /// `values` as text through `adapter`'s serialize, in `own` format layered over the adapter's.
@@ -212,27 +274,16 @@ fn addFile(output: *Output, file: []const u8, path: []const u8, content: []const
     try output.addEdit(planned, .{ .target = .whole_file, .start = 0, .end = planned.current().len, .content = content, .owner = output.app });
 }
 
-fn addEdit(output: *Output, file: *Plan.File, edit: Plan.Edit) Error!void {
-    output.plan.addEdit(file, edit) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.EditsOverlap => {
-            const other = file.clash(edit).?;
-            return switch (other.target) {
-                .whole_file => output.fail(error.EditsOverlap, file.display_path, "app '{s}' writes this whole file; two apps cannot write the same bytes (D38)", .{other.owner}),
-                .block => |id| output.fail(error.EditsOverlap, file.display_path, "app '{s}' writes block '{s}' of this file; two apps cannot write the same bytes (D38)", .{ other.owner, id }),
-            };
-        },
-    };
+fn addEdit(output: *Output, file: *Plan.File, planned: Plan.Edit) Error!void {
+    return planning.addEdit(output, file, planned);
 }
 
 fn failRead(output: *Output, file: []const u8, err: Plan.LoadError) Error {
-    if (err == error.OutOfMemory) return error.OutOfMemory;
-    return output.fail(error.ReadFailed, file, "cannot read it: {s}", .{@errorName(err)});
+    return planning.failRead(output, file, err);
 }
 
 fn fail(output: *Output, err: Error, file: []const u8, comptime format: []const u8, arguments: anytype) Error {
-    output.diagnostics.set(output.app, file, format, arguments);
-    return err;
+    return planning.fail(output, err, file, format, arguments);
 }
 
 const testing = std.testing;

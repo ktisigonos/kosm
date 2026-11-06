@@ -13,8 +13,13 @@ name: []const u8,
 /// unless the app passes `.lang` (D26).
 extensions: []const []const u8 = &.{},
 /// How this language spells values where neither the app nor the user chose (D70).
-/// Named apart from the `format` capability step 5 adds (D39).
+/// Named apart from the `format` capability (D39).
 default_format: Format = .{},
+/// Writes one value as source text (`true`, `"text"`, `1.5`); with `parser`, enables `edit` (D42).
+format: ?*const fn (writer: *std.Io.Writer, value: Value, context: *Context) Error!void = null,
+/// Reads a file into a tree of keys and values; with `format`, enables `edit` (D39).
+/// `kosm.treesitter.parser` builds one from node names (D40). The tree may point into `source`.
+parser: ?*const fn (allocator: std.mem.Allocator, source: []const u8, context: *Context) ParseError!Node = null,
 /// Writes a whole file from a value tree; enables `generate` and data blocks (D71).
 serialize: ?*const fn (writer: *std.Io.Writer, root: Value, context: *Context) Error!void = null,
 /// How this language writes a comment on a line of its own; enables `block` (D72).
@@ -37,6 +42,15 @@ pub const BlockComment = @import("Adapter/BlockComment.zig");
 
 /// Errors a capability may return. Return `UnsupportedValue` through `Context.unsupported`.
 pub const Error = std.Io.Writer.Error || error{UnsupportedValue};
+
+/// Errors a `parser` may return. Return `InvalidSyntax` through `Context.invalidSyntax`.
+pub const ParseError = std.mem.Allocator.Error || error{InvalidSyntax};
+
+/// One entry of a parsed file.
+pub const Node = @import("Adapter/Node.zig");
+
+/// A byte range of a file's contents.
+pub const Range = @import("Adapter/Range.zig");
 
 /// Whether this adapter claims `extension` (".css").
 pub fn claims(adapter: Adapter, extension: []const u8) bool {

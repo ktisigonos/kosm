@@ -17,9 +17,14 @@ pub fn package(b: *std.Build) void {
     };
 
     var imports: std.ArrayList(std.Build.Module.Import) = .empty;
+    var grammars: std.ArrayList(*std.Build.Dependency) = .empty;
     for (b.available_deps) |available| {
         const dependency_name = available[0];
         const dependency = b.dependency(dependency_name, .{ .target = target, .optimize = optimize });
+        if (isGrammar(b, dependency)) {
+            grammars.append(b.allocator, dependency) catch @panic("OOM");
+            continue;
+        }
         // A dependency without a module of its own name (say, C sources) is wired up by hand.
         const module = dependency.builder.modules.get(dependency_name) orelse continue;
         imports.append(b.allocator, .{ .name = dependency_name, .module = module }) catch @panic("OOM");
@@ -30,8 +35,27 @@ pub fn package(b: *std.Build) void {
         .optimize = optimize,
         .imports = imports.items,
     });
+    for (grammars.items) |grammar| addGrammar(b, module, grammar);
     const tests = b.addTest(.{ .root_module = module });
     b.step("test", "Run the package's tests").dependOn(&b.addRunArtifact(tests).step);
+}
+
+/// Whether `dependency` is a tree-sitter grammar: it holds a generated `src/parser.c` (D78).
+pub fn isGrammar(b: *std.Build, dependency: *std.Build.Dependency) bool {
+    const parser = dependency.builder.root.joinString(b.allocator, "src/parser.c") catch @panic("OOM");
+    std.Io.Dir.cwd().access(b.graph.io, parser, .{}) catch return false;
+    return true;
+}
+
+/// Compiles grammar `dependency`'s `src/parser.c`, and `src/scanner.c` when it has one, into
+/// `module` (D78). Nobody writes C: the grammar's generator did.
+pub fn addGrammar(b: *std.Build, module: *std.Build.Module, dependency: *std.Build.Dependency) void {
+    module.link_libc = true;
+    module.addIncludePath(dependency.path("src"));
+    module.addCSourceFile(.{ .file = dependency.path("src/parser.c"), .flags = &.{"-std=c11"} });
+    const scanner = dependency.builder.root.joinString(b.allocator, "src/scanner.c") catch @panic("OOM");
+    std.Io.Dir.cwd().access(b.graph.io, scanner, .{}) catch return;
+    module.addCSourceFile(.{ .file = dependency.path("src/scanner.c"), .flags = &.{"-std=c11"} });
 }
 
 /// The identifier after `.name = .` in the package's `build.zig.zon`. Read by hand because a

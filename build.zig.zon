@@ -3,7 +3,12 @@
     .version = "0.0.0",
     .fingerprint = 0xb9f914d3b2a12460, // Changing this has security and trust implications.
     .minimum_zig_version = "0.17.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .tree_sitter = .{
+            .url = "https://static.crates.io/crates/tree-sitter/tree-sitter-0.26.13.crate",
+            .hash = "N-V-__8AAL-4DwDqYmHs5DVYbTLiXtPrbInxHqqJ8wa_Y__d",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

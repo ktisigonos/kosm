@@ -1,5 +1,5 @@
-//! Passed to an adapter capability: the file's format (D70), and room to explain why a value
-//! can't be written, so kosm can report it with the file and app (G6).
+//! Passed to an adapter capability: the file's format (D70), and room to explain why a value or
+//! a file can't be handled, so kosm can report it with the file and app (G6).
 
 const Context = @This();
 
@@ -36,14 +36,25 @@ pub fn writeFloat(context: *const Context, writer: *std.Io.Writer, value: f64) s
 /// Records why a value can't be written and returns the error to pass up.
 /// Too-long messages are cut short.
 pub fn unsupported(context: *Context, comptime format: []const u8, arguments: anytype) error{UnsupportedValue} {
+    context.record(format, arguments);
+    return error.UnsupportedValue;
+}
+
+/// Records why a file can't be read and returns the error to pass up.
+/// Too-long messages are cut short.
+pub fn invalidSyntax(context: *Context, comptime format: []const u8, arguments: anytype) error{InvalidSyntax} {
+    context.record(format, arguments);
+    return error.InvalidSyntax;
+}
+
+fn record(context: *Context, comptime format: []const u8, arguments: anytype) void {
     const written = std.fmt.bufPrint(&context.message_buffer, format, arguments) catch blk: {
         break :blk context.message_buffer[0..];
     };
     context.message_length = written.len;
-    return error.UnsupportedValue;
 }
 
-/// The message given to `unsupported`, or empty.
+/// The message given to `unsupported` or `invalidSyntax`, or empty.
 pub fn message(context: *const Context) []const u8 {
     return context.message_buffer[0..context.message_length];
 }

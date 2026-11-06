@@ -9,12 +9,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Core imports nothing: it knows no apps, packages or command line (D1).
+    // Core imports only the tree-sitter runtime: it knows no apps, packages or command line (D1).
     const kosm_module = b.addModule("kosm", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
+    addTreeSitter(b, kosm_module, target, optimize);
     // The record of the last apply: the runner writes it, the command line reads it (D75).
     const current_module = b.createModule(.{
         .root_source_file = b.path("src/current/Record.zig"),
@@ -55,6 +57,21 @@ pub fn build(b: *std.Build) void {
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
     }
     addPackageTests(b, test_step, kosm_module, target, optimize);
+}
+
+/// Compiles the tree-sitter runtime into core and imports its C API as `tree_sitter_api` (D41).
+fn addTreeSitter(b: *std.Build, module: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const runtime = b.dependency("tree_sitter", .{});
+    const header = b.addWriteFiles().add("tree_sitter_api.h", "#include <tree_sitter/api.h>\n");
+    const api = b.addTranslateC(.{ .root_source_file = header, .target = target, .optimize = optimize });
+    api.addIncludePath(runtime.path("include"));
+    module.addImport("tree_sitter_api", api.createModule());
+    module.addIncludePath(runtime.path("include"));
+    module.addIncludePath(runtime.path("src"));
+    module.addCSourceFile(.{
+        .file = runtime.path("src/lib.c"),
+        .flags = &.{ "-std=c11", "-D_POSIX_C_SOURCE=200112L", "-D_DEFAULT_SOURCE" },
+    });
 }
 
 /// The built-in packages in packages/ (D67), tested against this kosm.

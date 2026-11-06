@@ -14,6 +14,7 @@ pub const ColorChoice = @import("color_choice.zig").ColorChoice;
 pub const Raw = @import("Raw.zig");
 pub const Value = @import("value.zig").Value;
 pub const Adapter = @import("Adapter.zig");
+pub const treesitter = @import("treesitter.zig");
 pub const Output = @import("Output.zig");
 pub const Diagnostics = @import("Diagnostics.zig");
 pub const Reloader = @import("Reloader.zig");
@@ -55,6 +56,10 @@ test {
     std.testing.refAllDecls(Adapter);
     std.testing.refAllDecls(Adapter.Context);
     std.testing.refAllDecls(Output);
+    std.testing.refAllDecls(Output.Selection);
+    std.testing.refAllDecls(@import("Path.zig"));
+    std.testing.refAllDecls(@import("glob.zig"));
+    std.testing.refAllDecls(treesitter);
     std.testing.refAllDecls(Diagnostics);
     std.testing.refAllDecls(Reloader);
     std.testing.refAllDecls(Plan);
