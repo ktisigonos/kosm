@@ -62,7 +62,7 @@ Markers:
   - Do: record each successful apply in the state directory and print it with `kosm current` (D75).
   - Done when: tests with `XDG_STATE_HOME` in a temp directory show an apply records the kosmos, arguments and config, and `--diff` records nothing.
 
-- [ ] **6c. Package commands** `PLAN FIRST`
+- [x] **6c. Package commands** `PLAN FIRST`
   - Do: `kosm add/remove/update` wrapping `zig fetch` with `packages.zon` (D46).
   - Done when: each command is tested against a temp config project; nothing touches `~/.config/kosm`.
 

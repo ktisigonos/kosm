@@ -1,12 +1,17 @@
 //! The `kosm` command (section 10). For now `kosm apply`, which builds the one kosmos in the
-//! config project with `zig build` and runs it (D45, D66), and `kosm current` (D75).
+//! config project with `zig build` and runs it (D45, D66), `kosm current` (D75), and the package
+//! commands `kosm add`, `kosm remove` and `kosm update` (D46).
 
 const std = @import("std");
 const Record = @import("kosm_current");
+const package_commands = @import("package_commands.zig");
 
 const usage =
     \\usage: kosm apply <kosmos>[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
     \\       kosm current
+    \\       kosm add <url>[#ref] [--config dir]
+    \\       kosm remove <name> [--config dir]
+    \\       kosm update [name] [--config dir]
     \\
 ;
 
@@ -29,7 +34,7 @@ pub fn main(init: std.process.Init) !u8 {
             error.UnknownCommand => try stderr.interface.print("error: unknown command '{s}'\n", .{arguments[1]}),
             error.MissingKosmos => try stderr.interface.writeAll("error: kosm apply needs a kosmos, e.g. kosm apply frost\n"),
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
-            error.UnexpectedArgument => try stderr.interface.writeAll("error: kosm current takes no arguments\n"),
+            error.MissingArgument, error.UnexpectedArgument => try stderr.interface.print("error: kosm {s} takes {s}\n", .{ arguments[1], expectedArguments(arguments[1]) }),
             error.CurrentWithConfig => try stderr.interface.writeAll("error: kosm current reads no config project, so it takes no --config (D66)\n"),
             error.OutOfMemory => return error.OutOfMemory,
         }
@@ -39,24 +44,40 @@ pub fn main(init: std.process.Init) !u8 {
     switch (command) {
         .apply => |apply| return runApply(init, apply, &stderr.interface),
         .current => return printCurrent(init, &stderr.interface),
+        .add, .remove, .update => |package_command| return runPackageCommand(init, command, package_command, &stderr.interface),
     }
+}
+
+/// What each command takes, for argument errors.
+fn expectedArguments(command: []const u8) []const u8 {
+    if (std.mem.eql(u8, command, "add")) return "one url, e.g. kosm add git+https://example.com/kosm_kitty#main";
+    if (std.mem.eql(u8, command, "remove")) return "one package name, e.g. kosm remove kosm_kitty";
+    if (std.mem.eql(u8, command, "update")) return "at most one package name";
+    return "no arguments";
+}
+
+/// The config project's absolute path: `--config` or the default (D66). Null after printing
+/// why there is none.
+fn configPath(init: std.process.Init, given: ?[]const u8, stderr: *std.Io.Writer) !?[]const u8 {
+    const arena = init.arena.allocator();
+    const given_config = given orelse blk: {
+        const home = init.environ_map.get("HOME") orelse {
+            try stderr.writeAll("error: HOME is not set; pass --config\n");
+            return null;
+        };
+        break :blk try std.Io.Dir.path.join(arena, &.{ home, default_config });
+    };
+    return std.Io.Dir.cwd().realPathFileAlloc(init.io, given_config, arena) catch |err| {
+        try stderr.print("error: cannot open the config project {s}: {s}\n", .{ given_config, @errorName(err) });
+        return null;
+    };
 }
 
 /// Builds and runs the kosmos; only returns when it could not be run.
 fn runApply(init: std.process.Init, command: Apply, stderr: *std.Io.Writer) !u8 {
     const arena = init.arena.allocator();
-    const given_config = command.config orelse blk: {
-        const home = init.environ_map.get("HOME") orelse {
-            try stderr.writeAll("error: HOME is not set; pass --config\n");
-            return 1;
-        };
-        break :blk try std.Io.Dir.path.join(arena, &.{ home, default_config });
-    };
     // The runner records this path for `kosm current`, which may run from anywhere (D75).
-    const config = std.Io.Dir.cwd().realPathFileAlloc(init.io, given_config, arena) catch |err| {
-        try stderr.print("error: cannot open the config project {s}: {s}\n", .{ given_config, @errorName(err) });
-        return 1;
-    };
+    const config = try configPath(init, command.config, stderr) orelse return 1;
     try stderr.flush();
 
     if (!try build(init.io, arena, config, command.kosmos)) return 1;
@@ -65,6 +86,26 @@ fn runApply(init: std.process.Init, command: Apply, stderr: *std.Io.Writer) !u8 
     const err = std.process.replace(init.io, .{ .argv = runner_arguments });
     try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
     return 1;
+}
+
+/// Runs `kosm add`, `kosm remove` or `kosm update` against the config project.
+fn runPackageCommand(init: std.process.Init, command: Command, package_command: PackageCommand, stderr: *std.Io.Writer) !u8 {
+    const config = try configPath(init, package_command.config, stderr) orelse return 1;
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    defer stdout.interface.flush() catch {};
+    const context: package_commands.Context = .{ .io = init.io, .arena = init.arena.allocator(), .config = config, .stdout = &stdout.interface, .stderr = stderr };
+    const result = switch (command) {
+        .add => package_commands.add(context, package_command.argument.?),
+        .remove => package_commands.remove(context, package_command.argument.?),
+        .update => package_commands.update(context, package_command.argument),
+        .apply, .current => unreachable, // main only passes package commands here.
+    };
+    result catch |err| switch (err) {
+        error.Failed => return 1,
+        else => |other| return other,
+    };
+    return 0;
 }
 
 /// Prints the last successful apply as the command that repeats it (D75).
@@ -115,8 +156,11 @@ fn defaultConfig(io: std.Io, arena: std.mem.Allocator, environ: *const std.proce
 const Command = union(enum) {
     apply: Apply,
     current,
+    add: PackageCommand,
+    remove: PackageCommand,
+    update: PackageCommand,
 
-    const ParseError = Apply.ParseError || error{ UnexpectedArgument, CurrentWithConfig };
+    const ParseError = Apply.ParseError || error{ MissingArgument, UnexpectedArgument, CurrentWithConfig };
 
     /// Reads the arguments without the program name.
     fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Command {
@@ -128,7 +172,38 @@ const Command = union(enum) {
             if (arguments.len != 1) return error.UnexpectedArgument;
             return .current;
         }
+        if (std.mem.eql(u8, arguments[0], "add")) return .{ .add = try .parse(arguments[1..], .required) };
+        if (std.mem.eql(u8, arguments[0], "remove")) return .{ .remove = try .parse(arguments[1..], .required) };
+        if (std.mem.eql(u8, arguments[0], "update")) return .{ .update = try .parse(arguments[1..], .optional) };
         return .{ .apply = try Apply.parse(arena, arguments) };
+    }
+};
+
+/// `kosm add`, `kosm remove` or `kosm update` with its one argument and `--config`.
+const PackageCommand = struct {
+    /// add: the url and ref; remove: the name; update: the name, or null for every package.
+    argument: ?[]const u8,
+    /// The `--config` directory, or null for the default.
+    config: ?[]const u8,
+
+    const Argument = enum { required, optional };
+    const ParseError = error{ MissingArgument, UnexpectedArgument, MissingConfigDirectory };
+
+    /// Reads the arguments after the command's name. `--config dir` may appear anywhere.
+    fn parse(arguments: []const []const u8, argument: Argument) ParseError!PackageCommand {
+        var command: PackageCommand = .{ .argument = null, .config = null };
+        var index: usize = 0;
+        while (index < arguments.len) : (index += 1) {
+            if (std.mem.eql(u8, arguments[index], "--config")) {
+                index += 1;
+                if (index == arguments.len) return error.MissingConfigDirectory;
+                command.config = arguments[index];
+            } else if (command.argument != null or std.mem.startsWith(u8, arguments[index], "-")) {
+                return error.UnexpectedArgument;
+            } else command.argument = arguments[index];
+        }
+        if (argument == .required and command.argument == null) return error.MissingArgument;
+        return command;
     }
 };
 
@@ -162,6 +237,12 @@ const Apply = struct {
     }
 };
 
+test {
+    std.testing.refAllDecls(package_commands);
+    std.testing.refAllDecls(@import("Packages.zig"));
+    std.testing.refAllDecls(@import("manifest.zig"));
+}
+
 const testing = std.testing;
 
 test "apply keeps --config for itself and passes the rest on in order" {
@@ -181,6 +262,27 @@ test "current takes no arguments" {
     try testing.expectEqual(.current, try Command.parse(arena.allocator(), &.{"current"}));
     try testing.expectError(error.CurrentWithConfig, Command.parse(arena.allocator(), &.{ "current", "--config", "/c" }));
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "current", "frost" }));
+}
+
+test "package commands take their one argument and --config anywhere" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const add = try Command.parse(arena.allocator(), &.{ "add", "--config", "/c", "git+https://example.com/x#main" });
+    try testing.expectEqualStrings("git+https://example.com/x#main", add.add.argument.?);
+    try testing.expectEqualStrings("/c", add.add.config.?);
+    const update = try Command.parse(arena.allocator(), &.{"update"});
+    try testing.expectEqual(null, update.update.argument);
+    try testing.expectEqualStrings("kosm_css", (try Command.parse(arena.allocator(), &.{ "remove", "kosm_css" })).remove.argument.?);
+}
+
+test "package commands with a missing, extra or unknown argument are errors" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{"add"}));
+    try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{ "remove", "--config", "/c" }));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "remove", "a", "b" }));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "update", "--diff" }));
+    try testing.expectError(error.MissingConfigDirectory, Command.parse(arena.allocator(), &.{ "update", "--config" }));
 }
 
 test "apply without a kosmos, a dangling --config or another command is an error" {

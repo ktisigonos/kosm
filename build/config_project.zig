@@ -1,6 +1,7 @@
 //! The build of a config project (section 9): every installed package and every local kosmos,
 //! app and adapter becomes a module importable by name (D43, D50, D62), and `-Dkosmos=frost.iced`
-//! builds `zig-out/bin/kosmos`, the runner for that one kosmos (D45).
+//! builds `zig-out/bin/kosmos`, the runner for that one kosmos (D45). `-Dinspect=kosm_kitty` builds
+//! `zig-out/bin/inspect`, which reports what that installed package provides (D46).
 
 const std = @import("std");
 
@@ -13,6 +14,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const kosmos_name = b.option([]const u8, "kosmos", "The kosmos to build: frost, or a variant like frost.iced");
+    const inspected_name = b.option([]const u8, "inspect", "The installed package to report on, for kosm add and kosm update");
 
     var names: Names = .{ .b = b };
     inline for (@typeInfo(@TypeOf(manifest.dependencies)).@"struct".field_names) |name| {
@@ -44,6 +46,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
         }
     }
 
+    if (inspected_name) |name| addInspector(b, target, optimize, kosm_dependency, names.modules.items, name);
     const name = kosmos_name orelse return;
     addRunner(b, target, optimize, kosm_dependency, names.modules.items, name);
 }
@@ -185,6 +188,28 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
     b.installArtifact(b.addExecutable(.{ .name = "kosmos", .root_module = root_module }));
+}
+
+/// Generates a main reporting what installed package `name` provides and installs it as `inspect`.
+fn addInspector(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry, name: []const u8) void {
+    const package = for (entries) |entry| {
+        if (entry.kind == .package and std.mem.eql(u8, entry.name, name)) break entry;
+    } else return fail(b, "there is no installed package '{s}' in build.zig.zon", .{name});
+
+    const source = b.fmt(
+        \\const std = @import("std");
+        \\const runner = @import("kosm_runner");
+        \\
+        \\pub fn main(init: std.process.Init) !u8 {{
+        \\    return runner.inspect(init, "{f}", @import("{f}"));
+        \\}}
+        \\
+    , .{ std.zig.fmtString(name), std.zig.fmtString(name) });
+    const files = b.addWriteFiles();
+    const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source), .target = target, .optimize = optimize });
+    root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
+    root_module.addImport(package.name, package.module);
+    b.installArtifact(b.addExecutable(.{ .name = "inspect", .root_module = root_module }));
 }
 
 fn kosmosFileList(b: *std.Build, entries: []const Entry) []const u8 {
