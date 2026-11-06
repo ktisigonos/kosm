@@ -3,7 +3,9 @@ const std = @import("std");
 /// Wires up a config project: `@import("kosm").addConfigProject(b, @import("build.zig.zon"))`.
 pub const addConfigProject = @import("build/config_project.zig").addConfigProject;
 /// The whole build of a directory package (D62): `@import("kosm").package(b)`.
-pub const package = @import("build/package.zig").package;
+pub const package = package_build.package;
+
+const package_build = @import("build/package.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -75,23 +77,36 @@ fn addTreeSitter(b: *std.Build, module: *std.Build.Module, target: std.Build.Res
 }
 
 /// The built-in packages in packages/ (D67), tested against this kosm.
-const built_in_packages = [_][]const u8{ "kosm_kitty", "kosm_css", "kosm_zen", "kosm_nvim" };
+const built_in_packages = [_]BuiltInPackage{
+    .{ .name = "kosm_kitty" },
+    .{ .name = "kosm_css" },
+    .{ .name = "kosm_zen" },
+    .{ .name = "kosm_nvim" },
+    .{ .name = "kosm_json", .grammars = &.{"tree_sitter_json"} },
+};
+
+/// A package in packages/ and the grammars it compiles (D78), which this build.zig.zon lists too.
+const BuiltInPackage = struct {
+    name: []const u8,
+    grammars: []const []const u8 = &.{},
+};
 
 /// Tests each built-in package with every other one importable by name, as a config sees them.
 fn addPackageTests(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     var modules: [built_in_packages.len]*std.Build.Module = undefined;
-    for (built_in_packages, &modules) |name, *module| {
+    for (built_in_packages, &modules) |built_in, *module| {
         module.* = b.createModule(.{
-            .root_source_file = b.path(b.fmt("packages/{s}/root.zig", .{name})),
+            .root_source_file = b.path(b.fmt("packages/{s}/root.zig", .{built_in.name})),
             .target = target,
             .optimize = optimize,
             .imports = &.{.{ .name = "kosm", .module = kosm_module }},
         });
+        for (built_in.grammars) |grammar| package_build.addGrammar(b, module.*, b.dependency(grammar, .{}));
     }
     for (modules, 0..) |module, index| {
-        for (built_in_packages, modules, 0..) |other_name, other, other_index| {
-            if (other_index != index) module.addImport(other_name, other);
+        for (built_in_packages, modules, 0..) |other, other_module, other_index| {
+            if (other_index != index) module.addImport(other.name, other_module);
         }
-        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .name = built_in_packages[index] })).step);
+        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .name = built_in_packages[index].name })).step);
     }
 }

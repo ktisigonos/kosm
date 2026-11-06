@@ -48,12 +48,13 @@ Markers:
   - Do: `Plan` entries become byte ranges inside a file, so D38 rejects only overlapping ranges instead of any second writer of a file.
   - Done when: tests cover creating, replacing, and malformed or duplicate markers.
 
-- [ ] **5a. `edit` writer and JSON** `PLAN FIRST` (plan approved)
+- [x] **5a. `edit` writer and JSON** `PLAN FIRST` (plan approved)
   - Do: tree-sitter runtime in core (D41, D78), the `format` and `parser` capabilities of `kosm.Adapter` (D39, D42), path syntax (D32, D77), the file selector (D79), `output.edit` with every D31 call and the escape hatch (D34, D80), then `kosm_json` (D28-D35, D39-D40).
   - Done when: path matching, cardinality, the selector and byte-preserving edits are tested, and `kosm_json` is tested on real-world snippets.
 
 - [ ] **5b. `kosm_lua`**
   - Do: the Lua adapter, covering every nesting D30 lists (`M.blur = {...}`, `M.blur.enabled = ...`, `hl.config({...})`).
+  - Do: `kosm.treesitter.Spec` gains what Lua needs (`assign`, `transparent`, D39); dotted assignments build tables with no value (`Adapter.Node.value` null), so test `Selection` refusing to replace one (`error.NoValue`).
   - Done when: path matching, cardinality and byte-preserving edits are tested on real-world snippets, including the D30 nestings.
 
 - [ ] **5c. `kosm_hyprlang`**
