@@ -85,6 +85,10 @@ Markers:
   - Do: keep the manifests of directory apps and adapters (`apps/my_bar/build.zig.zon`) up to date when a kosmos using them is applied; D76 refreshes only the applied kosmos' own.
   - Done when: each kind is scaffolded in a temp config and builds there, a scaffolded kosmos applies with `--diff`, and an existing name is refused.
 
+- [ ] **7c. Local packages provide everything**
+  - Do: local kosmoi, apps and adapters provide whatever they declare, wherever they live (D87): adapters from every local package the applied kosmos reaches through imports, and kosmoi from `apps/` and `adapters/` for `kosm apply` and `kosm list`.
+  - Done when: tests show an adapter declared in a directory kosmos, in a directory app the kosmos imports, and in a single-file kosmos itself are used on apply; a kosmos in `apps/` applies and is listed; and a compile error in a kosmos the applied one doesn't import leaves the apply working.
+
 - [ ] **8a. Warnings** `PLAN FIRST`
   - Do: a way for core and apps to report a warning that doesn't fail the apply, printed with the kosmos, app and file like an error (G6). The plan proposes the `D#`.
   - Do: warn when a printed color is clipped to the gamut (D48).
