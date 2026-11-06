@@ -58,7 +58,7 @@ Markers:
   - Do: `--set path=value` on the returned tree (D20), with `set` reserved as a parameter name (D19).
   - Done when: tests show reloads run only after a successful commit, a failing reload is a warning naming its app while the rest still reload and the exit status stays 0, and `--set` covers nested paths, unknown fields, bad values, optionals and colors.
 
-- [ ] **6b. `kosm current`**
+- [x] **6b. `kosm current`**
   - Do: record each successful apply in the state directory and print it with `kosm current` (D75).
   - Done when: tests with `XDG_STATE_HOME` in a temp directory show an apply records the kosmos, arguments and config, and `--diff` records nothing.
 

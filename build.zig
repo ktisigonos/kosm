@@ -15,18 +15,28 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // The record of the last apply: the runner writes it, the command line reads it (D75).
+    const current_module = b.createModule(.{
+        .root_source_file = b.path("src/current/Record.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     // The runner only sees core's public API, like any package (D2).
     const runner_module = b.addModule("kosm_runner", .{
         .root_source_file = b.path("src/runner/root.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "kosm", .module = kosm_module }},
+        .imports = &.{
+            .{ .name = "kosm", .module = kosm_module },
+            .{ .name = "kosm_current", .module = current_module },
+        },
     });
-    // The command line only drives zig build and the runner; it imports no kosm code.
+    // The command line only drives zig build and the runner, and reads the last apply's record.
     const cli_module = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{.{ .name = "kosm_current", .module = current_module }},
     });
     const cli = b.addExecutable(.{ .name = "kosm", .root_module = cli_module });
     b.installArtifact(cli);
@@ -41,7 +51,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const test_step = b.step("test", "Run tests");
-    for ([_]*std.Build.Module{ kosm_module, runner_module, cli_module, build_helpers_module }) |module| {
+    for ([_]*std.Build.Module{ kosm_module, current_module, runner_module, cli_module, build_helpers_module }) |module| {
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
     }
     addPackageTests(b, test_step, kosm_module, target, optimize);

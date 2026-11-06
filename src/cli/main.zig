@@ -1,10 +1,12 @@
-//! The `kosm` command (section 10). For now only `kosm apply`: build the one kosmos in the
-//! config project with `zig build`, then run it (D45, D66).
+//! The `kosm` command (section 10). For now `kosm apply`, which builds the one kosmos in the
+//! config project with `zig build` and runs it (D45, D66), and `kosm current` (D75).
 
 const std = @import("std");
+const Record = @import("kosm_current");
 
 const usage =
     \\usage: kosm apply <kosmos>[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
+    \\       kosm current
     \\
 ;
 
@@ -21,32 +23,73 @@ pub fn main(init: std.process.Init) !u8 {
     // A failing stderr has nowhere left to be reported.
     defer stderr.interface.flush() catch {};
 
-    const command = Apply.parse(arena, arguments[1..]) catch |err| {
+    const command = Command.parse(arena, arguments[1..]) catch |err| {
         switch (err) {
             error.NoCommand => {},
             error.UnknownCommand => try stderr.interface.print("error: unknown command '{s}'\n", .{arguments[1]}),
             error.MissingKosmos => try stderr.interface.writeAll("error: kosm apply needs a kosmos, e.g. kosm apply frost\n"),
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
+            error.UnexpectedArgument => try stderr.interface.writeAll("error: kosm current takes no arguments\n"),
             error.OutOfMemory => return error.OutOfMemory,
         }
         try stderr.interface.writeAll(usage);
         return 1;
     };
-    const config = command.config orelse blk: {
+    switch (command) {
+        .apply => |apply| return runApply(init, apply, &stderr.interface),
+        .current => return printCurrent(init, &stderr.interface),
+    }
+}
+
+/// Builds and runs the kosmos; only returns when it could not be run.
+fn runApply(init: std.process.Init, command: Apply, stderr: *std.Io.Writer) !u8 {
+    const arena = init.arena.allocator();
+    const given_config = command.config orelse blk: {
         const home = init.environ_map.get("HOME") orelse {
-            try stderr.interface.writeAll("error: HOME is not set; pass --config\n");
+            try stderr.writeAll("error: HOME is not set; pass --config\n");
             return 1;
         };
         break :blk try std.Io.Dir.path.join(arena, &.{ home, default_config });
     };
-    try stderr.interface.flush();
+    // The runner records this path for `kosm current`, which may run from anywhere (D75).
+    const config = std.Io.Dir.cwd().realPathFileAlloc(init.io, given_config, arena) catch |err| {
+        try stderr.print("error: cannot open the config project {s}: {s}\n", .{ given_config, @errorName(err) });
+        return 1;
+    };
+    try stderr.flush();
 
     if (!try build(init.io, arena, config, command.kosmos)) return 1;
     const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
-    const runner_arguments = try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments });
+    const runner_arguments = try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
     const err = std.process.replace(init.io, .{ .argv = runner_arguments });
-    try stderr.interface.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
+    try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
     return 1;
+}
+
+/// Prints the last successful apply as the command that repeats it (D75).
+fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
+    const arena = init.arena.allocator();
+    const path = try Record.path(arena, init.environ_map) orelse {
+        try stderr.writeAll("error: neither XDG_STATE_HOME nor HOME is set, so there is no state directory\n");
+        return 1;
+    };
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    const loaded = Record.load(arena, init.io, path, &diagnostics) catch |err| {
+        switch (err) {
+            error.ParseZon => try stderr.print("{f}\n", .{diagnostics.fmt(path)}),
+            else => try stderr.print("error: cannot read {s}: {s}\n", .{ path, @errorName(err) }),
+        }
+        return 1;
+    };
+    const record = loaded orelse {
+        try stderr.print("error: no kosmos has been applied yet ({s} does not exist)\n", .{path});
+        return 1;
+    };
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    try record.writeCommand(&stdout.interface);
+    try stdout.interface.flush();
+    return 0;
 }
 
 /// Runs `zig build -Dkosmos=<kosmos>` in the config project; compile errors go straight to
@@ -57,6 +100,24 @@ fn build(io: std.Io, arena: std.mem.Allocator, config: []const u8, kosmos: []con
     const term = try child.wait(io);
     return term.success();
 }
+
+/// A command line, read.
+const Command = union(enum) {
+    apply: Apply,
+    current,
+
+    const ParseError = Apply.ParseError || error{UnexpectedArgument};
+
+    /// Reads the arguments without the program name.
+    fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Command {
+        if (arguments.len == 0) return error.NoCommand;
+        if (std.mem.eql(u8, arguments[0], "current")) {
+            if (arguments.len != 1) return error.UnexpectedArgument;
+            return .current;
+        }
+        return .{ .apply = try Apply.parse(arena, arguments) };
+    }
+};
 
 /// `kosm apply` with its arguments sorted: kosm's own, and the ones the kosmos gets.
 const Apply = struct {
@@ -99,6 +160,13 @@ test "apply keeps --config for itself and passes the rest on in order" {
     try testing.expectEqual(3, command.runner_arguments.len);
     try testing.expectEqualStrings("--blur", command.runner_arguments[0]);
     try testing.expectEqualStrings("--diff", command.runner_arguments[2]);
+}
+
+test "current takes no arguments" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try testing.expectEqual(.current, try Command.parse(arena.allocator(), &.{"current"}));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "current", "--config", "/c" }));
 }
 
 test "apply without a kosmos, a dangling --config or another command is an error" {

@@ -1,9 +1,10 @@
 //! The program `kosm apply` builds for one kosmos: parses its parameters and `--set`s, plans
-//! every app, then prints the plan as a diff or commits it all or nothing and reloads the apps
-//! (D19, D20, D36, D37, D74).
+//! every app, then prints the plan as a diff or commits it all or nothing, records the apply and
+//! reloads the apps (D19, D20, D36, D37, D74, D75).
 
 const std = @import("std");
 const kosm = @import("kosm");
+const Record = @import("kosm_current");
 const Arguments = @import("Arguments.zig");
 const discovery = @import("discovery.zig");
 const params = @import("params.zig");
@@ -15,7 +16,7 @@ const walk = @import("walk.zig");
 pub const Target = @import("Target.zig");
 
 /// Runs the kosmos in `target` with the process arguments
-/// (`[--param value]... [--set path=value]... [--diff]`).
+/// (`[--param value]... [--set path=value]... [--diff] [--config dir]`).
 /// Returns the exit status: 0 on success, 1 after printing what went wrong.
 pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     comptime checkTarget(target);
@@ -62,6 +63,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: []const kos
     const all_arguments = try init.minimal.args.toSlice(arena);
     const arguments = Arguments.split(arena, all_arguments[1..]) catch |err| switch (err) {
         error.SetWithoutAssignment => return fail(diagnostics, "--set needs path=value", .{}),
+        error.ConfigWithoutDirectory => return fail(diagnostics, "--config needs a directory", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
 
@@ -73,8 +75,30 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: []const kos
     defer plan.deinit();
     walk.planTree(tree, .{ .allocator = arena, .home = home, .adapters = adapters, .plan = &plan, .diagnostics = diagnostics }) catch
         return error.Reported;
-    try deliver(tree, &plan, .{ .gpa = init.gpa, .arena = arena, .io = init.io, .diff = arguments.diff, .diagnostics = diagnostics, .streams = streams });
+    try deliver(tree, &plan, .{
+        .gpa = init.gpa,
+        .arena = arena,
+        .io = init.io,
+        .diff = arguments.diff,
+        .recording = try recording(arena, init.environ_map, diagnostics.kosmos, arguments),
+        .diagnostics = diagnostics,
+        .streams = streams,
+    });
 }
+
+/// The record a commit saves, or null when the runner was started without `--config` (only
+/// `kosm apply` passes it) or neither $XDG_STATE_HOME nor $HOME is set.
+fn recording(arena: std.mem.Allocator, environ: *const std.process.Environ.Map, kosmos: []const u8, arguments: Arguments) !?Recording {
+    const config = arguments.config orelse return null;
+    const path = try Record.path(arena, environ) orelse return null;
+    return .{ .record = .{ .kosmos = kosmos, .arguments = arguments.recorded, .config = config }, .path = path };
+}
+
+/// A record of the apply and the file it goes to (D75).
+const Recording = struct {
+    record: Record,
+    path: []const u8,
+};
 
 /// What `deliver` needs besides the tree and its plan.
 const Delivery = struct {
@@ -83,12 +107,14 @@ const Delivery = struct {
     arena: std.mem.Allocator,
     io: std.Io,
     diff: bool,
+    /// Saved after a successful commit; null records nothing.
+    recording: ?Recording,
     diagnostics: *kosm.Diagnostics,
     streams: Streams,
 };
 
-/// Prints the plan as a diff, or commits it and then reloads every app in `tree` (D74), also
-/// when nothing changed. A failed commit reloads nothing.
+/// Prints the plan as a diff, or commits it, records the apply (D75) and then reloads every app in
+/// `tree` (D74), also when nothing changed. A failed commit records and reloads nothing.
 fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
     const stdout = delivery.streams.stdout;
     if (delivery.diff) {
@@ -107,6 +133,10 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
             if (file.changed()) try report.wrote(stdout, file.display_path);
         }
     } else try report.nothingToChange(stdout);
+    if (delivery.recording) |recorded| {
+        recorded.record.save(delivery.io, recorded.path) catch |err|
+            try report.recordFailed(delivery.streams.stderr, recorded.path, @errorName(err));
+    }
     // The written files are reported before any reload's own output or warning.
     try stdout.flush();
     try walk.reloadTree(tree, delivery.io, delivery.diagnostics.kosmos, delivery.streams.stderr);
@@ -178,6 +208,11 @@ const ReloadingApp = struct {
 
 /// Plans `tree` against `home` and delivers it, with stdout in `output`. Diagnostics live in `arena`.
 fn planAndDeliver(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u8, diff: bool, diagnostics: *kosm.Diagnostics, output: *std.Io.Writer.Allocating) !void {
+    return planAndRecord(arena, tree, home, diff, null, diagnostics, output);
+}
+
+/// `planAndDeliver`, saving `recorded` after a commit.
+fn planAndRecord(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u8, diff: bool, recorded: ?Recording, diagnostics: *kosm.Diagnostics, output: *std.Io.Writer.Allocating) !void {
     var plan: kosm.Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
     try walk.planTree(tree, .{ .allocator = arena.allocator(), .home = home, .adapters = &.{lines_adapter}, .plan = &plan, .diagnostics = diagnostics });
@@ -188,6 +223,7 @@ fn planAndDeliver(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const 
         .arena = arena.allocator(),
         .io = testing.io,
         .diff = diff,
+        .recording = recorded,
         .diagnostics = diagnostics,
         .streams = .{ .stdout = &output.writer, .stderr = &warnings },
     });
@@ -260,4 +296,72 @@ test "a failed commit reloads nothing" {
     try testing.expectEqual(0, reloads);
     try testing.expectEqualStrings("kitty", diagnostics.app);
     try testing.expectEqualStrings("~/locked/a.lines", diagnostics.file);
+}
+
+/// Plans one app writing `~/a.lines` with `arguments` as the runner's, recording into
+/// `XDG_STATE_HOME` = `<home>/state`, then loads what was recorded.
+fn applyAndLoadRecord(arena: *std.heap.ArenaAllocator, home: []const u8, arguments: []const []const u8) !?Record {
+    var environ: std.process.Environ.Map = .init(arena.allocator());
+    try environ.put("XDG_STATE_HOME", try std.Io.Dir.path.join(arena.allocator(), &.{ home, "state" }));
+    const split = try Arguments.split(arena.allocator(), arguments);
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "frost.iced" };
+    var reloads: usize = 0;
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+    const tree = .{ .kitty = ReloadingApp{ .file = "~/a.lines", .reloads = &reloads } };
+    const recorded = (try recording(arena.allocator(), &environ, diagnostics.kosmos, split)).?;
+    try planAndRecord(arena, tree, home, split.diff, recorded, &diagnostics, &output);
+
+    var zon_diagnostics: std.zon.parse.Diagnostics = undefined;
+    return Record.load(arena.allocator(), testing.io, recorded.path, &zon_diagnostics);
+}
+
+test "an apply records the kosmos, its arguments and the config in XDG_STATE_HOME" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const home = try tmpPath(&tmp, &home_buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    const record = (try applyAndLoadRecord(&arena, home, &.{ "--set", "kitty.file=x", "--config", "/c", "--blur", "false" })).?;
+    try testing.expectEqualStrings("frost.iced", record.kosmos);
+    try testing.expectEqualStrings("/c", record.config);
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "--set", "kitty.file=x", "--blur", "false" }), record.arguments);
+    try tmp.dir.access(testing.io, "state/kosm/current.zon", .{});
+}
+
+test "a diff records nothing" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const home = try tmpPath(&tmp, &home_buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+
+    try testing.expectEqual(null, try applyAndLoadRecord(&arena, home, &.{ "--config", "/c", "--diff" }));
+    try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "state", .{}));
+}
+
+test "a failed commit records nothing" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDir(testing.io, "locked", .default_dir);
+    try tmp.dir.setFilePermissions(testing.io, "locked", .fromMode(0o500), .{});
+    defer tmp.dir.setFilePermissions(testing.io, "locked", .fromMode(0o700), .{}) catch {};
+    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const home = try tmpPath(&tmp, &home_buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var environ: std.process.Environ.Map = .init(arena.allocator());
+    try environ.put("XDG_STATE_HOME", try std.Io.Dir.path.join(arena.allocator(), &.{ home, "state" }));
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "frost" };
+    var reloads: usize = 0;
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+
+    const recorded = try recording(arena.allocator(), &environ, "frost", .{ .config = "/c" });
+    const tree = .{ .kitty = ReloadingApp{ .file = "~/locked/a.lines", .reloads = &reloads } };
+    try testing.expectError(error.Reported, planAndRecord(&arena, tree, home, false, recorded, &diagnostics, &output));
+    try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "state", .{}));
 }

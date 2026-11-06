@@ -17,3 +17,8 @@ pub fn nothingToChange(writer: *std.Io.Writer) std.Io.Writer.Error!void {
 pub fn reloadFailed(writer: *std.Io.Writer, kosmos: []const u8, app: []const u8, reason: []const u8) std.Io.Writer.Error!void {
     try writer.print("warning: kosmos '{s}', app '{s}': reload failed: {s}\n", .{ kosmos, app, reason });
 }
+
+/// The record for `kosm current` could not be saved (D75): a warning, since the files are written.
+pub fn recordFailed(writer: *std.Io.Writer, path: []const u8, reason: []const u8) std.Io.Writer.Error!void {
+    try writer.print("warning: cannot record this apply for kosm current in {s}: {s}\n", .{ path, reason });
+}
