@@ -1,10 +1,13 @@
 //! The `kosm` command (section 10). For now `kosm apply`, which builds the one kosmos in the
 //! config project with `zig build` and runs it (D45, D66), `kosm current` (D75), and the package
-//! commands `kosm add`, `kosm remove` and `kosm update` (D46).
+//! commands `kosm add`, `kosm remove` and `kosm update` (D46). Applying a directory kosmos also
+//! refreshes its own manifest (D62, D76).
 
 const std = @import("std");
 const Record = @import("kosm_current");
 const package_commands = @import("package_commands.zig");
+const directory_kosmos = @import("directory_kosmos.zig");
+const Context = @import("Context.zig");
 
 const usage =
     \\usage: kosm apply <kosmos>[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
@@ -81,11 +84,28 @@ fn runApply(init: std.process.Init, command: Apply, stderr: *std.Io.Writer) !u8 
     try stderr.flush();
 
     if (!try build(init.io, arena, config, command.kosmos)) return 1;
+    if (!try refreshManifest(init, config, command, stderr)) return 1;
     const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
     const runner_arguments = try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
     const err = std.process.replace(init.io, .{ .argv = runner_arguments });
     try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
     return 1;
+}
+
+/// Brings a directory kosmos' manifest up to date (D62), or on `--diff` only says what would
+/// change (D37). Returns whether the apply can go on.
+fn refreshManifest(init: std.process.Init, config: []const u8, command: Apply, stderr: *std.Io.Writer) !bool {
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const context: Context = .{ .io = init.io, .arena = init.arena.allocator(), .config = config, .stdout = &stdout.interface, .stderr = stderr };
+    directory_kosmos.refresh(context, command.kosmos, if (command.diff) .report else .write) catch |err| switch (err) {
+        error.Failed => return false,
+        else => |other| return other,
+    };
+    // The runner replaces this process, so nothing buffered may be left behind.
+    try stdout.interface.flush();
+    try stderr.flush();
+    return true;
 }
 
 /// Runs `kosm add`, `kosm remove` or `kosm update` against the config project.
@@ -215,6 +235,8 @@ const Apply = struct {
     config: ?[]const u8,
     /// Parameters, `--set`s and `--diff`, in order, for the kosmos runner.
     runner_arguments: []const []const u8,
+    /// Whether `--diff` is among them, read like the runner reads it (D37).
+    diff: bool,
 
     const ParseError = error{ NoCommand, UnknownCommand, MissingKosmos, MissingConfigDirectory, OutOfMemory };
 
@@ -223,6 +245,7 @@ const Apply = struct {
         if (arguments.len == 0) return error.NoCommand;
         if (!std.mem.eql(u8, arguments[0], "apply")) return error.UnknownCommand;
         var config: ?[]const u8 = null;
+        var diff = false;
         var rest: std.ArrayList([]const u8) = .empty;
         var index: usize = 1;
         while (index < arguments.len) : (index += 1) {
@@ -230,10 +253,18 @@ const Apply = struct {
                 index += 1;
                 if (index == arguments.len) return error.MissingConfigDirectory;
                 config = arguments[index];
-            } else try rest.append(arena, arguments[index]);
+                continue;
+            }
+            try rest.append(arena, arguments[index]);
+            if (std.mem.eql(u8, arguments[index], "--diff")) diff = true;
+            // The value of a --set is never a flag, as in the runner.
+            if (std.mem.eql(u8, arguments[index], "--set") and index + 1 < arguments.len) {
+                index += 1;
+                try rest.append(arena, arguments[index]);
+            }
         }
         if (rest.items.len == 0 or std.mem.startsWith(u8, rest.items[0], "-")) return error.MissingKosmos;
-        return .{ .kosmos = rest.items[0], .config = config, .runner_arguments = rest.items[1..] };
+        return .{ .kosmos = rest.items[0], .config = config, .runner_arguments = rest.items[1..], .diff = diff };
     }
 };
 
@@ -241,6 +272,7 @@ test {
     std.testing.refAllDecls(package_commands);
     std.testing.refAllDecls(@import("Packages.zig"));
     std.testing.refAllDecls(@import("manifest.zig"));
+    std.testing.refAllDecls(directory_kosmos);
 }
 
 const testing = std.testing;
@@ -254,6 +286,15 @@ test "apply keeps --config for itself and passes the rest on in order" {
     try testing.expectEqual(3, command.runner_arguments.len);
     try testing.expectEqualStrings("--blur", command.runner_arguments[0]);
     try testing.expectEqualStrings("--diff", command.runner_arguments[2]);
+    try testing.expect(command.diff);
+}
+
+test "a --set whose value is --diff is no diff, as in the runner" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const command = try Apply.parse(arena.allocator(), &.{ "apply", "frost", "--set", "--diff" });
+    try testing.expect(!command.diff);
+    try testing.expectEqual(2, command.runner_arguments.len);
 }
 
 test "current takes no arguments" {

@@ -153,8 +153,10 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const file_name = name[0 .. dot orelse name.len];
     const function = if (dot) |index| name[index + 1 ..] else "kosmos";
     const kosmos = for (entries) |entry| {
-        if (entry.kind == .kosmos and std.mem.eql(u8, entry.name, file_name)) break entry;
-    } else return fail(b, "there is no kosmos '{s}' (no kosmoi/{s}.zig or kosmoi/{s}/); files in kosmoi/: {s}", .{ name, file_name, file_name, kosmosFileList(b, entries) });
+        if (canHoldKosmoi(entry) and std.mem.eql(u8, entry.name, file_name)) break entry;
+    } else return fail(b, "there is no kosmos '{s}' (no kosmoi/{s}.zig, kosmoi/{s}/ or installed package '{s}'); in kosmoi/: {s}; installed packages: {s}", .{
+        name, file_name, file_name, file_name, nameList(b, entries, .kosmos), nameList(b, entries, .package),
+    });
 
     var source: std.Io.Writer.Allocating = .init(b.allocator);
     const writer = &source.writer;
@@ -212,10 +214,16 @@ fn addInspector(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     b.installArtifact(b.addExecutable(.{ .name = "inspect", .root_module = root_module }));
 }
 
-fn kosmosFileList(b: *std.Build, entries: []const Entry) []const u8 {
+/// Local kosmoi, and installed packages other than kosm itself, which may export kosmoi (D62).
+fn canHoldKosmoi(entry: Entry) bool {
+    return entry.kind == .kosmos or (entry.kind == .package and !std.mem.eql(u8, entry.name, "kosm"));
+}
+
+/// The names of every entry of `kind` but kosm itself, comma-separated, or "none".
+fn nameList(b: *std.Build, entries: []const Entry, kind: Kind) []const u8 {
     var list: std.ArrayList(u8) = .empty;
     for (entries) |entry| {
-        if (entry.kind != .kosmos) continue;
+        if (entry.kind != kind or std.mem.eql(u8, entry.name, "kosm")) continue;
         if (list.items.len != 0) list.appendSlice(b.allocator, ", ") catch @panic("OOM");
         list.appendSlice(b.allocator, entry.name) catch @panic("OOM");
     }

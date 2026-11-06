@@ -5,24 +5,13 @@
 const std = @import("std");
 const Packages = @import("Packages.zig");
 const manifest = @import("manifest.zig");
+const files = @import("files.zig");
 
 /// Where a package command works and reports.
-pub const Context = struct {
-    io: std.Io,
-    /// Holds everything a command allocates; freed by the caller.
-    arena: std.mem.Allocator,
-    /// The config project's directory.
-    config: []const u8,
-    /// The environment for `zig`; null passes on kosm's own.
-    environ_map: ?*const std.process.Environ.Map = null,
-    /// What a command did, and what packages provide.
-    stdout: *std.Io.Writer,
-    /// Errors, and the output of a failing `zig`.
-    stderr: *std.Io.Writer,
-};
+pub const Context = @import("Context.zig");
 
 /// The command failed and has said why on stderr.
-pub const Failed = error{Failed};
+pub const Failed = Context.Failed;
 
 pub const Error = Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
 
@@ -165,22 +154,13 @@ const max_manifest_size = 1024 * 1024;
 /// Replaces build.zig.zon atomically, keeping its permissions.
 fn writeManifest(context: Context, bytes: []const u8) Error!void {
     const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, manifest_name });
-    writeFile(context.io, path, bytes) catch |err| return fail(context, "cannot write {s}: {s}", .{ path, @errorName(err) });
-}
-
-fn writeFile(io: std.Io, path: []const u8, bytes: []const u8) !void {
-    const cwd = std.Io.Dir.cwd();
-    const permissions = (try cwd.statFile(io, path, .{})).permissions;
-    var atomic = try cwd.createFileAtomic(io, path, .{ .permissions = permissions, .replace = true });
-    defer atomic.deinit(io);
-    try atomic.file.writeStreamingAll(io, bytes);
-    try atomic.replace(io);
+    files.replace(context.io, path, bytes) catch |err| return fail(context, "cannot write {s}: {s}", .{ path, @errorName(err) });
 }
 
 /// Puts back what build.zig.zon held before the command, after a failure.
 fn restoreManifest(context: Context, original: []const u8) void {
     const path = std.Io.Dir.path.join(context.arena, &.{ context.config, manifest_name }) catch return reportUnrestored(context, error.OutOfMemory);
-    writeFile(context.io, path, original) catch |err| reportUnrestored(context, err);
+    files.replace(context.io, path, original) catch |err| reportUnrestored(context, err);
 }
 
 fn reportUnrestored(context: Context, err: anyerror) void {
@@ -214,8 +194,7 @@ fn invalidManifest(context: Context, err: manifest.Error) Error {
 }
 
 fn fail(context: Context, comptime format: []const u8, arguments: anytype) Error {
-    context.stderr.print("error: " ++ format ++ "\n", arguments) catch |err| return err;
-    return error.Failed;
+    return context.fail(format, arguments);
 }
 
 /// Prints what the failing `zig` said, then the error.
@@ -431,4 +410,54 @@ test "update fetches a package again, and a failing check puts build.zig.zon bac
     try testing.expectError(error.Failed, update(fixture.context(), "test_adapter"));
     try testing.expectEqualStrings(updated, (try fixture.read("build.zig.zon")).?);
     try testing.expectError(error.Failed, update(fixture.context(), "kosm"));
+}
+
+const kosmoi_fingerprint = 0xb0c4401d1234abcd;
+
+/// A package exporting an app writing `~/probe.txt`, a default kosmos and a variant.
+const kosmoi_root =
+    \\const kosm = @import("kosm");
+    \\pub const App = struct {
+    \\    size: u8,
+    \\    pub fn apply(self: App, output: *kosm.Output) !void {
+    \\        try output.template(self, .{ .file = "~/probe.txt", .text = "size kosm.size\n" });
+    \\    }
+    \\};
+    \\pub const Tree = struct { probe: App };
+    \\pub const Params = struct { size: u8 = 1 };
+    \\pub fn kosmos(params: Params) Tree {
+    \\    return .{ .probe = .{ .size = params.size } };
+    \\}
+    \\pub fn iced() Tree {
+    \\    return .{ .probe = .{ .size = 9 } };
+    \\}
+    \\
+;
+
+test "a kosmos from an installed package applies by the package's name" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const arena = fixture.arena.allocator();
+    try add(fixture.context(), try fixture.writePackage("test_kosmoi", kosmoi_fingerprint, kosmoi_root));
+    try fixture.tmp.dir.createDirPath(testing.io, "home");
+    try fixture.environ.put("HOME", try std.Io.Dir.path.join(arena, &.{ fixture.root, "home" }));
+    try fixture.environ.put("XDG_STATE_HOME", try std.Io.Dir.path.join(arena, &.{ fixture.root, "state" }));
+    const context = fixture.context();
+    const runner = try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" });
+
+    const iced_build = try runZig(context, &.{ "build", "-Dkosmos=test_kosmoi.iced" });
+    try testing.expect(iced_build.term.success());
+    try testing.expect((try run(context, &.{ runner, "--config", context.config })).term.success());
+    try testing.expectEqualStrings("size 9\n", try fixture.tmp.dir.readFileAlloc(testing.io, "home/probe.txt", arena, .limited(64)));
+
+    const default_build = try runZig(context, &.{ "build", "-Dkosmos=test_kosmoi" });
+    try testing.expect(default_build.term.success());
+    const diff = try run(context, &.{ runner, "--size", "4", "--diff", "--config", context.config });
+    try testing.expect(diff.term.success());
+    try testing.expect(std.mem.find(u8, diff.stdout, "+size 4") != null);
+
+    const missing = try runZig(context, &.{ "build", "-Dkosmos=test_missing" });
+    try testing.expect(!missing.term.success());
+    try testing.expect(std.mem.find(u8, missing.stderr, "installed packages: test_kosmoi") != null);
 }

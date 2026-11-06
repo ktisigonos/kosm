@@ -66,7 +66,7 @@ Markers:
   - Do: `kosm add/remove/update` wrapping `zig fetch` with `packages.zon` (D46).
   - Done when: each command is tested against a temp config project; nothing touches `~/.config/kosm`.
 
-- [ ] **6d. Kosmoi from packages** `PLAN FIRST`
+- [x] **6d. Kosmoi from packages** `PLAN FIRST`
   - Do: apply kosmoi from installed packages and keep directory manifests up to date (D62).
   - Done when: a temp config project applies a packaged kosmos, and building a directory kosmos rewrites only its own manifest.
 ---
@@ -76,4 +76,5 @@ Follow-ups with no step yet (the human places them):
 - `kosm_zen`: Zen's about:config prefs through a `user.js` adapter (`kosm_userjs`).
 - `kosm_kitty`: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
 - Warn when a printed color is clipped to the gamut (D48); core has no way to warn yet, only to error.
+- Keep the manifests of directory apps and adapters (`apps/my_bar/build.zig.zon`) up to date; D76 refreshes only the applied kosmos' own.
 - `output.templateBlock` (D71): the text form of `block`, with `template`'s call shape; build it when the first real app needs it.

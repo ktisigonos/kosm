@@ -1,5 +1,6 @@
-//! Reads and edits the dependencies in a config project's `build.zig.zon` (D46). An edit replaces
-//! only the bytes of the entry involved, so comments and formatting elsewhere survive (D35).
+//! Reads and edits `build.zig.zon` manifests: a config project's dependencies (D46) and a
+//! directory kosmos' own manifest (D62). An edit replaces only the bytes of the entry or value
+//! involved, so comments and formatting elsewhere survive (D35).
 
 const std = @import("std");
 const Ast = std.zig.Ast;
@@ -11,9 +12,9 @@ pub const Error = error{ OutOfMemory, InvalidManifest };
 /// The names in `.dependencies`, in file order.
 pub fn dependencyNames(arena: std.mem.Allocator, source: [:0]const u8) Error![]const []const u8 {
     const parsed = try parse(arena, source);
-    const dependencies = parsed.dependencies orelse return &.{};
-    const names = try arena.alloc([]const u8, dependencies.names.len);
-    for (dependencies.names, names) |name, *slot| slot.* = name.get(&parsed.zoir);
+    const found = parsed.dependencies orelse return &.{};
+    const names = try arena.alloc([]const u8, found.names.len);
+    for (found.names, names) |name, *slot| slot.* = name.get(&parsed.zoir);
     return names;
 }
 
@@ -29,24 +30,96 @@ pub fn hasDependency(arena: std.mem.Allocator, source: [:0]const u8, name: []con
 /// lines to itself, those lines go; otherwise only the entry and its comma.
 pub fn withoutDependency(arena: std.mem.Allocator, source: [:0]const u8, name: []const u8) Error!?[]const u8 {
     const parsed = try parse(arena, source);
-    const dependencies = parsed.dependencies orelse return null;
-    const index = for (dependencies.names, 0..) |existing, index| {
+    const found = parsed.dependencies orelse return null;
+    const index = for (found.names, 0..) |existing, index| {
         if (std.mem.eql(u8, existing.get(&parsed.zoir), name)) break index;
     } else return null;
-    const value = dependencies.vals.at(@intCast(index)).getAstNode(&parsed.zoir);
+    const value = found.vals.at(@intCast(index)).getAstNode(&parsed.zoir);
     const range = try entryRange(&parsed.ast, value);
     const lines = wholeLines(source, range);
     return try std.mem.concat(arena, u8, &.{ source[0..lines.start], source[lines.end..] });
 }
 
+/// One entry of `.dependencies`: a `url` with its `hash`, or a `path`.
+pub const Dependency = struct {
+    name: []const u8,
+    url: ?[]const u8 = null,
+    hash: ?[]const u8 = null,
+    /// Relative to the manifest's directory.
+    path: ?[]const u8 = null,
+    lazy: ?bool = null,
+};
+
+/// Every entry of `.dependencies`, in file order.
+pub fn dependencies(arena: std.mem.Allocator, source: [:0]const u8) Error![]const Dependency {
+    const parsed = try parse(arena, source);
+    const found = parsed.dependencies orelse return &.{};
+    const result = try arena.alloc(Dependency, found.names.len);
+    for (found.names, result, 0..) |name, *slot, index| {
+        var diagnostics: std.zon.parse.Diagnostics = undefined;
+        const Fields = struct { url: ?[]const u8 = null, hash: ?[]const u8 = null, path: ?[]const u8 = null, lazy: ?bool = null };
+        const fields = std.zon.parse.fromZoir(Fields, .{
+            .arena = arena,
+            .ast = &parsed.ast,
+            .zoir = &parsed.zoir,
+            .node = found.vals.at(@intCast(index)),
+            .diagnostics = &diagnostics,
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.ParseZon => return error.InvalidManifest,
+        };
+        slot.* = .{ .name = name.get(&parsed.zoir), .url = fields.url, .hash = fields.hash, .path = fields.path, .lazy = fields.lazy };
+    }
+    return result;
+}
+
+/// The top-level string field `name` (`.minimum_zig_version`), or null when it is missing or
+/// not a string.
+pub fn stringField(arena: std.mem.Allocator, source: [:0]const u8, name: []const u8) Error!?[]const u8 {
+    const parsed = try parse(arena, source);
+    const index = fieldIndex(&parsed, name) orelse return null;
+    return switch (parsed.root.vals.at(@intCast(index)).get(&parsed.zoir)) {
+        .string_literal => |text| text,
+        else => null,
+    };
+}
+
+/// `source` with the top-level field `name` set to `value`, a ZON expression: the old value's
+/// bytes are replaced, or the field is added after the last one.
+pub fn withField(arena: std.mem.Allocator, source: [:0]const u8, name: []const u8, value: []const u8) Error![]const u8 {
+    const parsed = try parse(arena, source);
+    const ast = &parsed.ast;
+    if (fieldIndex(&parsed, name)) |index| {
+        const node = parsed.root.vals.at(@intCast(index)).getAstNode(&parsed.zoir);
+        const first = ast.firstToken(node);
+        const last = ast.lastToken(node);
+        const end = ast.tokenStart(last) + ast.tokenSlice(last).len;
+        return std.mem.concat(arena, u8, &.{ source[0..ast.tokenStart(first)], value, source[end..] });
+    }
+    const closing = ast.lastToken(Zoir.Node.Index.root.getAstNode(&parsed.zoir));
+    const previous = closing - 1;
+    const after_previous = ast.tokenStart(previous) + ast.tokenSlice(previous).len;
+    const separator = if (ast.tokenTag(previous) == .comma or ast.tokenTag(previous) == .l_brace) "" else ",";
+    const field = try arena.print("{s}\n    .{f} = {s},", .{ separator, std.zig.fmtId(name), value });
+    return std.mem.concat(arena, u8, &.{ source[0..after_previous], field, source[after_previous..] });
+}
+
+const StructLiteral = @FieldType(Zoir.Node, "struct_literal");
+
 const Parsed = struct {
     ast: Ast,
     zoir: Zoir,
+    root: StructLiteral,
     /// The `.dependencies` struct, or null when it is missing or empty.
-    dependencies: ?Dependencies,
-
-    const Dependencies = @FieldType(Zoir.Node, "struct_literal");
+    dependencies: ?StructLiteral,
 };
+
+fn fieldIndex(parsed: *const Parsed, name: []const u8) ?usize {
+    for (parsed.root.names, 0..) |field, index| {
+        if (std.mem.eql(u8, field.get(&parsed.zoir), name)) return index;
+    }
+    return null;
+}
 
 fn parse(arena: std.mem.Allocator, source: [:0]const u8) Error!Parsed {
     const ast = try Ast.parse(arena, source, .{ .mode = .zon });
@@ -57,15 +130,14 @@ fn parse(arena: std.mem.Allocator, source: [:0]const u8) Error!Parsed {
         .struct_literal => |root| root,
         else => return error.InvalidManifest,
     };
-    for (root.names, 0..) |field, index| {
-        if (!std.mem.eql(u8, field.get(&zoir), "dependencies")) continue;
-        return switch (root.vals.at(@intCast(index)).get(&zoir)) {
-            .struct_literal => |dependencies| .{ .ast = ast, .zoir = zoir, .dependencies = dependencies },
-            .empty_literal => .{ .ast = ast, .zoir = zoir, .dependencies = null },
-            else => error.InvalidManifest,
-        };
-    }
-    return .{ .ast = ast, .zoir = zoir, .dependencies = null };
+    var parsed: Parsed = .{ .ast = ast, .zoir = zoir, .root = root, .dependencies = null };
+    const index = fieldIndex(&parsed, "dependencies") orelse return parsed;
+    parsed.dependencies = switch (root.vals.at(@intCast(index)).get(&zoir)) {
+        .struct_literal => |found| found,
+        .empty_literal => null,
+        else => return error.InvalidManifest,
+    };
+    return parsed;
 }
 
 const Range = struct { start: usize, end: usize };
@@ -160,4 +232,29 @@ test "removing a missing entry or editing a broken manifest changes nothing" {
     try testing.expectEqual(null, try withoutDependency(arena.allocator(), ".{ .name = .x }", "kosm"));
     try testing.expectError(error.InvalidManifest, dependencyNames(arena.allocator(), ".{ .dependencies = .{ "));
     try testing.expectError(error.InvalidManifest, dependencyNames(arena.allocator(), "42"));
+}
+
+test "dependency entries are read with their url, hash or path" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const found = try dependencies(arena.allocator(), config_manifest);
+    try testing.expectEqual(4, found.len);
+    try testing.expectEqualStrings("../kosm", found[0].path.?);
+    try testing.expectEqual(null, found[0].url);
+    try testing.expectEqualStrings("git+https://example.com/kosm_kitty?ref=main#0123", found[1].url.?);
+    try testing.expectEqualStrings("kosm_kitty-0.0.0-AAAA", found[1].hash.?);
+    try testing.expectError(error.InvalidManifest, dependencies(arena.allocator(), ".{ .dependencies = .{ .x = .{ .url = 1 } } }"));
+}
+
+test "a field's value is replaced in place, or added after the last field" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const replaced = try withField(arena.allocator(), config_manifest, "paths", ".{ \"root.zig\" }");
+    try testing.expectEqualStrings(config_manifest[0 .. config_manifest.len - "    .paths = .{\"\"},\n}".len] ++ "    .paths = .{ \"root.zig\" },\n}", replaced);
+    const added = try withField(arena.allocator(), ".{\n    .name = .nord,\n    // kept\n}\n", "paths", ".{}");
+    try testing.expectEqualStrings(".{\n    .name = .nord,\n    .paths = .{},\n    // kept\n}\n", added);
+    const without_comma = try withField(arena.allocator(), ".{ .name = .nord }", "paths", ".{}");
+    try testing.expectEqualStrings(".{ .name = .nord,\n    .paths = .{}, }", without_comma);
+    try testing.expectEqualStrings("0.17.0", (try stringField(arena.allocator(), ".{ .minimum_zig_version = \"0.17.0\" }", "minimum_zig_version")).?);
+    try testing.expectEqual(null, try stringField(arena.allocator(), ".{ .name = .nord }", "minimum_zig_version"));
 }
