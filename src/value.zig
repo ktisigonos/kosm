@@ -27,7 +27,7 @@ pub const Value = union(enum) {
 pub const FromError = std.mem.Allocator.Error || error{ IntegerTooLarge, NullInList };
 
 /// Converts a plain struct by reflection: strings, integers, floats, bools, enums (by tag name),
-/// colors, `kosm.raw` text, nested structs (tables), and arrays, slices or tuples (lists).
+/// colors, `color.format(...)` text (a string), `kosm.raw` text, nested structs (tables), and arrays, slices or tuples (lists).
 /// A `null` optional field is left out of its table. A `Value`, at any depth, is taken as it
 /// is, for apps that build the tree themselves (D64). Everything lives in `allocator`.
 pub fn from(allocator: std.mem.Allocator, values: anytype) FromError!Value {
@@ -35,6 +35,8 @@ pub fn from(allocator: std.mem.Allocator, values: anytype) FromError!Value {
     if (T == Value) return values;
     if (T == Color) return .{ .color = values };
     if (T == Raw) return .{ .raw = values.text };
+    // `values` is a copy, so its bytes must outlive this call.
+    if (T == Color.Text) return .{ .string = try allocator.dupe(u8, values.slice()) };
     if (comptime isString(T)) return .{ .string = values };
     switch (@typeInfo(T)) {
         .bool => return .{ .boolean = values },
@@ -97,6 +99,14 @@ fn isString(comptime T: type) bool {
 }
 
 const testing = std.testing;
+
+test "from writes formatted color text as a string, not as its buffer" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const color = try Color.parseHex("#5e81ac");
+    const tree = try from(arena.allocator(), .{ .border = color.format("rgba({})", &.{.hex8}) });
+    try testing.expectEqualStrings("rgba(5e81acff)", tree.table[0].value.string);
+}
 
 test "from turns a nested struct into tables in declaration order" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
