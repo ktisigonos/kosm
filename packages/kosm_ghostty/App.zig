@@ -16,8 +16,8 @@ file: []const u8 = "~/.config/ghostty/kosm.ghostty",
 /// adapter's: `#rrggbb`, `true`/`false`, then kosm's 6 float decimals.
 format: kosm.Format = .{},
 /// Derives `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` when they are null (D23).
-/// Default: the theme's `lightness.bright`.
-bright: kosm.Modifier,
+/// null: they are not derived. `from`: the theme's `lightness.bright`.
+bright: ?kosm.Modifier = null,
 /// Writes `keybind = clear` before `keybind`, removing every binding made before it, ghostty's
 /// defaults included. kosm's name for that line, since it has no trigger. Default: false.
 keybind_clear: bool = false,
@@ -160,7 +160,7 @@ mouse_shift_capture: ?union(enum) { boolean: bool, always, never } = null,
 mouse_reporting: ?bool = null,
 /// Multiplier for scrolling distance with the mouse wheel. null: ghostty's default, `precision:1,discrete:3`.
 mouse_scroll_multiplier: ?values.MouseScrollMultiplier = null,
-/// The opacity level (opposite of transparency) of the background. null: ghostty's default, `1`.
+/// The opacity level (opposite of transparency) of the background. null: the background's alpha when it is below 1 (D101), else ghostty's default, `1`.
 background_opacity: ?f64 = null,
 /// Applies background opacity to cells with an explicit background color set. null: ghostty's default, `false`.
 background_opacity_cells: ?bool = null,
@@ -510,9 +510,10 @@ fn withDerived(self: App) App {
     if (app.background_opacity == null) if (app.background) |background| {
         if (background.alpha < 1) app.background_opacity = roundedAlpha(background.alpha);
     };
+    const bright = self.bright orelse return app;
     for (0..ansi_colors) |index| {
         if (app.palette[index + ansi_colors] == null) if (app.palette[index]) |base| {
-            app.palette[index + ansi_colors] = self.bright.apply(base);
+            app.palette[index + ansi_colors] = bright.apply(base);
         };
     }
     return app;
@@ -669,4 +670,24 @@ test "light mode swaps background and foreground, and set derived options win" {
     try testing.expect(std.mem.indexOf(u8, written, "palette = 16=") == null);
     try testing.expect(std.mem.indexOf(u8, written, "keybind = clear") == null);
     try testing.expectEqualStrings("~/.config/ghostty/kosm.ghostty", fixture.plan.files.items[0].display_path);
+}
+
+test "App{} writes an empty file, and without bright no bright color is derived" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const empty: App = .{};
+    try empty.apply(&fixture.output);
+    try testing.expectEqualStrings("", fixture.written());
+
+    var app: App = .{};
+    app.palette[1] = kosm.hex("80333c");
+    try testing.expectEqual(null, app.withDerived().palette[9]);
+}
+
+test "background_opacity follows the background's alpha below 1 and is not written at 1" {
+    var app: App = .{ .background = kosm.hex("041c26bf") };
+    try testing.expectEqual(0.75, app.withDerived().background_opacity.?);
+    app.background = kosm.hex("041c26");
+    try testing.expectEqual(null, app.withDerived().background_opacity);
 }

@@ -16,7 +16,12 @@ config-file = kosm.ghostty
 `from(theme)` sets the colors (D27): foreground and background from white and black (swapped in
 light mode), `palette[0]`..`palette[7]` from the wheel, the selection from the `emphasis.strong`
 and `state.selected` variations. `palette[8]`..`palette[15]` derive from those through `bright`,
-and `background_opacity` from the background's alpha, unless you set them (D23).
+and `background_opacity` from the background's alpha when it is below 1 (D101), unless you set
+them (D23).
+
+A minimal config can skip `from` (D100): `kosm_ghostty.App{}` writes an empty `kosm.ghostty`,
+so assign only what you want (`.{ .font_size = 13 }`) and ghostty keeps its defaults for the
+rest.
 
 Choices are enums in Zig spelling (`.linear_corrected` for `linear-corrected`). Where ghostty
 mixes `true`/`false` with words, the field is a union with a `boolean` member
@@ -64,7 +69,7 @@ read in its own log.
 |---|---|
 | `file` | `~/.config/ghostty/kosm.ghostty` |
 | `format` | `.{}`: the ghostty adapter's `#rrggbb` and `true`/`false`, then 6 float decimals (D70) |
-| `bright` | the theme's `lightness.bright`; makes `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` |
+| `bright` | null: nothing derived; `from`: the theme's `lightness.bright`, making `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` |
 | `keybind_clear` | `false`; `true` writes `keybind = clear` before `keybind` |
 
 ## Options
@@ -136,7 +141,7 @@ read in its own log.
 | `mouse_shift_capture` | `?union(enum) { boolean: bool, always, never }` | Determines whether running programs can detect the shift key pressed with a mouse click. null: ghostty's default, `false`. |
 | `mouse_reporting` | `?bool` | Enable or disable mouse reporting. null: ghostty's default, `true`. |
 | `mouse_scroll_multiplier` | `?values.MouseScrollMultiplier` | Multiplier for scrolling distance with the mouse wheel. null: ghostty's default, `precision:1,discrete:3`. |
-| `background_opacity` | `?f64` | The opacity level (opposite of transparency) of the background. null: ghostty's default, `1`. |
+| `background_opacity` | `?f64` | The opacity level (opposite of transparency) of the background. null: the background's alpha when it is below 1 (D101), else ghostty's default, `1`. |
 | `background_opacity_cells` | `?bool` | Applies background opacity to cells with an explicit background color set. null: ghostty's default, `false`. |
 | `background_blur` | `?values.BackgroundBlur` | How much to blur the background when `background_opacity` is below 1. null: ghostty's default, `false`. |
 | `unfocused_split_opacity` | `?f64` | The opacity level (opposite of transparency) of an unfocused split. null: ghostty's default, `0.7`. |

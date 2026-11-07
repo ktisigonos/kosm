@@ -21,9 +21,9 @@ include: ?[]const u8 = "~/.config/hypr/hyprland.lua",
 /// alpha is kept; null fields take the Lua adapter's, then kosm's.
 format: kosm.Format = .{ .color = .hex8 },
 /// Derives each inactive color from its active one when it is null and the active one is set
-/// (D23), e.g. `general.col.inactive_border` from `general.col.active_border`.
-/// Default: the theme's `state.inactive`.
-inactive: kosm.Modifier,
+/// (D23), e.g. `general.col.inactive_border` from `general.col.active_border`. null: nothing
+/// is derived. `from`: the theme's `state.inactive`.
+inactive: ?kosm.Modifier = null,
 /// Settings the app doesn't cover, such as a plugin's (D99), written after its own:
 /// `.{ .path = "plugin.dynamic_cursors.length", .value = .{ .integer = 24 } }`. One that
 /// overlaps a set option or another extra fails the apply. Default: none.
@@ -209,7 +209,7 @@ fn withExtras(self: App, output: *kosm.Output, file: []const u8, set: []const se
 /// The app with every null inactive color derived from its set active one (D23).
 fn withDerived(self: App) App {
     var app = self;
-    const inactive = self.inactive;
+    const inactive = self.inactive orelse return app;
     derive(values.Gradient, &app.general.col.inactive_border, app.general.col.active_border, inactive);
     derive(values.Gradient, &app.general.col.nogroup_border, app.general.col.nogroup_border_active, inactive);
     derive(values.Gradient, &app.decoration.shadow.color_inactive, app.decoration.shadow.color, inactive);
@@ -379,14 +379,14 @@ test "an inactive color follows its active one unless set, and a changed active 
     app.decoration.glow.color = .solid(kosm.hex("#808080"));
     app.decoration.glow.color_inactive = .solid(kosm.hex("#ff0000"));
     const derived = app.withDerived();
-    const darker = app.inactive.apply(kosm.hex("#808080"));
+    const darker = app.inactive.?.apply(kosm.hex("#808080"));
     try testing.expectEqual(darker, derived.general.col.inactive_border.?.colors[0].?);
     try testing.expectEqual(darker, derived.group.groupbar.text_color_inactive.?);
     try testing.expectEqual(kosm.hex("#ff0000"), derived.decoration.glow.color_inactive.?.colors[0].?);
     try testing.expectEqual(null, derived.group.col.border_inactive);
 
     app.general.col.active_border = .solid(kosm.hex("#ffffff"));
-    try testing.expectEqual(app.inactive.apply(kosm.hex("#ffffff")), app.withDerived().general.col.inactive_border.?.colors[0].?);
+    try testing.expectEqual(app.inactive.?.apply(kosm.hex("#ffffff")), app.withDerived().general.col.inactive_border.?.colors[0].?);
 }
 
 test "values are written the way Hyprland's Lua config reads them" {
@@ -739,4 +739,21 @@ test "an extra overlapping an option or another extra fails naming both (D99)" {
         try testing.expectEqualStrings(case.message, fixture.diagnostics.message());
         try testing.expectEqual(0, fixture.plan.files.items.len);
     }
+}
+
+test "App{} writes an empty module and its include block, and without inactive nothing derives" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{.{ ".config/hypr/hyprland.lua", "hl.config({})\n" }});
+    defer fixture.deinit();
+    const empty: App = .{};
+    try empty.apply(&fixture.output);
+    try testing.expectEqualStrings("return {}\n", fixture.planned("~/.config/hypr/kosm.lua"));
+    try testing.expectEqualStrings(
+        "hl.config({})\n-- kosm:begin hyprland\nhl.config(require(\"kosm\"))\n-- kosm:end\n",
+        fixture.planned("~/.config/hypr/hyprland.lua"),
+    );
+
+    var app: App = .{};
+    app.general.col.active_border = .solid(kosm.hex("#808080"));
+    try testing.expectEqual(null, app.withDerived().general.col.inactive_border);
 }

@@ -58,6 +58,11 @@ Each inactive color left `null` derives from its active one through `inactive` (
 `decoration.glow.color_inactive`, `group.col.border_inactive`, `group.col.border_locked_inactive`,
 `group.groupbar.col.inactive`, `group.groupbar.col.locked_inactive`,
 `group.groupbar.text_color_inactive` and `group.groupbar.text_color_locked_inactive`.
+With `inactive` left null, none of them derive.
+
+A minimal config can skip `from` (D100): `kosm_hyprland.App{}` writes an empty module
+(`return {}`) and its include block, so assign only what you want
+(`.{ .decoration = .{ .rounding = 10 } }`) and Hyprland keeps its defaults for the rest.
 
 ## Values
 
@@ -102,7 +107,7 @@ inside a set option's or another extra's fails the apply naming both.
 | `target` | `default_target`: `.{ .generate = "~/.config/hypr/kosm.lua" }` |
 | `include` | `"~/.config/hypr/hyprland.lua"`: the file that gets the block reading the generated module, `.generate` target only; `null` for no block |
 | `format` | `.{ .color = .hex8 }`: `#rrggbbaa`, so alpha is kept; the rest from the Lua adapter, then kosm (D70) |
-| `inactive` | the theme's `state.inactive`; derives the inactive colors listed above |
+| `inactive` | null: nothing derived; `from`: the theme's `state.inactive`, deriving the inactive colors listed above |
 | `extra` | `&.{}`: settings the app doesn't cover, by path (D99) |
 
 ## Options

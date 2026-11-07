@@ -17,6 +17,10 @@ are enums in Zig spelling (`.thin_sparse` for `thin-sparse`); structured values 
 (`window_padding_width = .all(10)`, `window_border_width = .{ .pixels = 1 }`); the types live in
 `kosm_kitty.values`. Keyboard and mouse mappings (`map`, `mouse_map`) are not covered yet.
 
+A minimal config can skip `from` (D100): `kosm_kitty.App{}` writes an empty `kosm.conf`, so
+assign only what you want (`.{ .colors = .{ .background = kosm.hex("041c26") } }`) and kitty
+keeps its defaults for the rest.
+
 After every apply the app reloads every running kitty by sending it SIGUSR1
 (`pkill -USR1 -x kitty`, D74). If no kitty is running, kosm prints a warning and carries on.
 
@@ -26,7 +30,7 @@ After every apply the app reloads every running kitty by sending it SIGUSR1
 |---|---|
 | `file` | `~/.config/kitty/kosm.conf` |
 | `format` | `.{}`: the kitty adapter's `#rrggbb` and `yes`/`no`, then 6 float decimals (D70) |
-| `bright` | the theme's `lightness.bright`; makes `color8`..`color15` from `color0`..`color7` |
+| `bright` | null: nothing derived; `from`: the theme's `lightness.bright`, making `color8`..`color15` from `color0`..`color7` |
 
 ### `fonts` (Fonts)
 

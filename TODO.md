@@ -126,7 +126,7 @@ Markers:
   - Do: D99: `kosm.Setting` in core, and `kosm_hyprland.extra` written to both targets after the app's own settings, nested into the generated module's tables.
   - Done when: tests show extras land in the generated module beside typed options (quoted keys too), are set by path on the edit target, and an extra equal to, inside or containing another set setting or extra fails naming both.
 
-- [ ] **9g. Apps without `from`**
+- [x] **9g. Apps without `from`**
   - Do: D100: every built-in `App{}` compiles and writes nothing; deriving modifiers (`kosm_hyprland.inactive`, `kosm_ghostty.bright`, ...) become `?kosm.Modifier = null`, and fields `from` fills get defaults; each README says a minimal config can skip `from`.
   - Do: D101: `kosm_ghostty.background_opacity` derives from the background's alpha like `kosm_kitty`'s.
   - Done when: tests show `App{}` of every built-in app plans nothing (or an empty file where the app always writes one), a null deriving modifier derives nothing, and ghostty's opacity follows the background's alpha below 1 and is not written at 1.

@@ -18,8 +18,8 @@ target: Target = default_target,
 /// How values are spelled (D70). Null fields take the `userjs` adapter's: `#rrggbb`.
 format: kosm.Format = .{},
 /// The prefs to write, named like about:config (`prefs.zen.theme.accent_color`). Null prefs are
-/// not written.
-prefs: Prefs,
+/// not written; with none set, no profile is looked for or written (D100).
+prefs: Prefs = .{},
 
 /// Zen's about:config prefs.
 pub const Prefs = @import("Prefs.zig");
@@ -55,10 +55,11 @@ pub fn from(theme: kosm.Theme) Profile {
 
 /// Writes the set prefs to the `user.js` of every picked profile.
 pub fn apply(self: Profile, output: *kosm.Output) !void {
+    const prefs = try user_js.table(output.allocator, self.prefs);
+    if (prefs.table.len == 0) return;
     const exclude = try output.allocator.alloc([]const u8, self.exclude.len);
     for (self.exclude, exclude) |directory, *file| file.* = try prefsFile(output.allocator, directory);
     const found = try output.find(.{ .files = try prefsFile(output.allocator, self.profiles), .exclude = exclude });
-    const prefs = try user_js.table(output.allocator, self.prefs);
     for (found) |prefs_js| {
         const file = try std.mem.concat(output.allocator, u8, &.{ std.Io.Dir.path.dirname(prefs_js).?, "/user.js" });
         switch (self.target) {
@@ -203,4 +204,13 @@ test "no profile to write is an error naming the glob" {
     defer fixture.deinit();
     try testing.expectError(error.NoFile, from(test_theme).apply(&fixture.output));
     try testing.expectEqualStrings("~/.zen/*/prefs.js", fixture.diagnostics.file);
+}
+
+test "Profile{} sets no prefs, so it looks for no profile and plans nothing" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{});
+    defer fixture.deinit();
+    const empty: Profile = .{};
+    try empty.apply(&fixture.output);
+    try testing.expectEqual(0, fixture.plan.files.items.len);
 }

@@ -13,9 +13,9 @@ file: []const u8 = "~/.config/kitty/kosm.conf",
 /// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the kitty
 /// adapter's: `#rrggbb`, `yes`/`no`, then kosm's 6 float decimals.
 format: kosm.Format = .{},
-/// Derives `color8`..`color15` from `color0`..`color7` when they are null (D23).
-/// Default: the theme's `lightness.bright`.
-bright: kosm.Modifier,
+/// Derives `color8`..`color15` from `color0`..`color7` when they are null (D23). null: they
+/// are not derived. `from`: the theme's `lightness.bright`.
+bright: ?kosm.Modifier = null,
 
 fonts: Fonts = .{},
 cursor: Cursor = .{},
@@ -126,11 +126,12 @@ fn withDerived(self: App) App {
     if (colors.background_opacity == null) if (colors.background) |background| {
         if (background.alpha < 1) colors.background_opacity = roundedAlpha(background.alpha);
     };
+    const bright = self.bright orelse return app;
     inline for (0..8) |index| {
         const bright_field = std.fmt.comptimePrint("color{d}", .{index + 8});
         const base_field = std.fmt.comptimePrint("color{d}", .{index});
         if (@field(colors, bright_field) == null) {
-            if (@field(colors, base_field)) |base| @field(colors, bright_field) = self.bright.apply(base);
+            if (@field(colors, base_field)) |base| @field(colors, bright_field) = bright.apply(base);
         }
     }
     return app;
@@ -187,4 +188,34 @@ test "apply writes the theme's colors and only the options the kosmos set" {
     try testing.expect(std.mem.indexOf(u8, written, "\ncolor8 #") != null);
     try testing.expect(std.mem.indexOf(u8, written, "scrollbar") == null);
     try testing.expect(std.mem.indexOf(u8, written, "# performance") == null);
+}
+
+test "App{} writes an empty file, and without bright no bright color is derived" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const home = home_buffer[0..try tmp.dir.realPath(testing.io, &home_buffer)];
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var plan: kosm.Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    var diagnostics: kosm.Diagnostics = .{};
+    var warnings: kosm.Warnings = .init(arena.allocator());
+    var output: kosm.Output = .{
+        .allocator = arena.allocator(),
+        .home = home,
+        .adapters = &.{adapter},
+        .plan = &plan,
+        .diagnostics = &diagnostics,
+        .warnings = &warnings,
+        .app = "kitty",
+    };
+
+    const empty: App = .{};
+    try empty.apply(&output);
+    try testing.expectEqualStrings("", plan.files.items[0].new);
+
+    var app: App = .{};
+    app.colors.color1 = kosm.hex("80333c");
+    try testing.expectEqual(null, app.withDerived().colors.color9);
 }

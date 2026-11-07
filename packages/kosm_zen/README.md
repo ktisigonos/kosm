@@ -26,22 +26,26 @@ color goes:
 |---|---|---|
 | `file` | | `~/.config/ZenBrowser/kosm.css` |
 | `format` | | `.{}`: the CSS adapter's `#rrggbbaa`, then 6 float decimals (D70) |
-| `foreground` | `--kosm-foreground` | white, black in light mode |
-| `accent` | `--kosm-accent` | cyan |
-| `background` | `--kosm-background` | black, white in light mode |
-| `button` | `--kosm-button` | `surface.raised` of `background` |
-| `button_hovered` | `--kosm-button-hovered` | null: `hovered` of `button` |
-| `border` | `--kosm-border` | cyan |
-| `containers.blue` | `--kosm-containers-blue` | the wheel's blue |
-| `containers.turquoise` | `--kosm-containers-turquoise` | the wheel's cyan |
-| `containers.green` | `--kosm-containers-green` | the wheel's green |
-| `containers.yellow` | `--kosm-containers-yellow` | the wheel's yellow |
-| `containers.orange` | `--kosm-containers-orange` | the wheel's orange |
-| `containers.red` | `--kosm-containers-red` | the wheel's red |
-| `containers.pink` | `--kosm-containers-pink` | the wheel's pink |
-| `containers.purple` | `--kosm-containers-purple` | the wheel's purple |
-| `hovered` | | the theme's `state.hovered` |
-| `profile` | | `Profile.from(theme)`; null writes no prefs, only the CSS |
+| `foreground` | `--kosm-foreground` | null; `from`: white, black in light mode |
+| `accent` | `--kosm-accent` | null; `from`: cyan |
+| `background` | `--kosm-background` | null; `from`: black, white in light mode |
+| `button` | `--kosm-button` | null; `from`: `surface.raised` of `background` |
+| `button_hovered` | `--kosm-button-hovered` | null: `hovered` of `button` when both are set |
+| `border` | `--kosm-border` | null; `from`: cyan |
+| `containers.blue` | `--kosm-containers-blue` | null; `from`: the wheel's blue |
+| `containers.turquoise` | `--kosm-containers-turquoise` | null; `from`: the wheel's cyan |
+| `containers.green` | `--kosm-containers-green` | null; `from`: the wheel's green |
+| `containers.yellow` | `--kosm-containers-yellow` | null; `from`: the wheel's yellow |
+| `containers.orange` | `--kosm-containers-orange` | null; `from`: the wheel's orange |
+| `containers.red` | `--kosm-containers-red` | null; `from`: the wheel's red |
+| `containers.pink` | `--kosm-containers-pink` | null; `from`: the wheel's pink |
+| `containers.purple` | `--kosm-containers-purple` | null; `from`: the wheel's purple |
+| `hovered` | | null: nothing derived; `from`: the theme's `state.hovered` |
+| `profile` | | null: no prefs, only the CSS; `from`: `Profile.from(theme)` |
+
+A null color is not written. A minimal config can skip `from` (D100): `kosm_zen.App{}` writes a
+`kosm.css` with an empty `:root` and no prefs, so assign only what you want
+(`.{ .accent = kosm.hex("268078") }`).
 
 ## Prefs
 
@@ -80,7 +84,7 @@ On a machine without Zen, set `profile = null` (a profile glob matching nothing 
 | `exclude` | none: globs of profile directories to leave out |
 | `target` | `.block` (`default_target`); `.generate` owns the whole `user.js` |
 | `format` | `.{}`: the `userjs` adapter's `#rrggbb` (D70) |
-| `prefs` | below |
+| `prefs` | `.{}`, below; with no pref set, the profile writes nothing and needs no Zen |
 
 ### `prefs` fields
 
