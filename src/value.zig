@@ -19,6 +19,9 @@ pub const Value = union(enum) {
     color: Color,
     /// Written verbatim.
     raw: []const u8,
+    /// Parts written back to back with no separator, each the way the adapter writes it (D89):
+    /// text with numbers or colors in it (`2pt`) that still follows the file's format.
+    joined: []const Value,
 
     /// One key and its value in a `table`.
     pub const Entry = @import("value/Entry.zig");

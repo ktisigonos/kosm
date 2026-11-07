@@ -3,6 +3,7 @@
 const MouseHideWait = @This();
 
 const std = @import("std");
+const Joined = @import("../Joined.zig");
 
 /// Seconds of inactivity before hiding; 0 never hides, negative hides on typing.
 seconds: f64,
@@ -14,10 +15,13 @@ unhide_threshold: u32 = 40,
 /// Whether scrolling unhides the pointer.
 scroll_unhide: bool = true,
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(wait: MouseHideWait, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{d}", .{wait.seconds});
+/// Writes the value the way kitty.conf spells it, numbers and booleans in the file's format.
+pub fn write(wait: MouseHideWait, joined: *Joined) Joined.Error!void {
+    try joined.float(wait.seconds);
     if (wait.unhide_wait) |unhide_wait| {
-        try writer.print(" {d} {d} {s}", .{ unhide_wait, wait.unhide_threshold, if (wait.scroll_unhide) "yes" else "no" });
+        try joined.writer().writeByte(' ');
+        try joined.float(unhide_wait);
+        try joined.writer().print(" {d} ", .{wait.unhide_threshold});
+        try joined.boolean(wait.scroll_unhide);
     }
 }

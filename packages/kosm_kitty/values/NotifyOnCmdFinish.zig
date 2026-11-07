@@ -3,6 +3,7 @@
 const NotifyOnCmdFinish = @This();
 
 const std = @import("std");
+const Joined = @import("../Joined.zig");
 const values = @import("../values.zig");
 
 /// When to notify.
@@ -42,8 +43,9 @@ pub const ClearOn = struct {
     next: bool = false,
 };
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(notify: NotifyOnCmdFinish, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{s} {d}", .{ @tagName(notify.when), notify.min_seconds });
-    if (notify.action) |action| try writer.print(" {f}", .{action});
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(notify: NotifyOnCmdFinish, joined: *Joined) Joined.Error!void {
+    try joined.writer().print("{s} ", .{@tagName(notify.when)});
+    try joined.float(notify.min_seconds);
+    if (notify.action) |action| try joined.writer().print(" {f}", .{action});
 }

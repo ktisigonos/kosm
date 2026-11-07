@@ -61,6 +61,7 @@ fn writeValue(writer: *std.Io.Writer, path: []const []const u8, value: kosm.Valu
         .color => |color| try context.writeColor(writer, color),
         .boolean => return context.unsupported("'{s}': CSS has no booleans; pass a number or kosm.raw text", .{path[path.len - 1]}),
         .list => return context.unsupported("'{s}': CSS lists differ per property; pass kosm.raw text", .{path[path.len - 1]}),
+        .joined => |parts| for (parts) |part| try writeValue(writer, path, part, context),
         .table => unreachable,
     }
 }

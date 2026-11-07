@@ -2,15 +2,18 @@
 
 const CompositionCurve = @This();
 
-const std = @import("std");
+const Joined = @import("../Joined.zig");
 
 /// Thickness of dark text on light backgrounds, 0.01 and up.
 gamma: f64,
 /// Extra contrast in percent, 0..100; null: kitty's platform default.
 contrast: ?f64 = null,
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(curve: CompositionCurve, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{d}", .{curve.gamma});
-    if (curve.contrast) |contrast| try writer.print(" {d}", .{contrast});
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(curve: CompositionCurve, joined: *Joined) Joined.Error!void {
+    try joined.float(curve.gamma);
+    if (curve.contrast) |contrast| {
+        try joined.writer().writeByte(' ');
+        try joined.float(contrast);
+    }
 }

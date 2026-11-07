@@ -2,15 +2,18 @@
 
 const TrailThreshold = @This();
 
-const std = @import("std");
+const Joined = @import("../Joined.zig");
 
 /// Cells moved horizontally, or in both directions when `vertical` is null.
 horizontal: u32,
 /// Cells moved vertically; null: same as `horizontal`.
 vertical: ?u32 = null,
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(threshold: TrailThreshold, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{d}", .{threshold.horizontal});
-    if (threshold.vertical) |vertical| try writer.print(" {d}", .{vertical});
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(threshold: TrailThreshold, joined: *Joined) Joined.Error!void {
+    try joined.float(threshold.horizontal);
+    if (threshold.vertical) |vertical| {
+        try joined.writer().writeByte(' ');
+        try joined.float(vertical);
+    }
 }

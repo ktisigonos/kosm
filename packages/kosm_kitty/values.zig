@@ -1,9 +1,11 @@
 //! The types kitty options take. A union writes its tag (`none`) or its payload (a color);
-//! a type with a `format` method writes that text. Enum tags are written with dashes
+//! a type with a `write` method builds a joined value whose numbers, booleans and colors follow
+//! the file's format (D89), and a type with a `format` method writes plain text. Enum tags are written with dashes
 //! (`thin_sparse` -> `thin-sparse`) unless the enum declares `underscored`.
 
 const std = @import("std");
 const kosm = @import("kosm");
+const Joined = @import("Joined.zig");
 
 pub const Font = @import("values/Font.zig");
 pub const FontAxis = @import("values/FontAxis.zig");
@@ -77,11 +79,17 @@ pub const Length = union(enum) {
     points: f64,
     pixels: f64,
 
-    /// Writes the value the way kitty.conf spells it.
-    pub fn format(length: Length, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    /// Writes the value the way kitty.conf spells it, numbers in the file's format.
+    pub fn write(length: Length, joined: *Joined) Joined.Error!void {
         switch (length) {
-            .points => |points| try writer.print("{d}pt", .{points}),
-            .pixels => |pixels| try writer.print("{d}px", .{pixels}),
+            .points => |points| {
+                try joined.float(points);
+                try joined.writer().writeAll("pt");
+            },
+            .pixels => |pixels| {
+                try joined.float(pixels);
+                try joined.writer().writeAll("px");
+            },
         }
     }
 };
@@ -92,12 +100,18 @@ pub const UnderlineExclusion = union(enum) {
     points: f64,
     pixels: f64,
 
-    /// Writes the value the way kitty.conf spells it.
-    pub fn format(exclusion: UnderlineExclusion, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    /// Writes the value the way kitty.conf spells it, numbers in the file's format.
+    pub fn write(exclusion: UnderlineExclusion, joined: *Joined) Joined.Error!void {
         switch (exclusion) {
-            .fraction => |fraction| try writer.print("{d}", .{fraction}),
-            .points => |points| try writer.print("{d}pt", .{points}),
-            .pixels => |pixels| try writer.print("{d}px", .{pixels}),
+            .fraction => |fraction| try joined.float(fraction),
+            .points => |points| {
+                try joined.float(points);
+                try joined.writer().writeAll("pt");
+            },
+            .pixels => |pixels| {
+                try joined.float(pixels);
+                try joined.writer().writeAll("px");
+            },
         }
     }
 };
@@ -107,11 +121,17 @@ pub const ContrastThreshold = union(enum) {
     ratio: f64,
     percent: f64,
 
-    /// Writes the value the way kitty.conf spells it.
-    pub fn format(threshold: ContrastThreshold, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    /// Writes the value the way kitty.conf spells it, numbers in the file's format.
+    pub fn write(threshold: ContrastThreshold, joined: *Joined) Joined.Error!void {
         switch (threshold) {
-            .ratio => |ratio| try writer.print("{d} ratio", .{ratio}),
-            .percent => |percent| try writer.print("{d}%", .{percent}),
+            .ratio => |ratio| {
+                try joined.float(ratio);
+                try joined.writer().writeAll(" ratio");
+            },
+            .percent => |percent| {
+                try joined.float(percent);
+                try joined.writer().writeAll("%");
+            },
         }
     }
 };
@@ -136,12 +156,18 @@ pub const FontAmount = union(enum) {
     pixels: f64,
     percent: f64,
 
-    /// Writes the value the way kitty.conf spells it.
-    pub fn format(amount: FontAmount, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    /// Writes the value the way kitty.conf spells it, numbers in the file's format.
+    pub fn write(amount: FontAmount, joined: *Joined) Joined.Error!void {
         switch (amount) {
-            .points => |points| try writer.print("{d}", .{points}),
-            .pixels => |pixels| try writer.print("{d}px", .{pixels}),
-            .percent => |percent| try writer.print("{d}%", .{percent}),
+            .points => |points| try joined.float(points),
+            .pixels => |pixels| {
+                try joined.float(pixels);
+                try joined.writer().writeAll("px");
+            },
+            .percent => |percent| {
+                try joined.float(percent);
+                try joined.writer().writeAll("%");
+            },
         }
     }
 };
@@ -158,12 +184,12 @@ pub const Easing = union(enum) {
     cubic_bezier: CubicBezier,
     steps: Steps,
 
-    /// Writes the value the way kitty.conf spells it.
-    pub fn format(easing: Easing, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    /// Writes the value the way kitty.conf spells it, numbers in the file's format.
+    pub fn write(easing: Easing, joined: *Joined) Joined.Error!void {
         switch (easing) {
-            .cubic_bezier => |curve| try curve.format(writer),
-            .steps => |steps| try steps.format(writer),
-            else => try writeTag(writer, @tagName(easing), false),
+            .cubic_bezier => |curve| try curve.write(joined),
+            .steps => |steps| try steps.format(joined.writer()),
+            else => try writeTag(joined.writer(), @tagName(easing), false),
         }
     }
 };

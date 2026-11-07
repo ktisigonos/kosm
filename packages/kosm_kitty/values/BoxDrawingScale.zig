@@ -2,7 +2,7 @@
 
 const BoxDrawingScale = @This();
 
-const std = @import("std");
+const Joined = @import("../Joined.zig");
 
 /// Thin lines.
 thin: f64,
@@ -13,7 +13,7 @@ thick: f64,
 /// Very thick lines.
 very_thick: f64,
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(scale: BoxDrawingScale, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{d}, {d}, {d}, {d}", .{ scale.thin, scale.normal, scale.thick, scale.very_thick });
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(scale: BoxDrawingScale, joined: *Joined) Joined.Error!void {
+    try joined.floats(&.{ scale.thin, scale.normal, scale.thick, scale.very_thick }, ", ");
 }

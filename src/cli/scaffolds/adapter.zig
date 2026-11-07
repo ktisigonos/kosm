@@ -25,7 +25,7 @@ fn serialize(writer: *std.Io.Writer, root: kosm.Value, context: *kosm.Adapter.Co
             .float => |float| try context.writeFloat(writer, float),
             .boolean => |boolean| try context.writeBoolean(writer, boolean),
             .color => |color| try context.writeColor(writer, color),
-            .table, .list => return context.unsupported("'{s}' is a {s}; scaffold_name files hold only plain values", .{ entry.key, @tagName(entry.value) }),
+            .table, .list, .joined => return context.unsupported("'{s}' is a {s}; scaffold_name files hold only plain values", .{ entry.key, @tagName(entry.value) }),
         }
         try writer.writeByte('\n');
     }

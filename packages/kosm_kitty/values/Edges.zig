@@ -2,7 +2,7 @@
 
 const Edges = @This();
 
-const std = @import("std");
+const Joined = @import("../Joined.zig");
 
 top: f64,
 right: f64,
@@ -14,9 +14,9 @@ pub fn all(width: f64) Edges {
     return .{ .top = width, .right = width, .bottom = width, .left = width };
 }
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(edges: Edges, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(edges: Edges, joined: *Joined) Joined.Error!void {
     const same = edges.top == edges.right and edges.top == edges.bottom and edges.top == edges.left;
-    if (same) return writer.print("{d}", .{edges.top});
-    try writer.print("{d} {d} {d} {d}", .{ edges.top, edges.right, edges.bottom, edges.left });
+    if (same) return joined.float(edges.top);
+    try joined.floats(&.{ edges.top, edges.right, edges.bottom, edges.left }, " ");
 }

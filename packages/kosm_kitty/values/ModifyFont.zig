@@ -2,7 +2,7 @@
 
 const ModifyFont = @This();
 
-const std = @import("std");
+const Joined = @import("../Joined.zig");
 const values = @import("../values.zig");
 
 /// The metric to change.
@@ -20,7 +20,8 @@ metric: enum {
 /// How much to change it.
 amount: values.FontAmount,
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(modify_font: ModifyFont, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{s} {f}", .{ @tagName(modify_font.metric), modify_font.amount });
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(modify_font: ModifyFont, joined: *Joined) Joined.Error!void {
+    try joined.writer().print("{s} ", .{@tagName(modify_font.metric)});
+    try modify_font.amount.write(joined);
 }

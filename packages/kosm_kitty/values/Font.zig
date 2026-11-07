@@ -3,6 +3,7 @@
 const Font = @This();
 
 const std = @import("std");
+const Joined = @import("../Joined.zig");
 const values = @import("../values.zig");
 
 /// The font family name.
@@ -20,8 +21,9 @@ features: []const []const u8 = &.{},
 /// Values for the font's variable axes, such as `wght`.
 axes: []const values.FontAxis = &.{},
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(font: Font, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(font: Font, joined: *Joined) Joined.Error!void {
+    const writer = joined.writer();
     var separator: []const u8 = "";
     inline for (.{ "family", "style", "postscript_name", "full_name", "variable_name" }) |key| {
         if (@field(font, key)) |text| {
@@ -40,7 +42,8 @@ pub fn format(font: Font, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         separator = " ";
     }
     for (font.axes) |axis| {
-        try writer.print("{s}{s}={d}", .{ separator, axis.name, axis.value });
+        try writer.print("{s}{s}=", .{ separator, axis.name });
+        try joined.float(axis.value);
         separator = " ";
     }
 }

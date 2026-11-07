@@ -94,7 +94,7 @@ Markers:
   - Do: warn when a printed color is clipped to the gamut (D48).
   - Done when: tests show a clipped color warns naming the app and file, still writes, and an in-gamut one doesn't warn.
 
-- [ ] **8b. `kosm_kitty` formatting fix**
+- [x] **8b. `kosm_kitty` formatting fix**
   - Do: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
   - Do: `TransparentColor` prints its color through the file's `kosm.Format` (its `Context.writeColor`), so a clipped one warns like any other color (D88).
   - Done when: tests show a compound value follows a changed `float_precision` and `boolean`.

@@ -2,7 +2,7 @@
 
 const Timing = @This();
 
-const std = @import("std");
+const Joined = @import("../Joined.zig");
 const values = @import("../values.zig");
 
 /// The duration in seconds; what 0 and negative values mean depends on the option.
@@ -12,9 +12,13 @@ easing: ?values.Easing = null,
 /// The easing of the animation's second half; null: same as `easing`.
 second_easing: ?values.Easing = null,
 
-/// Writes the value the way kitty.conf spells it.
-pub fn format(timing: Timing, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.print("{d}", .{timing.seconds});
-    if (timing.easing) |easing| try writer.print(" {f}", .{easing});
-    if (timing.second_easing) |easing| try writer.print(" {f}", .{easing});
+/// Writes the value the way kitty.conf spells it, numbers in the file's format.
+pub fn write(timing: Timing, joined: *Joined) Joined.Error!void {
+    try joined.float(timing.seconds);
+    for ([_]?values.Easing{ timing.easing, timing.second_easing }) |optional_easing| {
+        if (optional_easing) |easing| {
+            try joined.writer().writeByte(' ');
+            try easing.write(joined);
+        }
+    }
 }

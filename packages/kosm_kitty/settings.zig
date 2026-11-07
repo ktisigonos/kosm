@@ -5,6 +5,7 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const values = @import("values.zig");
+const Joined = @import("Joined.zig");
 
 const Allocator = std.mem.Allocator;
 const Entry = kosm.Value.Entry;
@@ -40,11 +41,13 @@ fn section(allocator: Allocator, options: anytype) Allocator.Error!kosm.Value {
     return .{ .table = entries.items };
 }
 
-/// One option's value: scalars stay scalars, so colors keep the file's color format (D61).
+/// One option's value: scalars stay scalars and compound values are joined (D89), so numbers,
+/// booleans and colors follow the file's format (D70).
 fn value(allocator: Allocator, option: anytype) Allocator.Error!kosm.Value {
     const T = @TypeOf(option);
     if (T == kosm.Color) return .{ .color = option };
     if (T == []const u8) return .{ .string = option };
+    if (comptime std.meta.hasMethod(T, "write")) return joinedValue(allocator, option);
     if (comptime std.meta.hasMethod(T, "format")) return .{ .raw = try allocator.print("{f}", .{option}) };
     switch (@typeInfo(T)) {
         .bool => return .{ .boolean = option },
@@ -62,8 +65,14 @@ fn value(allocator: Allocator, option: anytype) Allocator.Error!kosm.Value {
             for (option, items) |item, *slot| slot.* = try value(allocator, item);
             return .{ .list = items };
         },
-        else => @compileError("kosm_kitty: an option of type " ++ @typeName(T) ++ " needs a format method"),
+        else => @compileError("kosm_kitty: an option of type " ++ @typeName(T) ++ " needs a write or format method"),
     }
+}
+
+fn joinedValue(allocator: Allocator, option: anytype) Allocator.Error!kosm.Value {
+    var joined: Joined = .init(allocator);
+    option.write(&joined) catch return error.OutOfMemory;
+    return joined.finish() catch error.OutOfMemory;
 }
 
 /// A list of enums joined by commas, as `enabled_layouts` takes it.
@@ -99,6 +108,21 @@ fn checkNames(comptime Section: type, comptime list: []const u8) void {
 }
 
 const testing = std.testing;
+const adapter = @import("adapter.zig").adapter;
+
+/// `option` as the kitty adapter writes it in a file with `format`.
+fn rendered(allocator: Allocator, option: anytype, format: kosm.Format) ![]const u8 {
+    var context: kosm.Adapter.Context = .{ .format = format.orElse(adapter.default_format).resolve() };
+    return renderedValue(allocator, try value(allocator, option), &context);
+}
+
+fn renderedValue(allocator: Allocator, option: kosm.Value, context: *kosm.Adapter.Context) ![]const u8 {
+    const root: kosm.Value = .{ .table = &.{.{ .key = "option", .value = option }} };
+    var text: std.Io.Writer.Allocating = .init(allocator);
+    try adapter.serialize.?(&text.writer, root, context);
+    const line = text.written();
+    return line["option ".len .. line.len - 1];
+}
 
 test "only set options are written, under kitty's names and spellings" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -133,7 +157,8 @@ test "only set options are written, under kitty's names and spellings" {
     try testing.expectEqualStrings("neighboring_cell", entries[2].value.raw);
     try testing.expectEqualStrings("none", entries[3].value.raw);
     try testing.expectEqualStrings("selection_background", entries[4].value.raw);
-    try testing.expectEqualStrings("2px", entries[5].value.raw);
+    var context: kosm.Adapter.Context = .{ .format = adapter.default_format.resolve() };
+    try testing.expectEqualStrings("2px", try renderedValue(arena.allocator(), entries[5].value, &context));
 }
 
 test "repeated options become one entry each, comma lists one joined entry" {
@@ -164,23 +189,52 @@ test "structured values are written in kitty's syntax" {
     defer arena.deinit();
     const allocator = arena.allocator();
     const font: values.Font = .{ .family = "Maple Mono \"NF\"", .features = &.{ "+zero", "cv01=2" }, .axes = &.{.{ .name = "wght", .value = 380 }} };
-    try testing.expectEqualStrings("family=\"Maple Mono \\\"NF\\\"\" features=\"+zero cv01=2\" wght=380", (try value(allocator, font)).raw);
-    try testing.expectEqualStrings("10", (try value(allocator, values.Edges.all(10))).raw);
-    try testing.expectEqualStrings("1 2 3 4", (try value(allocator, values.Edges{ .top = 1, .right = 2, .bottom = 3, .left = 4 })).raw);
+    try testing.expectEqualStrings("family=\"Maple Mono \\\"NF\\\"\" features=\"+zero cv01=2\" wght=380", try rendered(allocator, font, .{}));
+    try testing.expectEqualStrings("10", try rendered(allocator, values.Edges.all(10), .{}));
+    try testing.expectEqualStrings("1 2 3 4", try rendered(allocator, values.Edges{ .top = 1, .right = 2, .bottom = 3, .left = 4 }, .{}));
     const symbols: values.SymbolMap = .{ .codepoints = &.{ .{ .first = 0xe0a0, .last = 0xe0a3 }, .{ .first = 0x2665 } }, .font = "Symbols Nerd Font" };
-    try testing.expectEqualStrings("U+E0A0-U+E0A3,U+2665 Symbols Nerd Font", (try value(allocator, symbols)).raw);
+    try testing.expectEqualStrings("U+E0A0-U+E0A3,U+2665 Symbols Nerd Font", try rendered(allocator, symbols, .{}));
     const blink: values.Timing = .{ .seconds = -1, .easing = .linear, .second_easing = .{ .cubic_bezier = .{ .x1 = 0.4, .y1 = 0, .x2 = 0.2, .y2 = 1 } } };
-    try testing.expectEqualStrings("-1 linear cubic-bezier(0.4, 0, 0.2, 1)", (try value(allocator, blink)).raw);
-    try testing.expectEqualStrings("no-cursor no-sudo", (try value(allocator, values.ShellIntegration{ .no_cursor = true, .no_sudo = true })).raw);
-    try testing.expectEqualStrings("enabled", (try value(allocator, values.ShellIntegration{})).raw);
-    try testing.expectEqualStrings("disabled", (try value(allocator, values.ShellIntegration{ .disabled = true, .no_rc = true })).raw);
-    try testing.expectEqualStrings("no-op", (try value(allocator, values.PasteActions{})).raw);
-    try testing.expectEqualStrings("ctrl+shift", (try value(allocator, values.Modifiers{ .ctrl = true, .shift = true })).raw);
-    try testing.expectEqualStrings("env_var,path", (try value(allocator, values.CloneSourceStrategies{ .env_var = true, .path = true })).raw);
-    try testing.expectEqualStrings("0 count-background", (try value(allocator, values.ConfirmClose{ .windows = 0, .count_background = true })).raw);
-    try testing.expectEqualStrings("80c", (try value(allocator, values.WindowSize{ .cells = 80 })).raw);
-    try testing.expectEqualStrings("auto", (try value(allocator, values.FontOrAuto.auto)).raw);
+    try testing.expectEqualStrings("-1 linear cubic-bezier(0.4, 0, 0.2, 1)", try rendered(allocator, blink, .{}));
+    try testing.expectEqualStrings("no-cursor no-sudo", try rendered(allocator, values.ShellIntegration{ .no_cursor = true, .no_sudo = true }, .{}));
+    try testing.expectEqualStrings("enabled", try rendered(allocator, values.ShellIntegration{}, .{}));
+    try testing.expectEqualStrings("disabled", try rendered(allocator, values.ShellIntegration{ .disabled = true, .no_rc = true }, .{}));
+    try testing.expectEqualStrings("no-op", try rendered(allocator, values.PasteActions{}, .{}));
+    try testing.expectEqualStrings("ctrl+shift", try rendered(allocator, values.Modifiers{ .ctrl = true, .shift = true }, .{}));
+    try testing.expectEqualStrings("env_var,path", try rendered(allocator, values.CloneSourceStrategies{ .env_var = true, .path = true }, .{}));
+    try testing.expectEqualStrings("0 count-background", try rendered(allocator, values.ConfirmClose{ .windows = 0, .count_background = true }, .{}));
+    try testing.expectEqualStrings("80c", try rendered(allocator, values.WindowSize{ .cells = 80 }, .{}));
+    try testing.expectEqualStrings("auto", try rendered(allocator, values.FontOrAuto.auto, .{}));
     const notify: values.NotifyOnCmdFinish = .{ .when = .invisible, .min_seconds = 15, .action = .{ .notify_bell = .{ .focus = true } } };
-    try testing.expectEqualStrings("invisible 15 notify-bell focus", (try value(allocator, notify)).raw);
-    try testing.expectEqualStrings("global \"Actions::Launch\" launch sh", (try value(allocator, values.MenuMap{ .path = &.{ "Actions", "Launch" }, .action = "launch sh" })).raw);
+    try testing.expectEqualStrings("invisible 15 notify-bell focus", try rendered(allocator, notify, .{}));
+    try testing.expectEqualStrings("global \"Actions::Launch\" launch sh", try rendered(allocator, values.MenuMap{ .path = &.{ "Actions", "Launch" }, .action = "launch sh" }, .{}));
+}
+
+test "compound values follow the file's float precision and boolean spelling" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const format: kosm.Format = .{ .float_precision = 1, .boolean = .true_false };
+    const blink: values.Timing = .{ .seconds = 0.25, .easing = .{ .cubic_bezier = .{ .x1 = 0.42, .y1 = 0, .x2 = 0.58, .y2 = 1 } } };
+    try testing.expectEqualStrings("0.3 cubic-bezier(0.4, 0, 0.6, 1)", try rendered(allocator, blink, format));
+    try testing.expectEqualStrings("1.3 2.5 1.3 2.5", try rendered(allocator, values.Edges{ .top = 1.25, .right = 2.5, .bottom = 1.25, .left = 2.5 }, format));
+    const wait: values.MouseHideWait = .{ .seconds = 3.14, .unhide_wait = 0.55, .scroll_unhide = false };
+    try testing.expectEqualStrings("3.1 0.6 40 false", try rendered(allocator, wait, format));
+    try testing.expectEqualStrings("3.14 0.55 40 no", try rendered(allocator, wait, .{}));
+    try testing.expectEqualStrings("0.7pt", try rendered(allocator, values.Length{ .points = 0.66 }, format));
+    const font: values.Font = .{ .family = "Maple Mono", .axes = &.{.{ .name = "wght", .value = 380.25 }} };
+    try testing.expectEqualStrings("family=\"Maple Mono\" wght=380.3", try rendered(allocator, font, format));
+}
+
+test "a transparent color is written in the file's color format, and a clipped one is noted" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const transparent: values.TransparentColor = .{ .color = kosm.hex("041c26"), .opacity = 0.125 };
+    try testing.expectEqualStrings("#041C26@0.13", try rendered(allocator, transparent, .{ .color = .hex_upper, .float_precision = 2 }));
+
+    const outside: kosm.Color = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 };
+    var context: kosm.Adapter.Context = .{ .format = adapter.default_format.resolve() };
+    _ = try renderedValue(allocator, try value(allocator, values.TransparentColor{ .color = outside }), &context);
+    try testing.expectEqual(1, context.clipped.list().len);
 }

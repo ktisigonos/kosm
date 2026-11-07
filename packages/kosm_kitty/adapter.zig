@@ -52,6 +52,7 @@ fn writeValue(writer: *std.Io.Writer, key: []const u8, value: kosm.Value, contex
             if (index != 0) try writer.writeByte(' ');
             try writeValue(writer, key, item, context);
         },
+        .joined => |parts| for (parts) |part| try writeValue(writer, key, part, context),
         .table => unreachable,
     }
 }
