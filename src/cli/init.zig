@@ -374,6 +374,8 @@ test "an initialized config builds with the forked kosm sources, applies its sta
     try testing.expectEqualStrings(
         \\kyanos  kosmoi/kyanos.zig
         \\  kitty: kosm_kitty.App
+        \\  ghostty: kosm_ghostty.App
+        \\  hyprland: kosm_hyprland.App
         \\  zen: kosm_zen.App
         \\  nvim: kosm_nvim.App
         \\
