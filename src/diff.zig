@@ -10,24 +10,29 @@ const context_lines = 3;
 const max_edit_distance = 2000;
 
 /// Prints every file the plan would change, in plan order. Unchanged files print nothing.
-pub fn writePlan(allocator: std.mem.Allocator, writer: *std.Io.Writer, plan: *const Plan) !void {
+/// `terminal.mode` decides whether lines are colored like git's (D103).
+pub fn writePlan(allocator: std.mem.Allocator, terminal: std.Io.Terminal, plan: *const Plan) !void {
     for (plan.files.items) |file| {
         if (!file.changed()) continue;
-        try writeFile(allocator, writer, file.display_path, file.old, file.new);
+        try writeFile(allocator, terminal, file.display_path, file.old, file.new);
     }
 }
 
 /// Prints a unified diff of one file; `old` is null for a file that does not exist yet.
-pub fn writeFile(allocator: std.mem.Allocator, writer: *std.Io.Writer, path: []const u8, old: ?[]const u8, new: []const u8) !void {
+pub fn writeFile(allocator: std.mem.Allocator, terminal: std.Io.Terminal, path: []const u8, old: ?[]const u8, new: []const u8) !void {
     var arena: std.heap.ArenaAllocator = .init(allocator);
     defer arena.deinit();
     const old_lines = try splitLines(arena.allocator(), old orelse "");
     const new_lines = try splitLines(arena.allocator(), new);
     const edits = try editScript(arena.allocator(), old_lines, new_lines);
 
-    if (old == null) try writer.writeAll("--- /dev/null\n") else try writer.print("--- {s}\n", .{path});
-    try writer.print("+++ {s}\n", .{path});
-    try writeHunks(writer, edits, old_lines, new_lines);
+    try terminal.setColor(.bold);
+    if (old == null) try terminal.writer.writeAll("--- /dev/null") else try terminal.writer.print("--- {s}", .{path});
+    try endLine(terminal);
+    try terminal.setColor(.bold);
+    try terminal.writer.print("+++ {s}", .{path});
+    try endLine(terminal);
+    try writeHunks(terminal, edits, old_lines, new_lines);
 }
 
 const Operation = enum { equal, delete, insert };
@@ -159,7 +164,7 @@ fn traced(before: []const isize, distance: isize, diagonal: isize) isize {
     return before[@intCast(diagonal + distance + 1)];
 }
 
-fn writeHunks(writer: *std.Io.Writer, edits: []const Edit, old_lines: []const []const u8, new_lines: []const []const u8) !void {
+fn writeHunks(terminal: std.Io.Terminal, edits: []const Edit, old_lines: []const []const u8, new_lines: []const []const u8) !void {
     var next: usize = 0;
     while (nextChange(edits, next)) |first_change| {
         var last_change = first_change;
@@ -169,7 +174,7 @@ fn writeHunks(writer: *std.Io.Writer, edits: []const Edit, old_lines: []const []
         }
         const start = @max(next, first_change -| context_lines);
         const end = @min(edits.len, last_change + 1 + context_lines);
-        try writeHunk(writer, edits[start..end], old_lines, new_lines);
+        try writeHunk(terminal, edits[start..end], old_lines, new_lines);
         next = end;
     }
 }
@@ -181,7 +186,7 @@ fn nextChange(edits: []const Edit, from: usize) ?usize {
     return null;
 }
 
-fn writeHunk(writer: *std.Io.Writer, hunk: []const Edit, old_lines: []const []const u8, new_lines: []const []const u8) !void {
+fn writeHunk(terminal: std.Io.Terminal, hunk: []const Edit, old_lines: []const []const u8, new_lines: []const []const u8) !void {
     var old_count: usize = 0;
     var new_count: usize = 0;
     for (hunk) |edit| switch (edit.operation) {
@@ -194,18 +199,34 @@ fn writeHunk(writer: *std.Io.Writer, hunk: []const Edit, old_lines: []const []co
     };
     const old_start = if (old_count == 0) hunk[0].old_index else hunk[0].old_index + 1;
     const new_start = if (new_count == 0) hunk[0].new_index else hunk[0].new_index + 1;
-    try writer.print("@@ -{d},{d} +{d},{d} @@\n", .{ old_start, old_count, new_start, new_count });
+    try terminal.setColor(.cyan);
+    try terminal.writer.print("@@ -{d},{d} +{d},{d} @@", .{ old_start, old_count, new_start, new_count });
+    try endLine(terminal);
     for (hunk) |edit| switch (edit.operation) {
-        .equal => try writeLine(writer, ' ', old_lines[edit.old_index]),
-        .delete => try writeLine(writer, '-', old_lines[edit.old_index]),
-        .insert => try writeLine(writer, '+', new_lines[edit.new_index]),
+        .equal => try writeLine(terminal, ' ', old_lines[edit.old_index]),
+        .delete => try writeLine(terminal, '-', old_lines[edit.old_index]),
+        .insert => try writeLine(terminal, '+', new_lines[edit.new_index]),
     };
 }
 
-fn writeLine(writer: *std.Io.Writer, marker: u8, line: []const u8) !void {
-    try writer.writeByte(marker);
-    try writer.writeAll(line);
-    if (!std.mem.endsWith(u8, line, "\n")) try writer.writeAll("\n\\ No newline at end of file\n");
+fn writeLine(terminal: std.Io.Terminal, marker: u8, line: []const u8) !void {
+    const text = std.mem.trimEnd(u8, line, "\n");
+    const color: ?std.Io.Terminal.Color = switch (marker) {
+        '-' => .red,
+        '+' => .green,
+        else => null,
+    };
+    if (color) |set| try terminal.setColor(set);
+    try terminal.writer.writeByte(marker);
+    try terminal.writer.writeAll(text);
+    if (color != null) try endLine(terminal) else try terminal.writer.writeByte('\n');
+    if (text.len == line.len) try terminal.writer.writeAll("\\ No newline at end of file\n");
+}
+
+/// Resets the color before the newline, as git does, so a pager never carries it onto the next line.
+fn endLine(terminal: std.Io.Terminal) !void {
+    try terminal.setColor(.reset);
+    try terminal.writer.writeByte('\n');
 }
 
 const testing = std.testing;
@@ -213,8 +234,22 @@ const testing = std.testing;
 fn expectDiff(expected: []const u8, old: ?[]const u8, new: []const u8) !void {
     var output: std.Io.Writer.Allocating = .init(testing.allocator);
     defer output.deinit();
-    try writeFile(testing.allocator, &output.writer, "~/a.conf", old, new);
+    try writeFile(testing.allocator, .{ .writer = &output.writer, .mode = .no_color }, "~/a.conf", old, new);
     try testing.expectEqualStrings(expected, output.written());
+}
+
+test "on a terminal, headers are bold, hunk lines cyan, removals red and additions green, each reset before its newline" {
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+    try writeFile(testing.allocator, .{ .writer = &output.writer, .mode = .escape_codes }, "~/a.conf", "a\nb", "a\nc\n");
+    try testing.expectEqualStrings(
+        "\x1b[1m--- ~/a.conf\x1b[0m\n\x1b[1m+++ ~/a.conf\x1b[0m\n" ++
+            "\x1b[36m@@ -1,2 +1,2 @@\x1b[0m\n" ++
+            " a\n" ++
+            "\x1b[31m-b\x1b[0m\n\\ No newline at end of file\n" ++
+            "\x1b[32m+c\x1b[0m\n",
+        output.written(),
+    );
 }
 
 test "a new file is all additions" {

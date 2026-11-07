@@ -36,7 +36,11 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     var stderr_buffer: [1024]u8 = undefined;
     var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
-    const streams: Streams = .{ .stdout = &stdout.interface, .stderr = &stderr.interface };
+    const streams: Streams = .{
+        .stdout = &stdout.interface,
+        .stderr = &stderr.interface,
+        .stdout_mode = try .detect(init.io, .stdout(), isSet(init.environ_map, "NO_COLOR"), isSet(init.environ_map, "CLICOLOR_FORCE")),
+    };
     if (!try interface.check(init.environ_map, &stderr.interface)) {
         try stderr.interface.flush();
         return 1;
@@ -52,10 +56,18 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     return status;
 }
 
+/// Whether the environment variable `name` is set and not empty, as no-color.org asks.
+fn isSet(environ: *const std.process.Environ.Map, name: []const u8) bool {
+    const value = environ.get(name) orelse return false;
+    return value.len != 0;
+}
+
 /// Where the runner reports: results on stdout, errors and warnings on stderr.
 const Streams = struct {
     stdout: *std.Io.Writer,
     stderr: *std.Io.Writer,
+    /// Whether stdout takes colors: a terminal, unless `NO_COLOR` is set (D103).
+    stdout_mode: std.Io.Terminal.Mode,
 };
 
 /// Compile error unless `target.function` is a kosmos, listing the file's kosmoi (D17).
@@ -142,7 +154,7 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
     const stdout = delivery.streams.stdout;
     if (delivery.diff) {
         if (!plan.hasChanges()) return report.nothingToChange(stdout);
-        return kosm.diff.writePlan(delivery.gpa, stdout, plan);
+        return kosm.diff.writePlan(delivery.gpa, .{ .writer = stdout, .mode = delivery.streams.stdout_mode }, plan);
     }
     if (plan.hasChanges()) {
         var failure: kosm.commit.Failure = .{};
@@ -251,7 +263,7 @@ fn planAndRecord(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u
         .diff = diff,
         .recording = recorded,
         .diagnostics = diagnostics,
-        .streams = .{ .stdout = &output.writer, .stderr = &warnings },
+        .streams = .{ .stdout = &output.writer, .stderr = &warnings, .stdout_mode = .no_color },
     });
     try testing.expectEqualStrings("", warnings.buffered());
 }
