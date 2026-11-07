@@ -1,4 +1,4 @@
-//! Neovim: a base16 palette in `lua/theme.lua`, for a base16 colorscheme plugin to load.
+//! Neovim: a base16 palette generated as `lua/theme.lua`, for a base16 colorscheme plugin to load.
 
 const std = @import("std");
 

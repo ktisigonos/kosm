@@ -13,7 +13,6 @@
         "App.zig",
         "Base16.zig",
         "Terminal.zig",
-        "templates",
         "README.md",
     },
 }

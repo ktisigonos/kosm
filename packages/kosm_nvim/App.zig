@@ -1,6 +1,6 @@
-//! Neovim's colors (D22, D27): a base16 palette plus the terminal colors, written from
-//! `templates/theme.lua` to `file`, which returns them as a Lua table for the user's own
-//! nvim config to load (D57).
+//! Neovim's colors (D22, D27): a base16 palette plus the terminal colors, generated into
+//! `file` as a Lua module returning them in one flat table (`base00`, ..., `br_white`), for the
+//! user's own nvim config to load with `require` (D57). Null values are not written.
 
 const App = @This();
 
@@ -9,15 +9,15 @@ const kosm = @import("kosm");
 
 /// The file kosm owns. Default: `~/.config/nvim/lua/theme.lua`.
 file: []const u8 = "~/.config/nvim/lua/theme.lua",
-/// How values are spelled (D70), e.g. `.color = .hex_upper`. Default: colors as `#rrggbb`;
-/// null fields take kosm's `true`/`false` and 6 float decimals.
-format: kosm.Format,
-/// Whether the colorscheme leaves the background transparent. Default: false.
-transparent: bool = false,
+/// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the Lua
+/// adapter's `true`/`false`, then kosm's `#rrggbb` and 6 float decimals.
+format: kosm.Format = .{},
+/// Whether the colorscheme leaves the background transparent. null: not written.
+transparent: ?bool = null,
 /// The base16 slots.
-base16: Base16,
+base16: Base16 = .{},
 /// The 8 terminal colors and their bright variants.
-terminal: Terminal,
+terminal: Terminal = .{},
 
 pub const Base16 = @import("Base16.zig");
 pub const Terminal = @import("Terminal.zig");
@@ -31,7 +31,6 @@ pub fn from(theme: kosm.Theme) App {
     const foreground = if (theme.mode == .dark) palette.white else palette.black;
     const bright = variations.lightness.bright;
     return .{
-        .format = .{ .color = .hex },
         .base16 = .{
             .base00 = background,
             .base01 = variations.surface.raised.apply(background),
@@ -71,48 +70,92 @@ pub fn from(theme: kosm.Theme) App {
     };
 }
 
-/// Writes the palette to `file`.
+/// Writes every set value to `file`.
 pub fn apply(self: App, output: *kosm.Output) !void {
-    try output.template(self, .{
-        .file = self.file,
-        .text = @embedFile("templates/theme.lua"),
-        .format = self.format,
-    });
+    try output.generate(.{ .file = self.file, .lang = "lua", .format = self.format }, try self.tree(output.allocator));
+}
+
+/// `transparent`, then the base16 slots, then the terminal colors, in one table as the user's
+/// config reads them (`theme.base00`, `theme.br_white`).
+fn tree(self: App, allocator: std.mem.Allocator) std.mem.Allocator.Error!kosm.Value {
+    var entries: std.ArrayList(kosm.Value.Entry) = .empty;
+    if (self.transparent) |transparent| try entries.append(allocator, .{ .key = "transparent", .value = .{ .boolean = transparent } });
+    try appendColors(allocator, &entries, self.base16);
+    try appendColors(allocator, &entries, self.terminal);
+    return .{ .table = entries.items };
+}
+
+fn appendColors(allocator: std.mem.Allocator, entries: *std.ArrayList(kosm.Value.Entry), colors: anytype) std.mem.Allocator.Error!void {
+    inline for (@typeInfo(@TypeOf(colors)).@"struct".field_names) |name| {
+        if (@field(colors, name)) |color| try entries.append(allocator, .{ .key = name, .value = .{ .color = color } });
+    }
 }
 
 const testing = std.testing;
+const lua = @import("kosm_lua");
 
-test "apply fills the template with the palette" {
-    var tmp = testing.tmpDir(.{});
-    defer tmp.cleanup();
-    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const home = home_buffer[0..try tmp.dir.realPath(testing.io, &home_buffer)];
-    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena.deinit();
-    var plan: kosm.Plan = .init(testing.allocator, testing.io);
-    defer plan.deinit();
-    var diagnostics: kosm.Diagnostics = .{};
-    var warnings: kosm.Warnings = .init(arena.allocator());
-    var output: kosm.Output = .{
-        .allocator = arena.allocator(),
-        .home = home,
-        .adapters = &.{},
-        .plan = &plan,
-        .diagnostics = &diagnostics,
-        .warnings = &warnings,
-        .app = "nvim",
-    };
+const Fixture = struct {
+    tmp: testing.TmpDir,
+    arena: std.heap.ArenaAllocator,
+    plan: kosm.Plan,
+    diagnostics: kosm.Diagnostics = .{},
+    warnings: kosm.Warnings = undefined,
+    home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined,
+    output: kosm.Output = undefined,
 
+    fn init(fixture: *Fixture) !void {
+        fixture.* = .{ .tmp = testing.tmpDir(.{}), .arena = .init(testing.allocator), .plan = .init(testing.allocator, testing.io) };
+        fixture.warnings = .init(fixture.arena.allocator());
+        const length = try fixture.tmp.dir.realPath(testing.io, &fixture.home_buffer);
+        fixture.output = .{
+            .allocator = fixture.arena.allocator(),
+            .home = fixture.home_buffer[0..length],
+            .adapters = &.{lua.adapter},
+            .plan = &fixture.plan,
+            .diagnostics = &fixture.diagnostics,
+            .warnings = &fixture.warnings,
+            .app = "nvim",
+        };
+    }
+
+    fn deinit(fixture: *Fixture) void {
+        fixture.plan.deinit();
+        fixture.arena.deinit();
+        fixture.tmp.cleanup();
+    }
+};
+
+test "apply writes the palette as one flat Lua table" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
     const theme = kosm.Theme.from(.{ .black = kosm.hex("041c26"), .white = kosm.hex("a3c5cc"), .red = kosm.hex("80333c") }, .dark);
     var app = from(theme);
     app.transparent = true;
     app.terminal.br_white = kosm.hex("b7dce5");
-    try app.apply(&output);
-    try testing.expectEqual(0, warnings.items.items.len);
+    try app.apply(&fixture.output);
+    try testing.expectEqual(0, fixture.warnings.items.items.len);
 
-    const written = plan.files.items[0].new;
-    try testing.expect(std.mem.startsWith(u8, written, "return {\n  transparent = true,\n\n  base00 = '#041c26',\n"));
-    try testing.expect(std.mem.indexOf(u8, written, "\n  base08 = '#80333c',\n") != null);
-    try testing.expect(std.mem.indexOf(u8, written, "\n  white = '#a3c5cc',\n") != null);
-    try testing.expect(std.mem.endsWith(u8, written, "\n  br_white = '#b7dce5',\n}\n"));
+    const written = fixture.plan.files.items[0].new;
+    try testing.expectStringStartsWith(written, "return {\n    transparent = true,\n    base00 = \"#041c26\",\n");
+    try testing.expect(std.mem.indexOf(u8, written, "\n    base08 = \"#80333c\",\n") != null);
+    try testing.expect(std.mem.indexOf(u8, written, "\n    white = \"#a3c5cc\",\n") != null);
+    try testing.expectStringEndsWith(written, "\n    br_white = \"#b7dce5\",\n}\n");
+}
+
+test "App{} writes an empty module, and only set values are written" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const empty: App = .{};
+    try empty.apply(&fixture.output);
+    try testing.expectEqualStrings("return {}\n", fixture.plan.files.items[0].new);
+
+    var app: App = .{};
+    app.base16.base0D = kosm.hex("2d8699");
+    app.terminal.cyan = kosm.hex("268078");
+    const tree_value = try app.tree(fixture.arena.allocator());
+    try testing.expectEqual(2, tree_value.table.len);
+    try testing.expectEqualStrings("base0D", tree_value.table[0].key);
+    try testing.expectEqualStrings("cyan", tree_value.table[1].key);
 }

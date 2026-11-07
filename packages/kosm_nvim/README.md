@@ -8,13 +8,21 @@ plugin:
 local theme = require('theme')
 ```
 
+The file is a Lua module returning one flat table (`theme.base00`, `theme.br_white`), written
+through the `lua` adapter of `kosm_lua`. Null values are not written.
+
+A minimal config can skip `from` (D100): `kosm_nvim.App{}` writes an empty module
+(`return {}`), so assign only what you want (`.{ .base16 = .{ .base0D = kosm.hex("2d8699") } }`).
+
 ## Fields
+
+Every color is null by default; the column says what `from(theme)` sets.
 
 | Field | Default |
 |---|---|
 | `file` | `~/.config/nvim/lua/theme.lua` |
-| `format` | `.{ .color = .hex }` (`#rrggbb`); booleans `true`/`false`, 6 float decimals (D70) |
-| `transparent` | false |
+| `format` | `.{}`: the Lua adapter's `true`/`false`, then `#rrggbb` and 6 float decimals (D70) |
+| `transparent` | null: not written |
 | `base16.base00` | black, white in light mode (background) |
 | `base16.base01` | `surface.raised` of `base00` |
 | `base16.base02` | `state.selected` of `base00` |
