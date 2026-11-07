@@ -11,19 +11,26 @@ arguments: []const []const u8,
 /// The config project's absolute path.
 config: []const u8,
 
-/// Where the record lives under the state directory.
-const relative_path = "kosm/current.zon";
+/// The record's file name in kosm's state directory.
+const file_name = "current.zon";
 /// The state directory under $HOME when $XDG_STATE_HOME is unset.
 const default_state_home = ".local/state";
 
 /// `$XDG_STATE_HOME/kosm/current.zon`, else `$HOME/.local/state/kosm/current.zon`; null when
-/// neither is set. A relative $XDG_STATE_HOME is ignored, as the XDG spec asks.
+/// neither is set.
 pub fn path(allocator: std.mem.Allocator, environ: *const std.process.Environ.Map) std.mem.Allocator.Error!?[]const u8 {
+    return statePath(allocator, environ, file_name);
+}
+
+/// The file `name` in kosm's state directory: `$XDG_STATE_HOME/kosm/<name>`, else
+/// `$HOME/.local/state/kosm/<name>`; null when neither is set. A relative $XDG_STATE_HOME is
+/// ignored, as the XDG spec asks.
+pub fn statePath(allocator: std.mem.Allocator, environ: *const std.process.Environ.Map, name: []const u8) std.mem.Allocator.Error!?[]const u8 {
     if (environ.get("XDG_STATE_HOME")) |state_home| {
-        if (std.Io.Dir.path.isAbsolute(state_home)) return try std.Io.Dir.path.join(allocator, &.{ state_home, relative_path });
+        if (std.Io.Dir.path.isAbsolute(state_home)) return try std.Io.Dir.path.join(allocator, &.{ state_home, "kosm", name });
     }
     const home = environ.get("HOME") orelse return null;
-    return try std.Io.Dir.path.join(allocator, &.{ home, default_state_home, relative_path });
+    return try std.Io.Dir.path.join(allocator, &.{ home, default_state_home, "kosm", name });
 }
 
 /// Replaces the record at `file_path` atomically, creating its directories.

@@ -55,7 +55,8 @@ pub fn remove(context: Context, name: []const u8) Error!void {
 }
 
 /// `kosm update [name]`: fetches every package in packages.zon again (or only `name`) at its
-/// ref and checks each like `add`. Dependencies kosm add did not install are skipped.
+/// ref and checks each but kosm itself like `add` (D98). Dependencies missing from packages.zon
+/// are skipped.
 pub fn update(context: Context, name: ?[]const u8) Error!void {
     const packages = try loadPackages(context);
     const original = try readManifest(context);
@@ -74,7 +75,10 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
 
     errdefer restoreManifest(context, original);
     for (selected) |package| try save(context, package);
-    for (selected) |package| try check(context, package.name);
+    for (selected) |package| {
+        // Kosm provides no app, adapter or kosmos; the next build checks it.
+        if (!std.mem.eql(u8, package.name, kosm_name)) try check(context, package.name);
+    }
     for (selected) |package| try context.stdout.print("updated {s}\n", .{package.name});
 }
 

@@ -1,11 +1,13 @@
-//! The build of a config project (section 9): every installed package and every local kosmos,
-//! app and adapter becomes a module importable by name (D43, D50, D62), and `-Dkosmos=frost.iced`
+//! The build of a config project (section 9): every installed package, every built-in package
+//! kosm provides (D98) and every local kosmos, app and adapter becomes a module importable by
+//! name (D43, D50, D62), and `-Dkosmos=frost.iced`
 //! builds `zig-out/bin/kosmos`, the runner for that one kosmos (D45). `-Dinspect=kosm_kitty` builds
 //! `zig-out/bin/inspect`, which reports what that installed package provides (D46). `-Dlist` builds
 //! `zig-out/bin/list`, which lists every kosmos and installed package (D85).
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
+const built_in = @import("built_in.zig");
 
 /// The directories holding local kosmoi, apps and adapters, in the config's root.
 const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
@@ -31,6 +33,11 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const kosm_dependency = for (names.modules.items) |entry| {
         if (std.mem.eql(u8, entry.name, "kosm")) break b.dependency("kosm", .{ .target = target, .optimize = optimize });
     } else return fail(b, "build.zig.zon has no 'kosm' dependency", .{});
+    // Kosm provides the built-in packages while they live in its repo (D98).
+    for (built_in.packages, built_in.modulesOf(kosm_dependency)) |package, found| {
+        const module = found orelse continue;
+        if (!names.add(.{ .name = package.name, .module = module, .origin = b.fmt("built-in package '{s}' (kosm provides it, so build.zig.zon need not list it, D98)", .{package.name}), .kind = .package })) return;
+    }
     unifyPackages(b, names.modules.items);
 
     b.dependOnDirectoryContents(b.path("."));
@@ -97,8 +104,11 @@ fn unifyPackages(b: *std.Build, packages: []const Entry) void {
     while (pending.pop()) |module| {
         const seen = visited.getOrPut(b.allocator, module) catch @panic("OOM");
         if (seen.found_existing) continue;
-        for (module.import_table.keys(), module.import_table.values()) |import_name, imported| {
-            pending.append(b.allocator, imported) catch @panic("OOM");
+        // By index: `addImport` may grow the table even when it only replaces a value, which
+        // frees the slices `keys()` and `values()` return.
+        for (0..module.import_table.count()) |index| {
+            const import_name = module.import_table.keys()[index];
+            pending.append(b.allocator, module.import_table.values()[index]) catch @panic("OOM");
             for (packages) |package| {
                 if (std.mem.eql(u8, package.name, import_name)) module.addImport(import_name, package.module);
             }

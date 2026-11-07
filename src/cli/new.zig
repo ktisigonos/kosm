@@ -83,6 +83,9 @@ fn checkName(context: Context, name: []const u8) Error!void {
     for (installed) |package| {
         if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the installed package '{s}'; kosmoi, apps, adapters and packages need unique names (D50)", .{ name, name });
     }
+    for (@import("kosm_package").built_in_packages) |package| {
+        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the built-in package '{s}' kosm provides; kosmoi, apps, adapters and packages need unique names (D50, D98)", .{ name, name });
+    }
 }
 
 const testing = std.testing;
@@ -166,12 +169,14 @@ test "new refuses a name that is taken or no identifier, and writes nothing" {
     try testing.expectError(error.Failed, new(test_config.context(), .app, "frost"));
     try testing.expectError(error.Failed, new(test_config.context(), .kosmos, "lang"));
     try testing.expectError(error.Failed, new(test_config.context(), .adapter, "kosm_kitty"));
+    try testing.expectError(error.Failed, new(test_config.context(), .app, "kosm_lua"));
     try testing.expectError(error.Failed, new(test_config.context(), .app, "my-bar"));
     try testing.expectError(error.Failed, new(test_config.context(), .app, "std"));
     try testing.expectEqualStrings(
         \\error: 'frost' is taken by kosmoi/frost.zig; kosmoi, apps, adapters and packages need unique names (D50)
         \\error: 'lang' is taken by adapters/lang; kosmoi, apps, adapters and packages need unique names (D50)
         \\error: 'kosm_kitty' is taken by the installed package 'kosm_kitty'; kosmoi, apps, adapters and packages need unique names (D50)
+        \\error: 'kosm_lua' is taken by the built-in package 'kosm_lua' kosm provides; kosmoi, apps, adapters and packages need unique names (D50, D98)
         \\error: 'my-bar' cannot be a package name: it must be a Zig identifier, like my_bar (D51)
         \\error: 'std' cannot be a package name: Zig's own @import("std") already means something
         \\
@@ -199,8 +204,9 @@ test "every scaffold builds in an initialized config, and the kosmos applies wit
     context.config = try std.Io.Dir.path.join(arena, &.{ test_config.config, "project" });
     context.environ_map = &environ;
 
-    const built_in = @import("kosm_repository");
-    try @import("init.zig").init(context, .{ .root = repository_root, .built_in_packages = built_in.built_in_packages, .minimum_zig_version = built_in.minimum_zig_version });
+    const test_kosm = @import("test_kosm.zig");
+    try @import("init.zig").init(context, try test_kosm.stub(arena, testing.io, test_config.tmp.dir, test_config.config));
+    context.sources = try test_kosm.sources(arena, testing.io);
     try new(context, .kosmos, "frost");
     try new(context, .app, "my_bar");
     try new(context, .adapter, "my_lang");

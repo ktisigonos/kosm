@@ -5,6 +5,7 @@ const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
 const inspect = @import("inspect.zig");
+const interface = @import("kosm_interface");
 
 /// A module the list looks into, filled in by the main that `addConfigProject` generates.
 pub const Source = struct {
@@ -29,6 +30,10 @@ pub fn list(init: std.process.Init, comptime sources: []const Source) !u8 {
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     var stderr_buffer: [1024]u8 = undefined;
     var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
+    if (!try interface.check(init.environ_map, &stderr.interface)) {
+        try stderr.interface.flush();
+        return 1;
+    }
 
     const status: u8 = if (filterArgument(arguments[1..])) |filter| status: {
         if (filter) |name| {

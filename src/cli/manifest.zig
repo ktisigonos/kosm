@@ -92,6 +92,17 @@ pub fn stringField(arena: std.mem.Allocator, source: [:0]const u8, name: []const
     };
 }
 
+/// The package name, the top-level `.name = .identifier`; null when it is missing or not an
+/// enum literal.
+pub fn packageName(arena: std.mem.Allocator, source: [:0]const u8) Error!?[]const u8 {
+    const parsed = try parse(arena, source);
+    const index = fieldIndex(&parsed, "name") orelse return null;
+    return switch (parsed.root.vals.at(@intCast(index)).get(&parsed.zoir)) {
+        .enum_literal => |literal| literal.get(&parsed.zoir),
+        else => null,
+    };
+}
+
 /// `source` with the top-level field `name` set to `value`, a ZON expression: the old value's
 /// bytes are replaced, or the field is added after the last one.
 pub fn withField(arena: std.mem.Allocator, source: [:0]const u8, name: []const u8, value: []const u8) Error![]const u8 {

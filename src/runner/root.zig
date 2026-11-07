@@ -5,6 +5,7 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const Record = @import("kosm_current");
+const interface = @import("kosm_interface");
 const Arguments = @import("Arguments.zig");
 const discovery = @import("discovery.zig");
 const params = @import("params.zig");
@@ -36,6 +37,10 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     var stderr_buffer: [1024]u8 = undefined;
     var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
     const streams: Streams = .{ .stdout = &stdout.interface, .stderr = &stderr.interface };
+    if (!try interface.check(init.environ_map, &stderr.interface)) {
+        try stderr.interface.flush();
+        return 1;
+    }
 
     const status: u8 = if (apply(init, kosmos, adapters, &diagnostics, streams)) 0 else |err| switch (err) {
         error.Reported => 1,

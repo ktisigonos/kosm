@@ -117,7 +117,7 @@ Markers:
   - Do: `kosm_hyprland` keeps `hl.config(require("kosm"))` in a block at the end of `~/.config/hypr/hyprland.lua` through its `include` field (D97).
   - Done when: tests show the block is appended once and then left unchanged, a missing `hyprland.lua` is not created and warns, and a generated module `require("kosm")` can't find fails the apply.
 
-- [ ] **9e. Kosm installed on the system** `PLAN FIRST`
+- [x] **9e. Kosm installed on the system** `PLAN FIRST`
   - Do: D98: `zig build install` puts kosm's sources in `<prefix>/share/kosm`; the built-in packages come from kosm's own tree in `addConfigProject` and `package(b)`; `kosm init` adds `kosm` by URL (no built-in entries, no repository path); every build kosm runs passes `--fork` for the sources it finds; `kosm source`; the interface number checked by the runner.
   - Do: drop the `kosm_repository` root that the binary records today (D83 no longer needs it).
   - Done when: tests (offline: the URL is a local directory) show an init config lists only `kosm` and applies with a built-in app, a build uses the forked sources over the pinned ones, `kosm source` sets, prints and clears the override, a config not depending on `kosm` gets no `--fork`, and an interface mismatch fails naming both numbers.

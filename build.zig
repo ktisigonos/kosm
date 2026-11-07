@@ -6,6 +6,10 @@ pub const addConfigProject = @import("build/config_project.zig").addConfigProjec
 pub const package = package_build.package;
 
 const package_build = @import("build/package.zig");
+const built_in = @import("build/built_in.zig");
+
+/// Where `kosm init` fetches kosm from (D98).
+const kosm_url = "git+https://git.nnstdios.com/nnra6864/kosm";
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -19,6 +23,12 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     addTreeSitter(b, kosm_module, target, optimize);
+    // The number the command line and the runner check against each other (D98).
+    const interface_module = b.createModule(.{
+        .root_source_file = b.path("src/interface.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     // The record of the last apply: the runner writes it, the command line reads it (D75).
     const current_module = b.createModule(.{
         .root_source_file = b.path("src/current/Record.zig"),
@@ -33,21 +43,24 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "kosm", .module = kosm_module },
             .{ .name = "kosm_current", .module = current_module },
+            .{ .name = "kosm_interface", .module = interface_module },
         },
     });
-    // The command line only drives zig build and the runner; it imports nothing but kosm_current
-    // and where this repo is, for kosm init (D83).
+    // The command line only drives zig build and the runner; it imports nothing but kosm_current,
+    // kosm_interface and what kosm init writes (D83, D98).
     const cli_module = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "kosm_current", .module = current_module },
-            .{ .name = "kosm_repository", .module = repositoryOptions(b).createModule() },
+            .{ .name = "kosm_interface", .module = interface_module },
+            .{ .name = "kosm_package", .module = packageOptions(b).createModule() },
         },
     });
     const cli = b.addExecutable(.{ .name = "kosm", .root_module = cli_module });
     b.installArtifact(cli);
+    installSources(b);
 
     const run_cli = b.addRunArtifact(cli);
     run_cli.addPassthruArgs();
@@ -59,29 +72,74 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const test_step = b.step("test", "Run tests");
-    for ([_]*std.Build.Module{ kosm_module, current_module, runner_module, cli_module, build_helpers_module }) |module| {
+    // The config tests build against the installed sources, which proves every manifest's `.paths`.
+    test_step.dependOn(b.getInstallStep());
+    for ([_]*std.Build.Module{ kosm_module, interface_module, current_module, runner_module, build_helpers_module }) |module| {
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
     }
+    // The command line's tests build configs against files Zig's cache doesn't track (the
+    // installed sources, the built-in packages), so a cached pass could hide a broken one.
+    const cli_tests = b.addRunArtifact(b.addTest(.{ .root_module = cli_module }));
+    cli_tests.has_side_effects = true;
+    test_step.dependOn(&cli_tests.step);
     addPackageTests(b, test_step, kosm_module, target, optimize);
 }
 
-/// This repo's absolute path, its built-in package names and its Zig pin, for kosm init (D67, D83).
-fn repositoryOptions(b: *std.Build) *std.Build.Step.Options {
+/// What the command line knows about kosm as a package: what `kosm init` writes (D83, D98), the
+/// built-in names `kosm new` refuses (D86), and the fingerprint tests give a stub kosm.
+fn packageOptions(b: *std.Build) *std.Build.Step.Options {
     const options = b.addOptions();
-    const relative_root = b.root.toString(b.allocator) catch @panic("OOM");
-    const root = std.Io.Dir.cwd().realPathFileAlloc(b.graph.io, if (relative_root.len == 0) "." else relative_root, b.allocator) catch |err|
-        std.debug.panic("cannot resolve the kosm repository {s}: {s}", .{ relative_root, @errorName(err) });
-    var names: [built_in_packages.len][]const u8 = undefined;
-    for (built_in_packages, &names) |built_in, *name| name.* = built_in.name;
-    std.mem.sort([]const u8, &names, {}, stringLessThan);
-    options.addOption([]const u8, "root", root);
-    options.addOption([]const []const u8, "built_in_packages", &names);
+    var names: [built_in.packages.len][]const u8 = undefined;
+    for (built_in.packages, &names) |built_in_package, *name| name.* = built_in_package.name;
+    options.addOption([]const u8, "url", kosm_url);
     options.addOption([]const u8, "minimum_zig_version", @import("build.zig.zon").minimum_zig_version);
+    options.addOption(u64, "fingerprint", @import("build.zig.zon").fingerprint);
+    options.addOption([]const []const u8, "built_in_packages", &names);
     return options;
 }
 
-fn stringLessThan(_: void, left: []const u8, right: []const u8) bool {
-    return std.mem.lessThan(u8, left, right);
+/// Installs kosm's sources in `<prefix>/share/kosm`, where the installed binary finds them and
+/// builds every config with them (D98). Only what a fetch of kosm would hold: the `.paths` of
+/// kosm's manifest, with each built-in package's own `.paths`, so no `.zig-cache` comes along.
+fn installSources(b: *std.Build) void {
+    const share = "share/kosm";
+    for (manifestPaths(b, ".")) |path| {
+        if (std.mem.eql(u8, path, "packages")) continue;
+        installPath(b, path, b.fmt("{s}/{s}", .{ share, path }));
+    }
+    for (built_in.packages) |built_in_package| {
+        const directory = b.fmt("packages/{s}", .{built_in_package.name});
+        for (manifestPaths(b, directory)) |path| {
+            const source = b.fmt("{s}/{s}", .{ directory, path });
+            installPath(b, source, b.fmt("{s}/{s}", .{ share, source }));
+        }
+    }
+}
+
+/// Installs the file or directory `source`, relative to the repo, at `destination` under the prefix.
+fn installPath(b: *std.Build, source: []const u8, destination: []const u8) void {
+    const full_path = b.root.joinString(b.allocator, source) catch @panic("OOM");
+    const stat = std.Io.Dir.cwd().statFile(b.graph.io, full_path, .{}) catch |err|
+        std.debug.panic("cannot read {s}: {s}", .{ source, @errorName(err) });
+    if (stat.kind == .directory) {
+        b.installDirectory(.{ .source_dir = b.path(source), .install_dir = .prefix, .install_subdir = destination });
+    } else {
+        b.getInstallStep().dependOn(&b.addInstallFileWithDir(b.path(source), .prefix, destination).step);
+    }
+}
+
+/// The `.paths` of the manifest in `directory`, relative to the repo. Registers the manifest, so
+/// a changed `.paths` reruns the cached configure phase.
+fn manifestPaths(b: *std.Build, directory: []const u8) []const []const u8 {
+    b.dependOnFileContents(b.path(b.fmt("{s}/build.zig.zon", .{directory})));
+    const path = b.root.joinString(b.allocator, b.fmt("{s}/build.zig.zon", .{directory})) catch @panic("OOM");
+    const source = std.Io.Dir.cwd().readFileAllocOptions(b.graph.io, path, b.allocator, .limited(1024 * 1024), .of(u8), 0) catch |err|
+        std.debug.panic("cannot read {s}: {s}", .{ path, @errorName(err) });
+    const Manifest = struct { paths: []const []const u8 };
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    const manifest = std.zon.parse.fromSlice(Manifest, .{ .gpa = b.allocator, .arena = b.allocator, .source = source, .diagnostics = &diagnostics, .ignore_unknown_fields = true }) catch |err|
+        std.debug.panic("cannot read .paths from {s}: {s}", .{ path, @errorName(err) });
+    return manifest.paths;
 }
 
 /// Compiles the tree-sitter runtime into core and imports its C API as `tree_sitter_api` (D41).
@@ -99,42 +157,11 @@ fn addTreeSitter(b: *std.Build, module: *std.Build.Module, target: std.Build.Res
     });
 }
 
-/// The built-in packages in packages/ (D67), tested against this kosm.
-const built_in_packages = [_]BuiltInPackage{
-    .{ .name = "kosm_kitty" },
-    .{ .name = "kosm_ghostty" },
-    .{ .name = "kosm_hyprland" },
-    .{ .name = "kosm_css" },
-    .{ .name = "kosm_userjs" },
-    .{ .name = "kosm_zen" },
-    .{ .name = "kosm_nvim" },
-    .{ .name = "kosm_json", .grammars = &.{"tree_sitter_json"} },
-    .{ .name = "kosm_lua", .grammars = &.{"tree_sitter_lua"} },
-};
-
-/// A package in packages/ and the grammars it compiles (D78), which this build.zig.zon lists too.
-const BuiltInPackage = struct {
-    name: []const u8,
-    grammars: []const []const u8 = &.{},
-};
-
-/// Tests each built-in package with every other one importable by name, as a config sees them.
+/// Tests each built-in package with every other one importable by name, as a config sees them (D98).
 fn addPackageTests(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
-    var modules: [built_in_packages.len]*std.Build.Module = undefined;
-    for (built_in_packages, &modules) |built_in, *module| {
-        module.* = b.createModule(.{
-            .root_source_file = b.path(b.fmt("packages/{s}/root.zig", .{built_in.name})),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{.{ .name = "kosm", .module = kosm_module }},
-        });
-        for (built_in.grammars) |grammar| package_build.addGrammar(b, module.*, b.dependency(grammar, .{}));
-    }
-    for (modules, 0..) |module, index| {
-        for (built_in_packages, modules, 0..) |other, other_module, other_index| {
-            if (other_index != index) module.addImport(other.name, other_module);
-        }
-        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .name = built_in_packages[index].name })).step);
+    const modules = built_in.addModules(b, kosm_module, target, optimize);
+    for (built_in.packages, modules) |built_in_package, module| {
+        test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module, .name = built_in_package.name })).step);
     }
     addStartingKosmosTest(b, test_step, kosm_module, &modules, target, optimize);
 }
@@ -147,7 +174,7 @@ fn addStartingKosmosTest(b: *std.Build, test_step: *std.Build.Step, kosm_module:
         .optimize = optimize,
         .imports = &.{.{ .name = "kosm", .module = kosm_module }},
     });
-    for (built_in_packages, packages) |built_in, module| kyanos.addImport(built_in.name, module);
+    for (built_in.packages, packages) |built_in_package, module| kyanos.addImport(built_in_package.name, module);
     const test_root = b.addWriteFiles().add("kyanos_test.zig",
         \\test "the starting kosmos builds its tree" {
         \\    _ = @import("kyanos").kosmos();

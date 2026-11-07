@@ -4,14 +4,19 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
+const interface = @import("kosm_interface");
 
 /// Prints what `Package` (imported as `name`) provides to stdout and returns 0, or prints why
 /// it is not a kosm package to stderr and returns 1.
 pub fn inspect(init: std.process.Init, comptime name: []const u8, comptime Package: type) !u8 {
     const report = comptime provided(name, Package);
+    var stderr_buffer: [512]u8 = undefined;
+    var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
+    if (!try interface.check(init.environ_map, &stderr.interface)) {
+        try stderr.interface.flush();
+        return 1;
+    }
     if (report.isEmpty()) {
-        var stderr_buffer: [256]u8 = undefined;
-        var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
         try stderr.interface.print("error: package '{s}' provides no app, adapter or kosmos, so it is not a kosm package (D46)\n", .{name});
         try stderr.interface.flush();
         return 1;
