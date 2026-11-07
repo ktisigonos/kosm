@@ -117,8 +117,13 @@ Markers:
   - Do: `kosm_hyprland` keeps `hl.config(require("kosm"))` in a block at the end of `~/.config/hypr/hyprland.lua` through its `include` field (D97).
   - Done when: tests show the block is appended once and then left unchanged, a missing `hyprland.lua` is not created and warns, and a generated module `require("kosm")` can't find fails the apply.
 
-- [ ] **10. Kyanos for real** `PLAN FIRST` `ASK`
-  - Do: a config project made by `kosm init` holding the Kyanos kosmos (ghostty, Hyprland through a local `hypr_defs` app on `defs.lua`, nvim, Zen, plus anything else Ricer rices today) and the local apps it needs. Where the project lives (in the Ktisis or `~/.config/kosm`) is the human's choice.
+- [ ] **9e. Kosm installed on the system** `PLAN FIRST`
+  - Do: D98: `zig build install` puts kosm's sources in `<prefix>/share/kosm`; the built-in packages come from kosm's own tree in `addConfigProject` and `package(b)`; `kosm init` adds `kosm` by URL (no built-in entries, no repository path); every build kosm runs passes `--fork` for the sources it finds; `kosm source`; the interface number checked by the runner.
+  - Do: drop the `kosm_repository` root that the binary records today (D83 no longer needs it).
+  - Done when: tests (offline: the URL is a local directory) show an init config lists only `kosm` and applies with a built-in app, a build uses the forked sources over the pinned ones, `kosm source` sets, prints and clears the override, a config not depending on `kosm` gets no `--fork`, and an interface mismatch fails naming both numbers.
+
+- [ ] **10. Kyanos for real** `PLAN FIRST`
+  - Do: `~/.config/kosm` made by `kosm init` with the installed kosm (D98), holding the Kyanos kosmos: kitty, ghostty, nvim, Zen (theme CSS and prefs), and Hyprland twice: `kosm_hyprland` generating `~/.config/hypr/kosm.lua` with everything `defs.lua` holds today, with `include = null` so `hyprland.lua` is not touched yet, and a local `hypr_defs` app editing `~/.config/hypr/defs-kosm.lua` (the human copies `defs.lua` there first), so both D91 targets are proven on the real setup. Other programs Ricer rices are out of scope.
   - Done when: `kosm apply kyanos --diff` against the real files shows only deliberate differences, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 8).
 
 - [ ] **11a. `kosm_toml`** `PLAN FIRST` `ASK`
