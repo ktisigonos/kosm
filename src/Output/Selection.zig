@@ -188,19 +188,20 @@ fn checkIndex(selection: *Selection, path: Path, count: usize, index: usize) Err
 /// `value` as source text, through the adapter's `format` (D42). `about` names what is set.
 fn formatValue(selection: *Selection, about: []const u8, value: anytype) Error![]const u8 {
     const allocator = selection.output.allocator;
-    const tree = value_tree.from(allocator, value) catch |err| switch (err) {
+    var context: Adapter.Context = .{ .format = selection.format };
+    const tree = value_tree.from(allocator, &context.clipped, value) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.IntegerTooLarge => return selection.fail(error.UnsupportedValue, "{s}: the integer is too large for a file value", .{about}),
         error.NullInList => return selection.fail(error.UnsupportedValue, "{s}: the value is null, or a list holding null; kosm never removes keys", .{about}),
     };
     var content: std.Io.Writer.Allocating = .init(allocator);
     errdefer content.deinit();
-    var context: Adapter.Context = .{ .format = selection.format };
     selection.adapter.format.?(&content.writer, tree, &context) catch |err| switch (err) {
         // An allocating writer fails only when it runs out of memory.
         error.WriteFailed => return error.OutOfMemory,
         error.UnsupportedValue => return selection.fail(error.UnsupportedValue, "{s}: adapter '{s}': {s}", .{ about, selection.adapter.name, context.message() }),
     };
+    try planning.warnClipped(selection.output, selection.selector, about, &context.clipped);
     return content.toOwnedSlice();
 }
 

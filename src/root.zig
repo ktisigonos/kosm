@@ -17,6 +17,7 @@ pub const Adapter = @import("Adapter.zig");
 pub const treesitter = @import("treesitter.zig");
 pub const Output = @import("Output.zig");
 pub const Diagnostics = @import("Diagnostics.zig");
+pub const Warnings = @import("Warnings.zig");
 pub const Reloader = @import("Reloader.zig");
 pub const Plan = @import("Plan.zig");
 pub const commit = @import("commit.zig");
@@ -61,6 +62,8 @@ test {
     std.testing.refAllDecls(@import("glob.zig"));
     std.testing.refAllDecls(treesitter);
     std.testing.refAllDecls(Diagnostics);
+    std.testing.refAllDecls(Warnings);
+    std.testing.refAllDecls(@import("ClippedColors.zig"));
     std.testing.refAllDecls(Reloader);
     std.testing.refAllDecls(Plan);
     std.testing.refAllDecls(Plan.Edit);

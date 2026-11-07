@@ -89,13 +89,14 @@ Markers:
   - Do: local kosmoi, apps and adapters provide whatever they declare, wherever they live (D87): adapters from every local package the applied kosmos reaches through imports, and kosmoi from `apps/` and `adapters/` for `kosm apply` and `kosm list`.
   - Done when: tests show an adapter declared in a directory kosmos, in a directory app the kosmos imports, and in a single-file kosmos itself are used on apply; a kosmos in `apps/` applies and is listed; and a compile error in a kosmos the applied one doesn't import leaves the apply working.
 
-- [ ] **8a. Warnings** `PLAN FIRST`
+- [x] **8a. Warnings** `PLAN FIRST`
   - Do: a way for core and apps to report a warning that doesn't fail the apply, printed with the kosmos, app and file like an error (G6). The plan proposes the `D#`.
   - Do: warn when a printed color is clipped to the gamut (D48).
   - Done when: tests show a clipped color warns naming the app and file, still writes, and an in-gamut one doesn't warn.
 
 - [ ] **8b. `kosm_kitty` formatting fix**
   - Do: compound values (`Timing`, `Edges`, `MouseHideWait`, ...) print their floats and booleans themselves while the tree is built, so they ignore `format.float_precision` and `format.boolean`; write them with the file's `kosm.Format`.
+  - Do: `TransparentColor` prints its color through the file's `kosm.Format` (its `Context.writeColor`), so a clipped one warns like any other color (D88).
   - Done when: tests show a compound value follows a changed `float_precision` and `boolean`.
 
 - [ ] **9a. `kosm_ghostty`** `PLAN FIRST`

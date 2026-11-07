@@ -81,8 +81,9 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: []const kos
 
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
-    walk.planTree(tree, .{ .allocator = arena, .home = home, .adapters = adapters, .plan = &plan, .diagnostics = diagnostics }) catch
-        return error.Reported;
+    var warnings: kosm.Warnings = .init(arena);
+    const context: walk.Context = .{ .allocator = arena, .home = home, .adapters = adapters, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings };
+    try planWarning(tree, context, streams.stderr);
     try deliver(tree, &plan, .{
         .gpa = init.gpa,
         .arena = arena,
@@ -92,6 +93,15 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: []const kos
         .diagnostics = diagnostics,
         .streams = streams,
     });
+}
+
+/// Plans every app in `tree`, then prints the warnings gathered, also when planning failed, so
+/// they come before the error, the diff and the written files (D88).
+fn planWarning(tree: anytype, context: walk.Context, stderr: *std.Io.Writer) !void {
+    const planned = walk.planTree(tree, context);
+    try context.warnings.write(context.diagnostics.kosmos, stderr);
+    try stderr.flush();
+    planned catch return error.Reported;
 }
 
 /// The record a commit saves, or null when the runner was started without `--config` (only
@@ -225,9 +235,10 @@ fn planAndDeliver(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const 
 fn planAndRecord(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u8, diff: bool, recorded: ?Recording, diagnostics: *kosm.Diagnostics, output: *std.Io.Writer.Allocating) !void {
     var plan: kosm.Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
-    try walk.planTree(tree, .{ .allocator = arena.allocator(), .home = home, .adapters = &.{lines_adapter}, .plan = &plan, .diagnostics = diagnostics });
     var warning_buffer: [256]u8 = undefined;
     var warnings: std.Io.Writer = .fixed(&warning_buffer);
+    var gathered: kosm.Warnings = .init(arena.allocator());
+    try planWarning(tree, .{ .allocator = arena.allocator(), .home = home, .adapters = &.{lines_adapter}, .plan = &plan, .diagnostics = diagnostics, .warnings = &gathered }, &warnings);
     try deliver(tree, &plan, .{
         .gpa = testing.allocator,
         .arena = arena.allocator(),
@@ -306,6 +317,58 @@ test "a failed commit reloads nothing" {
     try testing.expectEqual(0, reloads);
     try testing.expectEqualStrings("kitty", diagnostics.app);
     try testing.expectEqualStrings("~/locked/a.lines", diagnostics.file);
+}
+
+const WarningApp = struct {
+    file: []const u8,
+
+    pub fn apply(self: WarningApp, output: *kosm.Output) !void {
+        try output.generate(.{ .file = self.file }, .{ .size = 1 });
+        try output.warn(self.file, "font '{s}' is not installed", .{"Maple Mono"});
+    }
+};
+
+const FailingApp = struct {
+    pub fn apply(self: FailingApp, output: *kosm.Output) !void {
+        _ = self;
+        _ = output;
+        return error.GlowMissing;
+    }
+};
+
+/// Plans `tree` as the runner does, with warnings printed to `stderr`.
+fn planToStderr(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u8, plan: *kosm.Plan, diagnostics: *kosm.Diagnostics, stderr: *std.Io.Writer) !void {
+    var warnings: kosm.Warnings = .init(arena.allocator());
+    try planWarning(tree, .{ .allocator = arena.allocator(), .home = home, .adapters = &.{lines_adapter}, .plan = plan, .diagnostics = diagnostics, .warnings = &warnings }, stderr);
+}
+
+test "a warning is printed naming kosmos, app and file, and the plan still writes" {
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "frost" };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var plan: kosm.Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    var buffer: [256]u8 = undefined;
+    var stderr: std.Io.Writer = .fixed(&buffer);
+
+    try planToStderr(&arena, .{ .terminal = .{ .kitty = WarningApp{ .file = "~/a.lines" } } }, "/home/test", &plan, &diagnostics, &stderr);
+    try testing.expectEqualStrings("warning: kosmos 'frost', app 'terminal.kitty', file ~/a.lines: font 'Maple Mono' is not installed\n", stderr.buffered());
+    try testing.expectEqualStrings("size = 1\n", plan.files.items[0].new);
+}
+
+test "warnings gathered before a failing app are still printed" {
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "frost" };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var plan: kosm.Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    var buffer: [256]u8 = undefined;
+    var stderr: std.Io.Writer = .fixed(&buffer);
+
+    const tree = .{ .kitty = WarningApp{ .file = "~/a.lines" }, .bar = FailingApp{} };
+    try testing.expectError(error.Reported, planToStderr(&arena, tree, "/home/test", &plan, &diagnostics, &stderr));
+    try testing.expectEqualStrings("warning: kosmos 'frost', app 'kitty', file ~/a.lines: font 'Maple Mono' is not installed\n", stderr.buffered());
+    try testing.expectEqualStrings("bar", diagnostics.app);
 }
 
 /// Plans one app writing `~/a.lines` with `arguments` as the runner's, recording into

@@ -184,6 +184,9 @@ pub fn format(color: Color, comptime template: []const u8, comptime components: 
             text.append(template[index..][0..1]);
         }
     }
+    inline for (components) |component| {
+        if (clipsRgb(rgb, component)) text.clipped = color;
+    }
     return text;
 }
 
@@ -227,9 +230,34 @@ pub fn checkTemplate(comptime template: []const u8, comptime component_count: us
 
 /// One component as text, floats with at most `decimals` decimals (clamped to `max_decimals`).
 pub fn formatComponent(color: Color, component: Component, decimals: u8) Text {
+    const rgb = color.toRgb();
     var text: Text = .{};
-    appendComponent(color, color.toRgb(), component, @min(decimals, max_decimals), &text);
+    appendComponent(color, rgb, component, @min(decimals, max_decimals), &text);
+    if (clipsRgb(rgb, component)) text.clipped = color;
     return text;
+}
+
+/// Whether printing `component` clips this color to the sRGB gamut (D48): a byte component
+/// whose channel rounds outside 0..255, so the printed byte differs. Floats never clip.
+pub fn clips(color: Color, component: Component) bool {
+    return clipsRgb(color.toRgb(), component);
+}
+
+fn clipsRgb(rgb: Rgb, component: Component) bool {
+    return switch (component) {
+        .red_255 => clipsByte(rgb.red),
+        .green_255 => clipsByte(rgb.green),
+        .blue_255 => clipsByte(rgb.blue),
+        .alpha_255 => clipsByte(rgb.alpha),
+        .hex, .hex_upper => clipsByte(rgb.red) or clipsByte(rgb.green) or clipsByte(rgb.blue),
+        .hex8, .hex8_upper => clipsByte(rgb.red) or clipsByte(rgb.green) or clipsByte(rgb.blue) or clipsByte(rgb.alpha),
+        .red_01, .green_01, .blue_01, .alpha_01, .lightness, .chroma, .hue => false,
+    };
+}
+
+fn clipsByte(channel: f64) bool {
+    const byte = @round(channel * 255);
+    return byte < 0 or byte > 255;
 }
 
 fn appendComponent(color: Color, rgb: Rgb, component: Component, decimals: u8, text: *Text) void {
@@ -432,6 +460,37 @@ test "out-of-gamut colors are kept, and clipped only when printed as bytes" {
     const bright = fromRgb(.{ .red = 2, .green = 2, .blue = 2 });
     const floats = bright.format("{}", &.{.red_01});
     try testing.expectEqualStrings("2", floats.slice());
+}
+
+test "a color clips only when a printed byte changes" {
+    const just_inside = fromRgb(.{ .red = 255.4 / 255.0, .green = 0.5, .blue = 0.5 });
+    const just_outside = fromRgb(.{ .red = 255.6 / 255.0, .green = 0.5, .blue = 0.5 });
+    const below = fromRgb(.{ .red = 0.5, .green = 0.5, .blue = -0.6 / 255.0 });
+    try testing.expect(!just_inside.clips(.hex));
+    try testing.expect(just_outside.clips(.hex));
+    try testing.expect(just_outside.clips(.red_255));
+    try testing.expect(!just_outside.clips(.green_255));
+    try testing.expect(!just_outside.clips(.red_01));
+    try testing.expect(below.clips(.blue_255));
+
+    const sheer: Color = .{ .lightness = 0.5, .chroma = 0, .hue = 0, .alpha = 1.5 };
+    try testing.expect(!sheer.clips(.hex));
+    try testing.expect(sheer.clips(.hex8));
+}
+
+test "a round-tripped hex color never clips" {
+    for ([_][]const u8{ "#ffffff", "#000000", "#ff0000", "#00ff00", "#0000ff", "#ffff00", "#00ffff" }) |sample| {
+        const color = try parseHex(sample);
+        try testing.expect(!color.clips(.hex8));
+        try testing.expectEqual(null, color.hex().clipped);
+    }
+}
+
+test "formatted text remembers a clipped color" {
+    const vivid: Color = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 };
+    try testing.expectEqual(vivid, vivid.format("rgba({})", &.{.hex8}).clipped.?);
+    try testing.expectEqual(null, vivid.format("{}", &.{.lightness}).clipped);
+    try testing.expectEqual(vivid, vivid.formatComponent(.green_255, 6).clipped.?);
 }
 
 test "format fills components and keeps doubled braces" {

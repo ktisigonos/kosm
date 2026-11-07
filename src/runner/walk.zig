@@ -16,6 +16,8 @@ pub const Context = struct {
     adapters: []const kosm.Adapter,
     plan: *kosm.Plan,
     diagnostics: *kosm.Diagnostics,
+    /// What the apps report without failing (D88).
+    warnings: *kosm.Warnings,
 };
 
 /// The first app failed; `context.diagnostics` names it.
@@ -48,6 +50,7 @@ fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void
         .adapters = context.adapters,
         .plan = context.plan,
         .diagnostics = context.diagnostics,
+        .warnings = context.warnings,
         .app = path,
     };
     app.apply(&output) catch |err| {
@@ -121,9 +124,11 @@ const Fixture = struct {
     arena: std.heap.ArenaAllocator,
     plan: kosm.Plan,
     diagnostics: kosm.Diagnostics = .{},
+    warnings: kosm.Warnings,
 
     fn init(fixture: *Fixture) void {
-        fixture.* = .{ .arena = .init(testing.allocator), .plan = .init(testing.allocator, testing.io) };
+        fixture.* = .{ .arena = .init(testing.allocator), .plan = .init(testing.allocator, testing.io), .warnings = undefined };
+        fixture.warnings = .init(fixture.arena.allocator());
     }
 
     fn deinit(fixture: *Fixture) void {
@@ -138,6 +143,7 @@ const Fixture = struct {
             .adapters = &.{lines_adapter},
             .plan = &fixture.plan,
             .diagnostics = &fixture.diagnostics,
+            .warnings = &fixture.warnings,
         };
     }
 };

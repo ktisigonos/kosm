@@ -6,6 +6,7 @@ const Color = @import("Color.zig");
 const ColorFormat = @import("ColorFormat.zig");
 const Format = @import("Format.zig");
 const Raw = @import("Raw.zig");
+const ClippedColors = @import("ClippedColors.zig");
 
 /// Where a placeholder pointed at a `null` optional, the one failure only runtime can see.
 pub const Failure = struct {
@@ -20,7 +21,8 @@ pub const Error = ColorFormat.WriteError || error{MissingValue};
 
 /// Writes `text` with every placeholder replaced by the value at its path in `app`. Colors
 /// print in `format` (D70): a color without a component in its color format. `name` names the template in compile
-/// errors. A `null` on the way is `error.MissingValue`, described in `failure`.
+/// errors. A `null` on the way is `error.MissingValue`, described in `failure`. Colors printed
+/// clipped to the gamut (D48) are noted in `clipped` with their line, for kosm to warn about (D88).
 pub fn render(
     writer: *std.Io.Writer,
     comptime name: []const u8,
@@ -28,13 +30,14 @@ pub fn render(
     app: anytype,
     format: Format.Resolved,
     failure: *Failure,
+    clipped: *ClippedColors,
 ) Error!void {
     const parts = comptime parse(name, text);
     inline for (parts) |part| {
         try writer.writeAll(part.literal);
         if (part.path.len != 0) {
             const location: Location = .{ .name = name, .line = part.line, .path = part.path, .braced = part.braced };
-            writeValue(writer, app, comptime splitPath(part.path), location, format) catch |err| {
+            writeValue(writer, app, comptime splitPath(part.path), location, format, clipped) catch |err| {
                 if (err == error.MissingValue) failure.* = .{ .line = part.line, .path = part.path };
                 return err;
             };
@@ -189,16 +192,18 @@ fn writeValue(
     comptime rest: []const []const u8,
     comptime location: Location,
     format: Format.Resolved,
+    clipped: *ClippedColors,
 ) Error!void {
     const T = @TypeOf(value);
     if (@typeInfo(T) == .optional) {
         const present = value orelse return error.MissingValue;
-        return writeValue(writer, present, rest, location, format);
+        return writeValue(writer, present, rest, location, format, clipped);
     }
-    if (rest.len == 0) return writeLeaf(writer, value, location, format);
+    if (rest.len == 0) return writeLeaf(writer, value, location, format, clipped);
     if (T == Color) {
         if (comptime std.meta.stringToEnum(Color.Component, rest[0])) |component| {
             if (rest.len > 1) fail(location, "color component '" ++ rest[0] ++ "' has no '" ++ rest[1] ++ "'");
+            if (value.clips(component)) clipped.add(value, location.line);
             return format.writeComponent(writer, value, component);
         }
         fail(location, "a color has no '" ++ rest[0] ++ "'; its components are " ++ joinNames(std.meta.fieldNames(Color.Component)));
@@ -206,12 +211,15 @@ fn writeValue(
     if (@typeInfo(T) != .@"struct")
         fail(location, "'" ++ rest[0] ++ "' follows a " ++ @typeName(T) ++ ", which has no fields");
     if (!@hasField(T, rest[0])) fail(location, unknownField(T, location, rest));
-    return writeValue(writer, @field(value, rest[0]), rest[1..], location, format);
+    return writeValue(writer, @field(value, rest[0]), rest[1..], location, format, clipped);
 }
 
-fn writeLeaf(writer: *std.Io.Writer, value: anytype, comptime location: Location, format: Format.Resolved) Error!void {
+fn writeLeaf(writer: *std.Io.Writer, value: anytype, comptime location: Location, format: Format.Resolved, clipped: *ClippedColors) Error!void {
     const T = @TypeOf(value);
-    if (T == Color) return format.writeColor(writer, value);
+    if (T == Color) {
+        if (format.color.clips(value)) clipped.add(value, location.line);
+        return format.writeColor(writer, value);
+    }
     if (T == Raw) return writer.writeAll(value.text);
     if (T == []const u8 or T == []u8) return writer.writeAll(value);
     switch (@typeInfo(T)) {
@@ -314,8 +322,10 @@ fn expectRenderedWith(expected: []const u8, comptime text: []const u8, format: F
     var buffer: [512]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     var failure: Failure = .{};
-    try render(&writer, "test", text, try testApp(), format, &failure);
+    var clipped: ClippedColors = .{};
+    try render(&writer, "test", text, try testApp(), format, &failure, &clipped);
     try testing.expectEqualStrings(expected, writer.buffered());
+    try testing.expectEqual(0, clipped.list().len);
 }
 
 test "bare and braced placeholders resolve against the app's fields" {
@@ -349,9 +359,25 @@ test "a null optional is a runtime error naming the line" {
     var buffer: [64]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     var failure: Failure = .{};
-    try testing.expectError(error.MissingValue, render(&writer, "test", "one\nkosm.border_inactive", try testApp(), test_format, &failure));
+    var clipped: ClippedColors = .{};
+    try testing.expectError(error.MissingValue, render(&writer, "test", "one\nkosm.border_inactive", try testApp(), test_format, &failure, &clipped));
     try testing.expectEqual(2, failure.line);
     try testing.expectEqualStrings("border_inactive", failure.path);
+}
+
+test "clipped colors are noted with the line they are printed on, floats are not" {
+    var buffer: [256]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    var failure: Failure = .{};
+    var clipped: ClippedColors = .{};
+    var app = try testApp();
+    const vivid: Color = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 };
+    app.palette.blue = vivid;
+    try render(&writer, "test", "kosm.palette.red\nkosm.palette.blue.red_01\nkosm.palette.blue\nkosm.palette.blue.hex", app, test_format, &failure, &clipped);
+    try testing.expectEqual(1, clipped.list().len);
+    try testing.expectEqual(vivid, clipped.list()[0].color);
+    try testing.expectEqual(3, clipped.list()[0].line);
+    try testing.expectEqual(2, clipped.list()[0].count);
 }
 
 test "suggestions for unknown fields" {

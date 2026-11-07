@@ -82,12 +82,14 @@ test "apply writes every color as a --kosm custom property" {
     var plan: kosm.Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
     var diagnostics: kosm.Diagnostics = .{};
+    var warnings: kosm.Warnings = .init(arena.allocator());
     var output: kosm.Output = .{
         .allocator = arena.allocator(),
         .home = home,
         .adapters = &.{css.adapter},
         .plan = &plan,
         .diagnostics = &diagnostics,
+        .warnings = &warnings,
         .app = "zen",
     };
 
@@ -96,6 +98,7 @@ test "apply writes every color as a --kosm custom property" {
     app.button = kosm.hex("082e3f");
     app.containers.pink = kosm.hex("4d74af");
     try app.apply(&output);
+    try testing.expectEqual(0, warnings.items.items.len);
 
     const written = plan.files.items[0].new;
     try testing.expect(std.mem.startsWith(u8, written, ":root {\n  --kosm-foreground: #a3c5ccff;\n  --kosm-accent: #268078ff;\n"));

@@ -1,21 +1,26 @@
-//! Passed to an adapter capability: the file's format (D70), and room to explain why a value or
-//! a file can't be handled, so kosm can report it with the file and app (G6).
+//! Passed to an adapter capability: the file's format (D70), the colors it clipped (D88), and
+//! room to explain why a value or a file can't be handled, so kosm can report it with the file
+//! and app (G6).
 
 const Context = @This();
 
 const std = @import("std");
 const Color = @import("../Color.zig");
 const Format = @import("../Format.zig");
+const ClippedColors = @import("../ClippedColors.zig");
 
 /// How this file spells colors, booleans and floats, every layer applied.
 format: Format.Resolved,
+/// Colors printed clipped to the gamut, which kosm warns about (D48, D88). Kosm's own.
+clipped: ClippedColors = .{},
 message_buffer: [message_capacity]u8 = undefined,
 message_length: usize = 0,
 
 const message_capacity = 512;
 
-/// Prints `color` in the file's color format.
-pub fn writeColor(context: *const Context, writer: *std.Io.Writer, color: Color) std.Io.Writer.Error!void {
+/// Prints `color` in the file's color format, noting it when it clips to the gamut (D48).
+pub fn writeColor(context: *Context, writer: *std.Io.Writer, color: Color) std.Io.Writer.Error!void {
+    if (context.format.color.clips(color)) context.clipped.add(color, 0);
     context.format.writeColor(writer, color) catch |err| switch (err) {
         error.WriteFailed => return error.WriteFailed,
         // Kosm checks the format before handing it to an adapter.

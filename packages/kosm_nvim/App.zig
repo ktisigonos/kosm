@@ -92,12 +92,14 @@ test "apply fills the template with the palette" {
     var plan: kosm.Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
     var diagnostics: kosm.Diagnostics = .{};
+    var warnings: kosm.Warnings = .init(arena.allocator());
     var output: kosm.Output = .{
         .allocator = arena.allocator(),
         .home = home,
         .adapters = &.{},
         .plan = &plan,
         .diagnostics = &diagnostics,
+        .warnings = &warnings,
         .app = "nvim",
     };
 
@@ -106,6 +108,7 @@ test "apply fills the template with the palette" {
     app.transparent = true;
     app.terminal.br_white = kosm.hex("b7dce5");
     try app.apply(&output);
+    try testing.expectEqual(0, warnings.items.items.len);
 
     const written = plan.files.items[0].new;
     try testing.expect(std.mem.startsWith(u8, written, "return {\n  transparent = true,\n\n  base00 = '#041c26',\n"));

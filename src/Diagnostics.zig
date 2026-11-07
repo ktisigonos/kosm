@@ -34,19 +34,25 @@ pub fn message(diagnostics: *const Diagnostics) []const u8 {
 /// Prints `error: kosmos 'frost', app 'terminal.kitty', file ~/.config/kitty/kosm.conf: message`,
 /// leaving out the parts that are empty.
 pub fn write(diagnostics: *const Diagnostics, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    try writer.writeAll("error: ");
+    try writeReport(writer, "error", diagnostics.kosmos, diagnostics.app, diagnostics.file, diagnostics.message());
+}
+
+/// Prints `<severity>: kosmos '<kosmos>', app '<app>', file <file>: <message>`, leaving out the
+/// parts that are empty. Errors and warnings (D88) share this shape.
+pub fn writeReport(writer: *std.Io.Writer, severity: []const u8, kosmos: []const u8, app: []const u8, file: []const u8, text: []const u8) std.Io.Writer.Error!void {
+    try writer.print("{s}: ", .{severity});
     var separator: []const u8 = "";
-    if (diagnostics.kosmos.len != 0) {
-        try writer.print("kosmos '{s}'", .{diagnostics.kosmos});
+    if (kosmos.len != 0) {
+        try writer.print("kosmos '{s}'", .{kosmos});
         separator = ", ";
     }
-    if (diagnostics.app.len != 0) {
-        try writer.print("{s}app '{s}'", .{ separator, diagnostics.app });
+    if (app.len != 0) {
+        try writer.print("{s}app '{s}'", .{ separator, app });
         separator = ", ";
     }
-    if (diagnostics.file.len != 0) try writer.print("{s}file {s}", .{ separator, diagnostics.file });
-    if (separator.len != 0 or diagnostics.file.len != 0) try writer.writeAll(": ");
-    try writer.print("{s}\n", .{diagnostics.message()});
+    if (file.len != 0) try writer.print("{s}file {s}", .{ separator, file });
+    if (separator.len != 0 or file.len != 0) try writer.writeAll(": ");
+    try writer.print("{s}\n", .{text});
 }
 
 test "write names kosmos, app and file" {

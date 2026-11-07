@@ -7,6 +7,8 @@ const std = @import("std");
 const Adapter = @import("Adapter.zig");
 const Format = @import("Format.zig");
 const Diagnostics = @import("Diagnostics.zig");
+const Warnings = @import("Warnings.zig");
+const ClippedColors = @import("ClippedColors.zig");
 const Plan = @import("Plan.zig");
 const template_writer = @import("template.zig");
 const block_writer = @import("block.zig");
@@ -22,6 +24,8 @@ home: []const u8,
 adapters: []const Adapter,
 plan: *Plan,
 diagnostics: *Diagnostics,
+/// What the apply reports without failing (D88).
+warnings: *Warnings,
 /// The app being applied, as its path in the kosmos tree ("terminal.kitty").
 app: []const u8,
 
@@ -61,6 +65,12 @@ pub const Error = error{
     NoValue,
     OutOfMemory,
 };
+
+/// Reports something that doesn't fail the apply, printed with the kosmos, app and `file` like
+/// an error (D88). `file` is the file it is about, as the app writes it, or empty.
+pub fn warn(output: *Output, file: []const u8, comptime format: []const u8, arguments: anytype) Error!void {
+    try output.warnings.add(output.app, try output.allocator.dupe(u8, file), format, arguments);
+}
 
 /// Writes a whole file from `values`, a plain struct the adapter serializes (D64).
 pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Error!void {
@@ -157,19 +167,20 @@ fn displayPath(output: *Output, path: []const u8) Error![]const u8 {
 /// `values` as text through `adapter`'s serialize, in `own` format layered over the adapter's.
 fn serialize(output: *Output, file: []const u8, adapter: Adapter, own: Format, values: anytype) Error![]const u8 {
     const format = try output.checkFormat(file, own.orElse(adapter.default_format).resolve());
-    const root = value.from(output.allocator, values) catch |err| switch (err) {
+    var context: Adapter.Context = .{ .format = format };
+    const root = value.from(output.allocator, &context.clipped, values) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.IntegerTooLarge => return output.fail(error.UnsupportedValue, file, "an integer is too large for a file value", .{}),
         error.NullInList => return output.fail(error.UnsupportedValue, file, "a list contains null", .{}),
     };
     var content: std.Io.Writer.Allocating = .init(output.allocator);
     errdefer content.deinit();
-    var context: Adapter.Context = .{ .format = format };
     adapter.serialize.?(&content.writer, root, &context) catch |err| switch (err) {
         // An allocating writer fails only when it runs out of memory.
         error.WriteFailed => return error.OutOfMemory,
         error.UnsupportedValue => return output.fail(error.UnsupportedValue, file, "adapter '{s}': {s}", .{ adapter.name, context.message() }),
     };
+    try planning.warnClipped(output, file, "", &context.clipped);
     return content.toOwnedSlice();
 }
 
@@ -186,13 +197,15 @@ pub fn template(output: *Output, app: anytype, options: anytype) Error!void {
     var content: std.Io.Writer.Allocating = .init(output.allocator);
     defer content.deinit();
     var failure: template_writer.Failure = .{};
+    var clipped: ClippedColors = .{};
     const name = comptime if (isComptimeField(Options, "file")) options.file else "template";
-    template_writer.render(&content.writer, name, options.text, app, format, &failure) catch |err| switch (err) {
+    template_writer.render(&content.writer, name, options.text, app, format, &failure, &clipped) catch |err| switch (err) {
         error.WriteFailed => return error.OutOfMemory,
         error.MissingValue => return output.fail(error.MissingValue, options.file, "template line {d}: kosm.{s} is null", .{ failure.line, failure.path }),
         // checkFormat already wrote this color format once.
         error.InvalidColorFormat => unreachable,
     };
+    try planning.warnClipped(output, options.file, "", &clipped);
     try output.addFile(options.file, path, content.written());
 }
 
@@ -320,10 +333,12 @@ const Fixture = struct {
     arena: std.heap.ArenaAllocator,
     plan: Plan,
     diagnostics: Diagnostics = .{},
+    warnings: Warnings,
     home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined,
 
     fn init(fixture: *Fixture) !void {
-        fixture.* = .{ .tmp = testing.tmpDir(.{}), .arena = .init(testing.allocator), .plan = .init(testing.allocator, testing.io) };
+        fixture.* = .{ .tmp = testing.tmpDir(.{}), .arena = .init(testing.allocator), .plan = .init(testing.allocator, testing.io), .warnings = undefined };
+        fixture.warnings = .init(fixture.arena.allocator());
     }
 
     fn deinit(fixture: *Fixture) void {
@@ -340,6 +355,7 @@ const Fixture = struct {
             .adapters = adapters,
             .plan = &fixture.plan,
             .diagnostics = &fixture.diagnostics,
+            .warnings = &fixture.warnings,
             .app = app,
         };
     }
@@ -437,6 +453,61 @@ test "template renders the app's fields with the file's format" {
 
     try output.template(app, .{ .file = "~/more.lines", .text = "kosm.accent kosm.blur", .format = Format{ .boolean = .one_zero } });
     try testing.expectEqualStrings("#5e81acff 1", fixture.plan.files.items[3].new);
+}
+
+const vivid_green: Color = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 };
+
+test "a clipped color warns naming the app and file, once per color, and is still written" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("terminal", &.{lines_adapter});
+    try output.generate(.{ .file = "~/a.lines" }, .{ .accent = vivid_green, .border = vivid_green, .glow = vivid_green.format("rgba({})", &.{.hex8}) });
+
+    try testing.expectEqualStrings("accent = #00ff00ff\nborder = #00ff00ff\nglow = \"rgba(00ff00ff)\"\n", readPlanned(&fixture, 0));
+    const warnings = fixture.warnings.items.items;
+    try testing.expectEqual(1, warnings.len);
+    try testing.expectEqualStrings("terminal", warnings[0].app);
+    try testing.expectEqualStrings("~/a.lines", warnings[0].file);
+    try testing.expectEqualStrings("color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (3 times) (D48)", warnings[0].message);
+}
+
+test "in-gamut colors and unclipped float components do not warn" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("terminal", &.{lines_adapter});
+    const accent = try Color.parseHex("#5e81ac");
+    try output.generate(.{ .file = "~/a.lines" }, .{ .accent = accent, .white = try Color.parseHex("#ffffff"), .glow = vivid_green.format("{}", &.{.red_01}) });
+    const app: TemplateApp = .{ .accent = accent };
+    try output.template(app, .{ .file = "~/theme.lua", .text = "kosm.accent kosm.accent.red_255", .format = app.format });
+    try testing.expectEqual(0, fixture.warnings.items.items.len);
+}
+
+test "a template warns with the line of a clipped placeholder" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("editor", &.{});
+    const app: TemplateApp = .{ .accent = vivid_green };
+    try output.template(app, .{ .file = "~/theme.lua", .text = "a\nkosm.accent.lightness\nkosm.accent.green_255\n" });
+    try testing.expectEqualStrings("a\n0.9\n255\n", readPlanned(&fixture, 0));
+    const warnings = fixture.warnings.items.items;
+    try testing.expectEqual(1, warnings.len);
+    try testing.expectEqualStrings("~/theme.lua", warnings[0].file);
+    try testing.expectEqualStrings("template line 3: color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (D48)", warnings[0].message);
+}
+
+test "an app's own warning names it and its file" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("bar.waybar", &.{});
+    try output.warn("~/.config/waybar/style.css", "font '{s}' is not installed", .{"Iosevka"});
+    const warning = fixture.warnings.items.items[0];
+    try testing.expectEqualStrings("bar.waybar", warning.app);
+    try testing.expectEqualStrings("~/.config/waybar/style.css", warning.file);
+    try testing.expectEqualStrings("font 'Iosevka' is not installed", warning.message);
 }
 
 test "template reports a null placeholder with its line" {

@@ -149,12 +149,14 @@ test "apply writes the theme's colors and only the options the kosmos set" {
     var plan: kosm.Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
     var diagnostics: kosm.Diagnostics = .{};
+    var warnings: kosm.Warnings = .init(arena.allocator());
     var output: kosm.Output = .{
         .allocator = arena.allocator(),
         .home = home,
         .adapters = &.{adapter},
         .plan = &plan,
         .diagnostics = &diagnostics,
+        .warnings = &warnings,
         .app = "kitty",
     };
 
@@ -166,6 +168,7 @@ test "apply writes the theme's colors and only the options the kosmos set" {
     app.advanced.shell_integration = .{ .no_cursor = true };
     app.colors.color15 = kosm.hex("b7dce5");
     try app.apply(&output);
+    try testing.expectEqual(0, warnings.items.items.len);
 
     const written = plan.files.items[0].new;
     for ([_][]const u8{
