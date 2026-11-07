@@ -92,14 +92,19 @@ fn roots(selection: *Selection) Error![]const Match {
     return result;
 }
 
-/// The elements of list `match`, in file order (D80). Paths never step into lists (D77).
+/// The elements of list `match`, in file order (D80): a list's values, or a table's entries
+/// without a key (`{ "a", key = 1 }`, D90). Paths never step into lists (D77).
 pub fn elements(selection: *Selection, match: Match) Error![]const Match {
-    if (match.kind != .list)
-        return planning.fail(selection.output, error.NotAList, match.file, "the value on line {d} is a {s}, not a list", .{ match.line, @tagName(match.kind) });
     const file = selection.files[match.file_index];
-    const result = try selection.output.allocator.alloc(Match, match.node.children.len);
-    for (match.node.children, result) |*node, *element| element.* = toMatch(file, match.file_index, node);
-    return result;
+    var result: std.ArrayList(Match) = .empty;
+    if (match.kind != .scalar) {
+        for (match.node.children) |*node| {
+            if (node.key == null) try result.append(selection.output.allocator, toMatch(file, match.file_index, node));
+        }
+    }
+    if (match.kind != .list and result.items.len == 0)
+        return planning.fail(selection.output, error.NotAList, match.file, "the value on line {d} is a {s}, not a list", .{ match.line, @tagName(match.kind) });
+    return result.items;
 }
 
 /// Sets `match`, from `nodes` or `elements`, to `value`, formatted like `set` does (D80).

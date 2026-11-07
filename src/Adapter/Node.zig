@@ -15,7 +15,8 @@ position: usize,
 /// The value's bytes; null for a table the file spells only through dotted keys
 /// (`M.blur.enabled = true` has no bytes for `M.blur`).
 value: ?Range,
-/// A table's keyed entries or a list's elements, in file order.
+/// A table's entries or a list's elements, in file order. A table's entries without a key are
+/// its elements, for languages whose tables are lists too (Lua, D90); paths skip them.
 children: []const Node = &.{},
 
 /// The shape of a node's value.

@@ -11,7 +11,8 @@ value: []const u8,
 /// key, holds the file's top-level keys.
 nest: []const []const u8 = &.{},
 /// Node types that are lists ("array"); their elements are reached through
-/// `Selection.elements` (D77, D80).
+/// `Selection.elements` (D77, D80). A type also in `nest` is both (D90): its pairs without a
+/// key are elements, and it is a list when it holds nothing else.
 list: []const []const u8 = &.{},
 /// Key node types written between delimiters ("string"); kosm drops their first and last
 /// byte, so `"editor.fontSize"` is the key `editor.fontSize`. Escapes are kept as written.

@@ -152,7 +152,10 @@ fn valueNode(builder: *Builder, value: c.TSNode, depth: usize) Adapter.ParseErro
     const kind = nodeType(value);
     const range: Adapter.Range = .{ .start = c.ts_node_start_byte(value), .end = c.ts_node_end_byte(value) };
     var node: Node = .{ .key = null, .kind = .scalar, .position = range.start, .value = range };
-    if (contains(builder.spec.nest, kind)) {
+    if (contains(builder.spec.nest, kind) and contains(builder.spec.list, kind)) {
+        node.children = try builder.mixedEntries(value, try builder.deeper(value, depth));
+        node.kind = if (allKeyless(node.children)) .list else .table;
+    } else if (contains(builder.spec.nest, kind)) {
         node.kind = .table;
         node.children = try builder.tableEntries(value, try builder.deeper(value, depth));
     } else if (contains(builder.spec.list, kind)) {
@@ -160,6 +163,38 @@ fn valueNode(builder: *Builder, value: c.TSNode, depth: usize) Adapter.ParseErro
         node.children = try builder.listElements(value, try builder.deeper(value, depth));
     }
     return node;
+}
+
+/// The entries of a node that is both a table and a list (D90), in file order: pairs with a key,
+/// and the values of pairs without one as keyless elements.
+fn mixedEntries(builder: *Builder, container: c.TSNode, depth: usize) Adapter.ParseError![]const Node {
+    var entries: std.ArrayList(Node) = .empty;
+    var cursor = c.ts_tree_cursor_new(container);
+    defer c.ts_tree_cursor_delete(&cursor);
+    if (!c.ts_tree_cursor_goto_first_child(&cursor)) return &.{};
+    while (true) {
+        const child = c.ts_tree_cursor_current_node(&cursor);
+        if (isEntry(child)) {
+            if (std.mem.eql(u8, nodeType(child), builder.spec.pair) and fieldNode(child, builder.spec.key) == null) {
+                if (fieldNode(child, builder.spec.value)) |value| {
+                    var element = try builder.valueNode(value, depth);
+                    element.position = c.ts_node_start_byte(child);
+                    try entries.append(builder.allocator, element);
+                }
+            } else {
+                try builder.appendEntries(&entries, child, depth);
+            }
+        }
+        if (!c.ts_tree_cursor_goto_next_sibling(&cursor)) break;
+    }
+    return entries.items;
+}
+
+fn allKeyless(entries: []const Node) bool {
+    for (entries) |entry| {
+        if (entry.key != null) return false;
+    }
+    return true;
 }
 
 fn listElements(builder: *Builder, list: c.TSNode, depth: usize) Adapter.ParseError![]const Node {
