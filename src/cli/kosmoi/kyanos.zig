@@ -229,8 +229,8 @@ fn browser(theme: kosm.Theme, colors: Colors) zen.App {
     var app = zen.from(theme);
     app.background = colors.background;
     app.accent = colors.foreground_highlight;
-    app.button = palette.black;
-    app.button_hovered = colors.background_highlight;
+    app.button = colors.background;
+    app.button_hovered = bright.apply(colors.background);
     app.border = bright.apply(palette.blue);
     app.containers = .{
         .blue = palette.blue,
