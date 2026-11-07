@@ -103,7 +103,7 @@ Markers:
   - Do: a hand-written ghostty adapter (D40: `key = value` lines, repeated keys such as `palette` and `font-family`, `#` comments) with `serialize`, `format` and `comment`, and a ghostty app that `generate`s a file the user includes with `config-file` (D57), following D27.
   - Done when: the adapter round trips real ghostty config snippets, and the app's output for Kyanos matches `~/.config/ghostty/Ricer` except deliberate D27 changes (read only).
 
-- [ ] **9b. `kosm_hyprland`** `PLAN FIRST`
+- [x] **9b. `kosm_hyprland`** `PLAN FIRST`
   - Do: a Hyprland app covering every `hl.config` option of upstream Hyprland (D27), whose `target` (D91) either `generate`s `~/.config/hypr/kosm.lua` (the default) or sets the keys in the user's Lua files through `output.edit` (D25, D30).
   - Do: `kosm_lua`: `serialize`, writing a module (`return { ... }`) for `generate`; positional tables (`{ "a", "b" }`) as lists for `elements` (D80, D90).
   - Done when: the generated module holds Hyprland's own shape, and the edit target is tested on real-world `hl.config` snippets in a temp directory, including gradients (`{ colors = { ... } }`) and values split across files.
