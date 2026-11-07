@@ -105,6 +105,7 @@ const built_in_packages = [_]BuiltInPackage{
     .{ .name = "kosm_ghostty" },
     .{ .name = "kosm_hyprland" },
     .{ .name = "kosm_css" },
+    .{ .name = "kosm_userjs" },
     .{ .name = "kosm_zen" },
     .{ .name = "kosm_nvim" },
     .{ .name = "kosm_json", .grammars = &.{"tree_sitter_json"} },
