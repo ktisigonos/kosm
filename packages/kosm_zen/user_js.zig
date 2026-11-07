@@ -11,12 +11,20 @@ pub fn table(allocator: std.mem.Allocator, prefs: Prefs) std.mem.Allocator.Error
     return .{ .table = entries.items };
 }
 
+/// The field holding a group's own pref when that pref also has prefs below it (D102).
+const own_value = "value";
+
 fn appendGroup(allocator: std.mem.Allocator, entries: *std.ArrayList(kosm.Value.Entry), prefix: []const u8, group: anytype) std.mem.Allocator.Error!void {
     const Group = @TypeOf(group);
     const info = @typeInfo(Group).@"struct";
     inline for (info.field_names, info.field_types) |field_name, Field| {
         const segment = comptime prefName(Group, field_name);
-        const name = if (prefix.len == 0) segment else try std.mem.concat(allocator, u8, &.{ prefix, ".", segment });
+        const name = if (comptime std.mem.eql(u8, field_name, own_value))
+            prefix
+        else if (prefix.len == 0)
+            segment
+        else
+            try std.mem.concat(allocator, u8, &.{ prefix, ".", segment });
         const field = @field(group, field_name);
         switch (@typeInfo(Field)) {
             .@"struct" => try appendGroup(allocator, entries, name, field),
@@ -50,12 +58,13 @@ fn prefValue(value: anytype) kosm.Value {
 
 const testing = std.testing;
 
-test "set prefs get their whole Firefox names, null ones are left out" {
+test "set prefs get their whole Firefox names, a group's value takes the group's own, and null ones are left out" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
     var prefs: Prefs = .{};
     prefs.zen.theme.accent_color = kosm.hex("268078");
     prefs.zen.theme.border_radius = -1;
+    prefs.zen.theme.gradient.value = false;
     prefs.zen.view.window.scheme = .light;
     prefs.zen.view.compact.hide_toolbar = true;
     prefs.browser.display.background_color = kosm.hex("041c26");
@@ -65,6 +74,7 @@ test "set prefs get their whole Firefox names, null ones are left out" {
     const entries = (try table(arena.allocator(), prefs)).table;
     const expected = [_][]const u8{
         "zen.theme.accent-color",
+        "zen.theme.gradient",
         "zen.theme.border-radius",
         "zen.view.window.scheme",
         "zen.view.compact.hide-toolbar",
@@ -74,6 +84,7 @@ test "set prefs get their whole Firefox names, null ones are left out" {
     };
     try testing.expectEqual(expected.len, entries.len);
     for (expected, entries) |name, entry| try testing.expectEqualStrings(name, entry.key);
-    try testing.expectEqual(1, entries[2].value.integer);
-    try testing.expectEqual(-1, entries[1].value.integer);
+    try testing.expectEqual(1, entries[3].value.integer);
+    try testing.expectEqual(false, entries[1].value.boolean);
+    try testing.expectEqual(-1, entries[2].value.integer);
 }

@@ -89,11 +89,14 @@ On a machine without Zen, set `profile = null` (a profile glob matching nothing 
 ### `prefs` fields
 
 Named like about:config: `prefs.zen.theme.accent_color` is `zen.theme.accent-color`. A null pref
-is not written, so Zen's own value stays.
+is not written, so Zen's own value stays. A pref that also has prefs below it is a group, and
+its own value is the group's `value` field: `prefs.zen.theme.gradient.value` is
+`zen.theme.gradient` (D102).
 
 | Field | Pref | Default |
 |---|---|---|
 | `zen.theme.accent_color` | `zen.theme.accent-color` | cyan |
+| `zen.theme.gradient.value` | `zen.theme.gradient` | null (Zen: true) |
 | `zen.theme.content_element_separation` | `zen.theme.content-element-separation` (px) | null (Zen: 8) |
 | `zen.theme.border_radius` | `zen.theme.border-radius` (px, -1: the platform's) | null (Zen: -1) |
 | `zen.theme.hide_tab_throbber` | `zen.theme.hide-tab-throbber` | null (Zen: true) |
