@@ -99,7 +99,7 @@ Markers:
   - Do: `TransparentColor` prints its color through the file's `kosm.Format` (its `Context.writeColor`), so a clipped one warns like any other color (D88).
   - Done when: tests show a compound value follows a changed `float_precision` and `boolean`.
 
-- [ ] **9a. `kosm_ghostty`** `PLAN FIRST`
+- [x] **9a. `kosm_ghostty`** `PLAN FIRST`
   - Do: a hand-written ghostty adapter (D40: `key = value` lines, repeated keys such as `palette` and `font-family`, `#` comments) with `serialize`, `format` and `comment`, and a ghostty app that `generate`s a file the user includes with `config-file` (D57), following D27.
   - Done when: the adapter round trips real ghostty config snippets, and the app's output for Kyanos matches `~/.config/ghostty/Ricer` except deliberate D27 changes (read only).
 

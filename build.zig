@@ -102,6 +102,7 @@ fn addTreeSitter(b: *std.Build, module: *std.Build.Module, target: std.Build.Res
 /// The built-in packages in packages/ (D67), tested against this kosm.
 const built_in_packages = [_]BuiltInPackage{
     .{ .name = "kosm_kitty" },
+    .{ .name = "kosm_ghostty" },
     .{ .name = "kosm_css" },
     .{ .name = "kosm_zen" },
     .{ .name = "kosm_nvim" },

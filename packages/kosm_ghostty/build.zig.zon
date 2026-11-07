@@ -1,0 +1,22 @@
+.{
+    .name = .kosm_ghostty,
+    .version = "0.0.0",
+    .fingerprint = 0x244170c14142df97, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .kosm = .{ .path = "../.." },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "root.zig",
+        "App.zig",
+        "Joined.zig",
+        "adapter.zig",
+        "parser.zig",
+        "settings.zig",
+        "values.zig",
+        "values",
+        "README.md",
+    },
+}
