@@ -131,7 +131,7 @@ Markers:
   - Do: D101: `kosm_ghostty.background_opacity` derives from the background's alpha like `kosm_kitty`'s.
   - Done when: tests show `App{}` of every built-in app plans nothing (or an empty file where the app always writes one), a null deriving modifier derives nothing, and ghostty's opacity follows the background's alpha below 1 and is not written at 1.
 
-- [ ] **10. Kyanos for real** `PLAN FIRST`
+- [x] **10. Kyanos for real** `PLAN FIRST`
   - Do: `~/.config/kosm` made by `kosm init` with the installed kosm (D98), holding the Kyanos kosmos: kitty, ghostty, nvim, Zen (theme CSS, and prefs in a test profile under `~/.zen-kosm/` holding a copy of the real profile's `prefs.js`: `zen.theme.accent-color = #080808`, `zen.theme.gradient = false`, `zen.view.grey-out-inactive-windows = false`), and `kosm_hyprland` generating `~/.config/hypr/defs-kosm.lua` with every `hl.config` value `defs.lua` feeds today, with `include = null`. The palette's black has no alpha; the background is black with alpha `#80` (D101), replacing `defs.lua`'s separate `background` and `background_alpha`. No existing file is written: every app targets a new file (`theme-kosm.lua` for nvim). Other programs Ricer rices are out of scope.
   - Done when: `kosm apply kyanos --diff` shows only deliberate differences from what Ricer and `defs.lua` hold today, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 8).
 
