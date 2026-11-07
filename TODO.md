@@ -122,9 +122,18 @@ Markers:
   - Do: drop the `kosm_repository` root that the binary records today (D83 no longer needs it).
   - Done when: tests (offline: the URL is a local directory) show an init config lists only `kosm` and applies with a built-in app, a build uses the forked sources over the pinned ones, `kosm source` sets, prints and clears the override, a config not depending on `kosm` gets no `--fork`, and an interface mismatch fails naming both numbers.
 
+- [ ] **9f. Settings an app doesn't cover**
+  - Do: D99: `kosm.Setting` in core, and `kosm_hyprland.extra` written to both targets after the app's own settings, nested into the generated module's tables.
+  - Done when: tests show extras land in the generated module beside typed options (quoted keys too), are set by path on the edit target, and an extra equal to, inside or containing another set setting or extra fails naming both.
+
+- [ ] **9g. Apps without `from`**
+  - Do: D100: every built-in `App{}` compiles and writes nothing; deriving modifiers (`kosm_hyprland.inactive`, `kosm_ghostty.bright`, ...) become `?kosm.Modifier = null`, and fields `from` fills get defaults; each README says a minimal config can skip `from`.
+  - Do: D101: `kosm_ghostty.background_opacity` derives from the background's alpha like `kosm_kitty`'s.
+  - Done when: tests show `App{}` of every built-in app plans nothing (or an empty file where the app always writes one), a null deriving modifier derives nothing, and ghostty's opacity follows the background's alpha below 1 and is not written at 1.
+
 - [ ] **10. Kyanos for real** `PLAN FIRST`
-  - Do: `~/.config/kosm` made by `kosm init` with the installed kosm (D98), holding the Kyanos kosmos: kitty, ghostty, nvim, Zen (theme CSS and prefs), and Hyprland twice: `kosm_hyprland` generating `~/.config/hypr/kosm.lua` with everything `defs.lua` holds today, with `include = null` so `hyprland.lua` is not touched yet, and a local `hypr_defs` app editing `~/.config/hypr/defs-kosm.lua` (the human copies `defs.lua` there first), so both D91 targets are proven on the real setup. Other programs Ricer rices are out of scope.
-  - Done when: `kosm apply kyanos --diff` against the real files shows only deliberate differences, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 8).
+  - Do: `~/.config/kosm` made by `kosm init` with the installed kosm (D98), holding the Kyanos kosmos: kitty, ghostty, nvim, Zen (theme CSS, and prefs in a test profile under `~/.zen-kosm/`), and `kosm_hyprland` generating `~/.config/hypr/defs-kosm.lua` with every `hl.config` value `defs.lua` feeds today, with `include = null`. The background is black with its alpha (D101). No existing file is written: every app targets a new file (`theme-kosm.lua` for nvim). Other programs Ricer rices are out of scope.
+  - Done when: `kosm apply kyanos --diff` shows only deliberate differences from what Ricer and `defs.lua` hold today, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 8).
 
 - [ ] **11a. `kosm_toml`** `PLAN FIRST` `ASK`
   - Do: a TOML adapter with `serialize`, `format`, `comment` and `parser` (D39), mapping every way TOML nests keys (`[table]`, `[a.b]`, dotted keys `a.b = 1`, inline tables `{ a = 1 }`) onto one path (D30); arrays of tables (`[[x]]`) are lists for `elements` (D77, D80). The plan proposes a tree-sitter grammar or a hand-written parser (D40); a grammar is a dependency (hard rule 6).
@@ -136,4 +145,5 @@ Markers:
 
 ---
 
-Follow-ups with no step yet: none.
+Follow-ups with no step yet:
+- `extra` (D99) for `kosm_kitty`, `kosm_ghostty`, `kosm_zen` and `kosm_nvim`.
