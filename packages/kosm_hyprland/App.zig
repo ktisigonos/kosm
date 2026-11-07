@@ -12,6 +12,11 @@ const settings = @import("settings.zig");
 /// Where the options go: a Lua module kosm writes whole, or the user's own Lua files (D91).
 /// Default: `default_target`.
 target: Target = default_target,
+/// The file that gets a block reading the generated module, `hl.config(require("kosm"))`,
+/// appended at its end so kosm's values win (D97). Only with the `.generate` target, which
+/// must then write `~/.config/hypr/kosm.lua`. A missing file is left for Hyprland to create,
+/// with a warning. Null: no block. Default: `~/.config/hypr/hyprland.lua`.
+include: ?[]const u8 = "~/.config/hypr/hyprland.lua",
 /// How values are spelled (D70), e.g. `.color = .hex_upper`. Default: `#rrggbbaa` colors, so
 /// alpha is kept; null fields take the Lua adapter's, then kosm's.
 format: kosm.Format = .{ .color = .hex8 },
@@ -58,7 +63,10 @@ pub const Files = @import("Files.zig");
 
 /// The target every app starts with: kosm owns `~/.config/hypr/kosm.lua` (D91). Change it here
 /// to make editing the user's files the default.
-pub const default_target: Target = .{ .generate = "~/.config/hypr/kosm.lua" };
+pub const default_target: Target = .{ .generate = default_module };
+
+/// Where `require("kosm")` in the include block finds the generated module.
+const default_module = "~/.config/hypr/kosm.lua";
 
 /// Hyprland's `general` options.
 pub const General = @import("sections/General.zig");
@@ -106,7 +114,7 @@ pub const InputCapture = @import("sections/InputCapture.zig");
 pub const Quirks = @import("sections/Quirks.zig");
 
 /// App fields that are kosm's, not Hyprland options.
-const own_fields = [_][]const u8{ "target", "format", "inactive" };
+const own_fields = [_][]const u8{ "target", "include", "format", "inactive" };
 
 /// Colors from the theme (D27): the active border, glow and groupbar text from the accent
 /// (cyan) and the foreground, groups in yellow (locked: orange), windows that can't be grouped in
@@ -153,7 +161,13 @@ pub fn apply(self: App, output: *kosm.Output) !void {
     }
     const set = try settings.list(output.allocator, self.withDerived(), &own_fields);
     switch (self.target) {
-        .generate => try output.generate(.{ .file = file, .lang = "lua", .format = self.format }, try settings.tree(output.allocator, set)),
+        .generate => {
+            if (self.include != null and !std.mem.eql(u8, file, default_module))
+                return output.fail(self.include.?, "the include block reads require(\"kosm\"), which finds only {s}, not {s}; set include = null and read it yourself", .{ default_module, file });
+            try output.generate(.{ .file = file, .lang = "lua", .format = self.format }, try settings.tree(output.allocator, set));
+            if (self.include) |include|
+                try output.templateBlock(self, .{ .file = include, .id = "hyprland", .text = "hl.config(require(\"kosm\"))\n", .lang = "lua", .missing = .skip });
+        },
         .edit => |files| {
             var selection = try output.edit(.{ .files = files.files, .exclude = files.exclude, .lang = "lua", .format = self.format });
             for (set) |setting| try selection.set(setting.path, setting.value);
@@ -240,7 +254,7 @@ const test_palette: kosm.Palette = .{
 
 /// An app with only the options a test sets, written as plain hex colors.
 fn bareApp() App {
-    return .{ .inactive = .{ .lightness = -0.1 }, .format = .{ .color = .hex } };
+    return .{ .inactive = .{ .lightness = -0.1 }, .format = .{ .color = .hex }, .include = null };
 }
 
 test "from writes Hyprland's own shape to the generated module, inactive colors derived" {
@@ -275,6 +289,56 @@ test "from writes Hyprland's own shape to the generated module, inactive colors 
         }
     }
     try testing.expect(std.mem.indexOf(u8, written, "input") == null);
+}
+
+test "hyprland.lua gets a block reading the generated module at its end, once (D97)" {
+    const user_config = "hl.config({ general = { gaps_in = 5 } })\n";
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{
+        .{ ".config/hypr/hyprland.lua", user_config },
+        .{ ".config/hypr/done.lua", user_config ++ "-- kosm:begin hyprland\nhl.config(require(\"kosm\"))\n-- kosm:end\n" },
+    });
+    defer fixture.deinit();
+    var app = from(kosm.Theme.from(test_palette, .dark));
+    try app.apply(&fixture.output);
+    try testing.expectEqualStrings(user_config ++ "-- kosm:begin hyprland\nhl.config(require(\"kosm\"))\n-- kosm:end\n", fixture.planned("~/.config/hypr/hyprland.lua"));
+    try testing.expectEqual(0, fixture.warnings.items.items.len);
+
+    var second: Fixture = undefined;
+    try second.init(&.{.{ ".config/hypr/done.lua", user_config ++ "-- kosm:begin hyprland\nhl.config(require(\"kosm\"))\n-- kosm:end\n" }});
+    defer second.deinit();
+    app.include = "~/.config/hypr/done.lua";
+    try app.apply(&second.output);
+    try testing.expectEqualStrings("~/.config/hypr/done.lua", second.plan.files.items[1].display_path);
+    try testing.expect(!second.plan.files.items[1].changed());
+}
+
+test "a missing hyprland.lua is left for Hyprland to create, with a warning (D97)" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{});
+    defer fixture.deinit();
+    const app = from(kosm.Theme.from(test_palette, .dark));
+    try app.apply(&fixture.output);
+    try testing.expectEqual(1, fixture.plan.files.items.len);
+    try testing.expectEqualStrings("~/.config/hypr/kosm.lua", fixture.plan.files.items[0].display_path);
+    const warnings = fixture.warnings.items.items;
+    try testing.expectEqual(1, warnings.len);
+    try testing.expectEqualStrings("~/.config/hypr/hyprland.lua", warnings[0].file);
+    try testing.expectEqualStrings("does not exist, so block 'hyprland' is not written; apply again once it exists, or add the block's lines yourself:\nhl.config(require(\"kosm\"))", warnings[0].message);
+}
+
+test "the include block refuses a module require(\"kosm\") would not find" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{});
+    defer fixture.deinit();
+    var app = from(kosm.Theme.from(test_palette, .dark));
+    app.target = .{ .generate = "~/.config/hypr/theme.lua" };
+    try testing.expectError(error.AppFailed, app.apply(&fixture.output));
+    try testing.expectEqualStrings("the include block reads require(\"kosm\"), which finds only ~/.config/hypr/kosm.lua, not ~/.config/hypr/theme.lua; set include = null and read it yourself", fixture.diagnostics.message());
+    try testing.expectEqual(0, fixture.plan.files.items.len);
+
+    app.include = null;
+    try app.apply(&fixture.output);
 }
 
 test "an inactive color follows its active one unless set, and a changed active one flows (D23)" {

@@ -112,10 +112,10 @@ Markers:
   - Do: a `user.js` adapter (`user_pref("name", value);`) and `kosm_zen` fields for Zen's about:config prefs (D27). The plan asks which prefs to cover first.
   - Done when: the adapter round trips real `user.js` snippets and `kosm_zen` writes its prefs in a temp profile.
 
-- [ ] **9d. Starting files**
-  - Do: `output.seed` (D92): writes a file only when it is missing, planned and committed like every writer.
-  - Do: `kosm_hyprland` seeds `~/.config/hypr/hyprland.lua` with a starting config that reads the generated file (`hl.config(require("kosm"))`).
-  - Done when: tests show a missing file is created, an existing one is never read or changed, and `--diff` shows the new file.
+- [x] **9d. Include block for Hyprland**
+  - Do: `output.templateBlock` (D71) and `.missing = .skip` for blocks (D72): a missing file is not created, and kosm warns with the block's lines.
+  - Do: `kosm_hyprland` keeps `hl.config(require("kosm"))` in a block at the end of `~/.config/hypr/hyprland.lua` through its `include` field (D97).
+  - Done when: tests show the block is appended once and then left unchanged, a missing `hyprland.lua` is not created and warns, and a generated module `require("kosm")` can't find fails the apply.
 
 - [ ] **10. Kyanos for real** `PLAN FIRST` `ASK`
   - Do: a config project made by `kosm init` holding the Kyanos kosmos (ghostty, Hyprland through a local `hypr_defs` app on `defs.lua`, nvim, Zen, plus anything else Ricer rices today) and the local apps it needs. Where the project lives (in the Ktisis or `~/.config/kosm`) is the human's choice.
@@ -123,5 +123,4 @@ Markers:
 
 ---
 
-Follow-ups with no step yet:
-- `output.templateBlock` (D71): the text form of `block`, with `template`'s call shape; build it when the first real app needs it.
+Follow-ups with no step yet: none.

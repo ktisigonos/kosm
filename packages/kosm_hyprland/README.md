@@ -14,13 +14,19 @@ The app writes Lua through the `lua` adapter of `kosm_lua`, which the config nee
 
 - **`.generate`** (the default, `default_target`): kosm writes every set option to
   `~/.config/hypr/kosm.lua`, a module shaped like `hl.config`'s argument. kosm is the source of
-  truth, so any option can be set. Read it once in `hyprland.lua`, after your own `hl.config`
-  calls so its values win:
+  truth, so any option can be set. kosm makes `hyprland.lua` read it by keeping this block at
+  the end of the file, after your own `hl.config` calls so its values win (D97):
 
   ```lua
+  -- kosm:begin hyprland
   hl.config(require("kosm"))
+  -- kosm:end
   ```
 
+  Everything outside the block stays yours. If `hyprland.lua` doesn't exist yet, kosm leaves it
+  for Hyprland to create its default config on first start and warns; apply again afterwards.
+  `require("kosm")` only finds `~/.config/hypr/kosm.lua`, so generating elsewhere needs
+  `include = null` and a `require` of your own.
   Or read single values from it (`require("kosm").decoration.blur.size`).
 - **`.edit`**: kosm sets each option where your own Lua files already hold it (D25, D30), so
   they stay the source of truth. Every set option must exist exactly once in the selected files,
@@ -78,6 +84,7 @@ The types live in `kosm_hyprland.values`:
 | Field | Default |
 |---|---|
 | `target` | `default_target`: `.{ .generate = "~/.config/hypr/kosm.lua" }` |
+| `include` | `"~/.config/hypr/hyprland.lua"`: the file that gets the block reading the generated module, `.generate` target only; `null` for no block |
 | `format` | `.{ .color = .hex8 }`: `#rrggbbaa`, so alpha is kept; the rest from the Lua adapter, then kosm (D70) |
 | `inactive` | the theme's `state.inactive`; derives the inactive colors listed above |
 
