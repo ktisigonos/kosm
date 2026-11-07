@@ -63,6 +63,8 @@ pub const Error = error{
     InvalidIndices,
     NotAList,
     NoValue,
+    /// An app called `fail`.
+    AppFailed,
     OutOfMemory,
 };
 
@@ -72,12 +74,19 @@ pub fn warn(output: *Output, file: []const u8, comptime format: []const u8, argu
     try output.warnings.add(output.app, try output.allocator.dupe(u8, file), format, arguments);
 }
 
+/// Fails the apply with a message, printed with the kosmos, app and `file` like kosm's own
+/// errors (D93); nothing is written. `file` is the file it is about, as the app writes it, or
+/// empty. Use it as `return output.fail(file, "message {s}", .{...});`.
+pub fn fail(output: *Output, file: []const u8, comptime format: []const u8, arguments: anytype) Error {
+    return planning.fail(output, error.AppFailed, file, format, arguments);
+}
+
 /// Writes a whole file from `values`, a plain struct the adapter serializes (D64).
 pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Error!void {
     const path = try output.resolvePath(options.file);
     const adapter = try output.findAdapter(options.file, options.lang);
     if (adapter.serialize == null)
-        return output.fail(error.MissingCapability, options.file, "adapter '{s}' cannot write whole files (it has no serialize)", .{adapter.name});
+        return planning.fail(output, error.MissingCapability, options.file, "adapter '{s}' cannot write whole files (it has no serialize)", .{adapter.name});
     const content = try output.serialize(options.file, adapter, options.format, values);
     try output.addFile(options.file, path, content);
 }
@@ -89,21 +98,21 @@ pub fn block(output: *Output, options: BlockOptions, values: anytype) Error!void
     const path = try output.resolvePath(options.file);
     const adapter = try output.findAdapter(options.file, options.lang);
     const comment = adapter.comment orelse
-        return output.fail(error.MissingCapability, options.file, "adapter '{s}' cannot write blocks (it has no comment syntax)", .{adapter.name});
+        return planning.fail(output, error.MissingCapability, options.file, "adapter '{s}' cannot write blocks (it has no comment syntax)", .{adapter.name});
     if (adapter.serialize == null)
-        return output.fail(error.MissingCapability, options.file, "adapter '{s}' cannot write data blocks (it has no serialize)", .{adapter.name});
+        return planning.fail(output, error.MissingCapability, options.file, "adapter '{s}' cannot write data blocks (it has no serialize)", .{adapter.name});
     if (!block_writer.isValidId(options.id))
-        return output.fail(error.InvalidBlock, options.file, "block id '{s}' may only hold letters, digits, _, - and .", .{options.id});
+        return planning.fail(output, error.InvalidBlock, options.file, "block id '{s}' may only hold letters, digits, _, - and .", .{options.id});
 
     const content = try output.serialize(options.file, adapter, options.format, values);
     var failure: block_writer.Failure = .{};
     block_writer.checkContent(content, comment, &failure) catch
-        return output.fail(error.InvalidBlock, options.file, "block '{s}', line {d} of its content: {s}", .{ options.id, failure.line, failure.problem.describe() });
+        return planning.fail(output, error.InvalidBlock, options.file, "block '{s}', line {d} of its content: {s}", .{ options.id, failure.line, failure.problem.describe() });
     const file = output.plan.load(path, options.file) catch |err| return output.failRead(options.file, err);
     const current = file.current();
     const found = block_writer.find(output.allocator, current, comment, options.id, &failure) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.InvalidBlock => return output.fail(error.InvalidBlock, options.file, "line {d}: {s}", .{ failure.line, failure.problem.describe() }),
+        error.InvalidBlock => return planning.fail(output, error.InvalidBlock, options.file, "line {d}: {s}", .{ failure.line, failure.problem.describe() }),
     };
     if (found) |contents| {
         const new_content = if (content.len != 0 and content[content.len - 1] != '\n')
@@ -127,9 +136,9 @@ pub fn block(output: *Output, options: BlockOptions, values: anytype) Error!void
 pub fn edit(output: *Output, options: EditOptions) Error!Selection {
     const adapter = try output.findAdapter(options.files, options.lang);
     if (adapter.parser == null)
-        return output.fail(error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no parser)", .{adapter.name});
+        return planning.fail(output, error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no parser)", .{adapter.name});
     if (adapter.format == null)
-        return output.fail(error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no format)", .{adapter.name});
+        return planning.fail(output, error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no format)", .{adapter.name});
     const format = try output.checkFormat(options.files, options.format.orElse(adapter.default_format).resolve());
 
     const pattern = try output.resolvePath(options.files);
@@ -138,9 +147,9 @@ pub fn edit(output: *Output, options: EditOptions) Error!Selection {
     var failure: glob.Failure = .{};
     const found = glob.expand(output.allocator, output.plan.io, pattern, exclude, &failure) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.Unreadable => return output.fail(error.ReadFailed, options.files, "cannot read {s}: {s}", .{ failure.path, failure.reason }),
+        error.Unreadable => return planning.fail(output, error.ReadFailed, options.files, "cannot read {s}: {s}", .{ failure.path, failure.reason }),
     };
-    if (found.len == 0) return output.fail(error.NoFile, options.files, "matches no file; edit only changes files that exist (D28)", .{});
+    if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file; edit only changes files that exist (D28)", .{});
 
     const files = try output.allocator.alloc(Selection.File, found.len);
     for (found, files) |file, *selected| {
@@ -150,7 +159,7 @@ pub fn edit(output: *Output, options: EditOptions) Error!Selection {
         var context: Adapter.Context = .{ .format = format };
         const root = adapter.parser.?(output.allocator, source, &context) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
-            error.InvalidSyntax => return output.fail(error.InvalidSyntax, display_path, "adapter '{s}': {s}", .{ adapter.name, context.message() }),
+            error.InvalidSyntax => return planning.fail(output, error.InvalidSyntax, display_path, "adapter '{s}': {s}", .{ adapter.name, context.message() }),
         };
         selected.* = .{ .path = file.path, .display_path = display_path, .source = source, .root = root };
     }
@@ -170,15 +179,15 @@ fn serialize(output: *Output, file: []const u8, adapter: Adapter, own: Format, v
     var context: Adapter.Context = .{ .format = format };
     const root = value.from(output.allocator, &context.clipped, values) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.IntegerTooLarge => return output.fail(error.UnsupportedValue, file, "an integer is too large for a file value", .{}),
-        error.NullInList => return output.fail(error.UnsupportedValue, file, "a list contains null", .{}),
+        error.IntegerTooLarge => return planning.fail(output, error.UnsupportedValue, file, "an integer is too large for a file value", .{}),
+        error.NullInList => return planning.fail(output, error.UnsupportedValue, file, "a list contains null", .{}),
     };
     var content: std.Io.Writer.Allocating = .init(output.allocator);
     errdefer content.deinit();
     adapter.serialize.?(&content.writer, root, &context) catch |err| switch (err) {
         // An allocating writer fails only when it runs out of memory.
         error.WriteFailed => return error.OutOfMemory,
-        error.UnsupportedValue => return output.fail(error.UnsupportedValue, file, "adapter '{s}': {s}", .{ adapter.name, context.message() }),
+        error.UnsupportedValue => return planning.fail(output, error.UnsupportedValue, file, "adapter '{s}': {s}", .{ adapter.name, context.message() }),
     };
     try planning.warnClipped(output, file, "", &context.clipped);
     return content.toOwnedSlice();
@@ -201,7 +210,7 @@ pub fn template(output: *Output, app: anytype, options: anytype) Error!void {
     const name = comptime if (isComptimeField(Options, "file")) options.file else "template";
     template_writer.render(&content.writer, name, options.text, app, format, &failure, &clipped) catch |err| switch (err) {
         error.WriteFailed => return error.OutOfMemory,
-        error.MissingValue => return output.fail(error.MissingValue, options.file, "template line {d}: kosm.{s} is null", .{ failure.line, failure.path }),
+        error.MissingValue => return planning.fail(output, error.MissingValue, options.file, "template line {d}: kosm.{s} is null", .{ failure.line, failure.path }),
         // checkFormat already wrote this color format once.
         error.InvalidColorFormat => unreachable,
     };
@@ -239,7 +248,7 @@ fn templateFormat(output: *Output, options: anytype) Error!Format.Resolved {
     var found: ?Adapter = null;
     for (output.adapters) |adapter| {
         if (!adapter.claims(extension)) continue;
-        if (found) |first| return output.fail(error.AmbiguousLanguage, options.file, "adapters '{s}' and '{s}' both handle '{s}' files; set every field of .format", .{ first.name, adapter.name, extension });
+        if (found) |first| return planning.fail(output, error.AmbiguousLanguage, options.file, "adapters '{s}' and '{s}' both handle '{s}' files; set every field of .format", .{ first.name, adapter.name, extension });
         found = adapter;
     }
     if (found) |adapter| return own.orElse(adapter.default_format).resolve();
@@ -249,7 +258,7 @@ fn templateFormat(output: *Output, options: anytype) Error!Format.Resolved {
 fn resolvePath(output: *Output, file: []const u8) Error![]const u8 {
     if (std.mem.startsWith(u8, file, "~/")) return std.Io.Dir.path.join(output.allocator, &.{ output.home, file[2..] });
     if (std.Io.Dir.path.isAbsolute(file)) return file;
-    return output.fail(error.InvalidPath, file, "file paths start with ~/ or /", .{});
+    return planning.fail(output, error.InvalidPath, file, "file paths start with ~/ or /", .{});
 }
 
 /// The adapter named `lang`, or the one claiming the file's extension (D26).
@@ -258,26 +267,26 @@ fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapt
         for (output.adapters) |adapter| {
             if (std.mem.eql(u8, adapter.name, name)) return adapter;
         }
-        return output.fail(error.UnknownLanguage, file, "no adapter is named '{s}'", .{name});
+        return planning.fail(output, error.UnknownLanguage, file, "no adapter is named '{s}'", .{name});
     }
     const extension = std.Io.Dir.path.extension(file);
     var found: ?Adapter = null;
     for (output.adapters) |adapter| {
         if (!adapter.claims(extension)) continue;
-        if (found) |first| return output.fail(error.AmbiguousLanguage, file, "adapters '{s}' and '{s}' both handle '{s}' files; pass .lang", .{ first.name, adapter.name, extension });
+        if (found) |first| return planning.fail(output, error.AmbiguousLanguage, file, "adapters '{s}' and '{s}' both handle '{s}' files; pass .lang", .{ first.name, adapter.name, extension });
         found = adapter;
     }
-    return found orelse output.fail(error.UnknownLanguage, file, "no adapter handles '{s}' files; pass .lang", .{extension});
+    return found orelse planning.fail(output, error.UnknownLanguage, file, "no adapter handles '{s}' files; pass .lang", .{extension});
 }
 
 /// A hand-built color format whose template does not match its components, or a float
 /// precision past `Format.max_float_precision`, is caught here, once.
 fn checkFormat(output: *Output, file: []const u8, format: Format.Resolved) Error!Format.Resolved {
     if (format.float_precision > Format.max_float_precision)
-        return output.fail(error.InvalidFormat, file, "float_precision {d} is more than the {d} decimals kosm can print", .{ format.float_precision, Format.max_float_precision });
+        return planning.fail(output, error.InvalidFormat, file, "float_precision {d} is more than the {d} decimals kosm can print", .{ format.float_precision, Format.max_float_precision });
     var discarding: std.Io.Writer.Discarding = .init(&.{});
     format.writeColor(&discarding.writer, .{ .lightness = 0, .chroma = 0, .hue = 0 }) catch
-        return output.fail(error.InvalidFormat, file, "color format \"{s}\" does not match its {d} components", .{ format.color.template, format.color.components.len });
+        return planning.fail(output, error.InvalidFormat, file, "color format \"{s}\" does not match its {d} components", .{ format.color.template, format.color.components.len });
     return format;
 }
 
@@ -293,10 +302,6 @@ fn addEdit(output: *Output, file: *Plan.File, planned: Plan.Edit) Error!void {
 
 fn failRead(output: *Output, file: []const u8, err: Plan.LoadError) Error {
     return planning.failRead(output, file, err);
-}
-
-fn fail(output: *Output, err: Error, file: []const u8, comptime format: []const u8, arguments: anytype) Error {
-    return planning.fail(output, err, file, format, arguments);
 }
 
 const testing = std.testing;
@@ -402,6 +407,17 @@ test "generate errors name the problem and the file" {
     try testing.expectError(error.InvalidFormat, output.generate(.{ .file = "~/a.lines", .lang = "lines", .format = .{ .float_precision = 13 } }, .{ .size = 1 }));
     try testing.expectEqualStrings("float_precision 13 is more than the 12 decimals kosm can print", fixture.diagnostics.message());
     try testing.expectEqual(0, fixture.plan.files.items.len);
+}
+
+test "an app's own failure names the app and its file (D93)" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("hyprland", &.{lines_adapter});
+    try testing.expectEqual(error.AppFailed, output.fail("~/hypr/kosm.lua", "option '{s}': a gradient needs at least one color", .{"general.col.active_border"}));
+    try testing.expectEqualStrings("option 'general.col.active_border': a gradient needs at least one color", fixture.diagnostics.message());
+    try testing.expectEqualStrings("~/hypr/kosm.lua", fixture.diagnostics.file);
+    try testing.expectEqualStrings("hyprland", fixture.diagnostics.app);
 }
 
 test "two apps writing one file is an error naming the first" {
