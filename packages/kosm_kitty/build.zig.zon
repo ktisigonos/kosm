@@ -12,6 +12,7 @@
         "root.zig",
         "App.zig",
         "adapter.zig",
+        "Joined.zig",
         "settings.zig",
         "values.zig",
         "values",
