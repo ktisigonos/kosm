@@ -335,6 +335,11 @@ pub fn from(theme: kosm.Theme) App {
 
 - **D91. An app may let the user choose who owns its values.** A program whose config can read a generated file (Hyprland's Lua `require`) may offer both writers through one field, `target`: `.generate` writes every set option to a file kosm owns, so kosm is the source of truth and any option can be derived; `.edit` replaces values where the user's files already hold them (D25, D30), so the user's files stay the source of truth and keys they lack must be left null (D28). The app's default target is one named constant (`default_target`), so changing which one is the default is a one-line edit. `kosm_hyprland` defaults to `.generate`, writing `~/.config/hypr/kosm.lua` (`return { general = { ... } }`), which `hyprland.lua` reads with `hl.config(require("kosm"))` (D57).
 
+- **D94. Zen's prefs are written per profile, by `kosm_zen.Profile`.** Firefox-based browsers read a profile's `user.js` at startup, and profile directories are named at random per machine (`~/.zen/6tl04c98.Default (release)`).
+  - `kosm_zen.Profile` is an app of its own (D18) with `profiles` (a glob of the profile directories, default `~/.zen/*`: every directory holding a `prefs.js`, found through D95), `exclude`, `target` and `prefs`. It writes `prefs` to each picked profile's `user.js`.
+  - `target` follows D91: `.block` (the default, in `default_target`) keeps the user's own prefs in `user.js` and owns a `// kosm:begin zen` region; a missing or empty `user.js` is created holding only that block (D72). `.generate` owns the whole file.
+  - `kosm_zen.App` holds one `Profile` built from the theme, so every profile gets the same prefs by default. Different prefs for some profiles come from a second `Profile` in the tree, with the first one narrowed through `exclude`; two that reach the same profile fail the apply (D73).
+
 ## 7. Writers
 
 Four writers. An app chooses whichever fits each target.
@@ -421,6 +426,8 @@ Four writers. An app chooses whichever fits each target.
   - **Apps** warn with `try output.warn(file, "message {s}", .{...})`; `file` may be `""`.
   - **Core** warns when printing a color clips it to sRGB (D48): a byte component (`*_255`, `hex*`) whose channel rounds outside 0..255, which is exactly when clipping changes a printed byte, so round-trip noise never warns. Float components never clip, so they never warn. Each distinct clipped color warns once per file, with a count when it repeats, and names where it went when kosm knows (`path 'general.active_border'`, `template line 3`): `color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (D48)`. Text an app formats itself (`color.format(...)`) remembers a clipped color, so it warns too when written.
 
+- **D95. Apps find files without reading them.** `const profiles = try output.find(.{ .files = "~/.zen/*/prefs.js", .exclude = &.{...} })` returns the absolute paths a selector picks, with D79's glob rules and sort order, so an app can write next to files whose names differ per machine (a browser's random profile directory) and still do no file IO itself. A selector that picks nothing is an error naming the glob (D28, D79). The paths live as long as the plan.
+
 - **D93. Apps fail with a message.** `return output.fail(file, "message {s}", .{...});` is the twin of `output.warn` (D88): it records the message in kosm's diagnostics, the idiomatic Zig way to give an error code its context, and returns `error.AppFailed`. Planning stops there, so nothing is written (D36), and the error prints with the kosmos, app and file like kosm's own: `error: kosmos 'frost', app 'hyprland', file ~/.config/hypr/kosm.lua: message`. `file` may be `""`. An app uses it for any value it cannot write exactly as asked (G6), such as an empty gradient.
 
 ## 8. Language adapters
@@ -457,6 +464,7 @@ pub const adapter: kosm.Adapter = .{
 - **D41.** **Kosm core owns the tree-sitter runtime.** Adapters depend on core and ship only their grammar's C sources, which avoids duplicate symbols.
 - **D42.** Value formatting has two cases: `string`, which the adapter quotes and escapes, and `kosm.raw(text)`, which is inserted verbatim. Colors are formatted by the **app** (`color.format("rgba({})", &.{.hex8})`, D47), because only the app knows the app's color syntax.
 - **D81. JSON and JSONC are two adapters of `kosm_json`.** `json` is strict JSON through tree-sitter and claims `.json`; `jsonc` is a hand-written parser (D40) that also takes `//` and `/* */` comments and trailing commas, and claims `.jsonc`. A `.json` file that is really JSONC (VS Code's `settings.json`) is edited with `.lang = "jsonc"`. Both write values the same way.
+- **D96. `kosm_userjs` reads and writes Firefox's `user.js`.** A hand-written adapter (D40) for `user_pref("name", value);` lines with `//` and `/* */` comments. A pref is one flat key named by its whole name, so its path is quoted (`"zen.theme.accent-color"`, D32). Firefox prefs hold only a bool, a 32-bit integer or a string, so a float or an integer outside i32 is an error, never silently turned into a string (G6); colors are written as strings, `#rrggbb` by default.
 - **D78. A grammar is a dependency, compiled by kosm's package helper.** An adapter package fetches its tree-sitter grammar with `zig fetch --save` like any package; nobody writes C. `package(b)` (D62) compiles `src/parser.c`, and `src/scanner.c` when present, of every dependency that has one into the package's module, so a grammar adapter keeps the one-line `build.zig`. Core compiles the runtime (D41) and wraps it in Zig (`kosm.treesitter`).
 
 ## 9. Packages and the config project
