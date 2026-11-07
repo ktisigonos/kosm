@@ -421,6 +421,8 @@ Four writers. An app chooses whichever fits each target.
   - **Apps** warn with `try output.warn(file, "message {s}", .{...})`; `file` may be `""`.
   - **Core** warns when printing a color clips it to sRGB (D48): a byte component (`*_255`, `hex*`) whose channel rounds outside 0..255, which is exactly when clipping changes a printed byte, so round-trip noise never warns. Float components never clip, so they never warn. Each distinct clipped color warns once per file, with a count when it repeats, and names where it went when kosm knows (`path 'general.active_border'`, `template line 3`): `color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (D48)`. Text an app formats itself (`color.format(...)`) remembers a clipped color, so it warns too when written.
 
+- **D93. Apps fail with a message.** `return output.fail(file, "message {s}", .{...});` is the twin of `output.warn` (D88): it records the message in kosm's diagnostics, the idiomatic Zig way to give an error code its context, and returns `error.AppFailed`. Planning stops there, so nothing is written (D36), and the error prints with the kosmos, app and file like kosm's own: `error: kosmos 'frost', app 'hyprland', file ~/.config/hypr/kosm.lua: message`. `file` may be `""`. An app uses it for any value it cannot write exactly as asked (G6), such as an empty gradient.
+
 ## 8. Language adapters
 
 - **D39.** An adapter is a package exporting a declaration that matches the adapter interface. **Every capability is optional**, and kosm reports clearly when an app needs a capability that an adapter lacks.
