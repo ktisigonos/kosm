@@ -11,8 +11,14 @@ col: Col = .{},
 font_family: ?[]const u8 = null,
 /// Changes the font used to render the splash text. null: Hyprland's default, empty.
 splash_font_family: ?[]const u8 = null,
-/// Force any of the 3 default wallpapers. [-1/0/1/2]. -1..2. null: Hyprland's default, `-1`.
-force_default_wallpaper: ?i64 = null,
+/// Forces one of Hyprland's 3 default wallpapers, or a random one. null: Hyprland's default, `random`.
+force_default_wallpaper: ?enum(i64) {
+    random = -1,
+    wall0 = 0,
+    wall1 = 1,
+    wall2 = 2,
+    pub const numbered = true;
+} = null,
 /// Controls the VRR (Adaptive Sync) of your monitors. null: Hyprland's default, `off`.
 vrr: ?enum(i64) { off = 0, on = 1, fullscreen = 2, fullscreen_game = 3 } = null,
 /// If DPMS is set to off, wake up the monitors if the mouse moves. null: Hyprland's default, `false`.
@@ -55,8 +61,13 @@ close_special_on_empty: ?bool = null,
 on_focus_under_fullscreen: ?enum(i64) { ignore = 0, take_over = 1, exit_fullscreen = 2 } = null,
 /// Whether closing a fullscreen window makes the next focused window to be fullscreened. null: Hyprland's default, `disable`.
 exit_window_retains_fullscreen: ?enum(i64) { disable = 0, enable = 1, only_when_grouped = 2, only_when_nongrouped = 3 } = null,
-/// If enabled, windows will open on the workspace they were invoked on. 0..2. null: Hyprland's default, `1`.
-initial_workspace_tracking: ?i64 = null,
+/// Windows open on the workspace they were launched on: for the first window only (`single_shot`), or for every window of the process (`persistent`). null: Hyprland's default, `single_shot`.
+initial_workspace_tracking: ?enum(i64) {
+    disabled = 0,
+    single_shot = 1,
+    persistent = 2,
+    pub const numbered = true;
+} = null,
 /// The time in seconds a window has to open on its invoked workspace before the tracking token expires. 1..3600. null: Hyprland's default, `10`.
 initial_workspace_token_timeout: ?i64 = null,
 /// Whether to enable middle-click-paste (aka primary selection). null: Hyprland's default, `true`.

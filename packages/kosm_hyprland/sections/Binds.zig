@@ -10,10 +10,18 @@ workspace_back_and_forth: ?enum(i64) { disabled = 0, all_monitors = 1, per_monit
 hide_special_on_workspace_change: ?bool = null,
 /// If enabled, workspaces don't forget their previous workspace. null: Hyprland's default, `false`.
 allow_workspace_cycles: ?bool = null,
-/// Whether switching workspaces should center the cursor on the workspace (0) or on the last active window (1). 0..1. null: Hyprland's default, `1`.
-workspace_center_on: ?i64 = null,
-/// Sets the preferred focus finding method when using focuswindow/movewindow/etc with a direction. 0..1. null: Hyprland's default, `0`.
-focus_preferred_method: ?i64 = null,
+/// Whether switching workspaces centers the cursor on the workspace or on its last active window. null: Hyprland's default, `last_window`.
+workspace_center_on: ?enum(i64) {
+    workspace = 0,
+    last_window = 1,
+    pub const numbered = true;
+} = null,
+/// How focuswindow/movewindow/etc with a direction pick a window: the most recently focused, or the longest shared edge. null: Hyprland's default, `history`.
+focus_preferred_method: ?enum(i64) {
+    history = 0,
+    length = 1,
+    pub const numbered = true;
+} = null,
 /// If enabled, dispatchers like moveintogroup, moveoutofgroup and movewindoworgroup will ignore lock per group. null: Hyprland's default, `false`.
 ignore_group_lock: ?bool = null,
 /// If enabled, when on a fullscreen window, movefocus will cycle fullscreen. null: Hyprland's default, `false`.

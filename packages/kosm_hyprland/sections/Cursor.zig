@@ -1,11 +1,14 @@
 //! Hyprland's `cursor` options. Field names are Hyprland's option names (D27).
 
-const values = @import("../values.zig");
-
 /// Don't render cursors. null: Hyprland's default, `false`.
 invisible: ?bool = null,
 /// Disables hardware cursors. null: Hyprland's default, `auto`.
-no_hardware_cursors: ?values.NoHardwareCursors = null,
+no_hardware_cursors: ?enum(i64) {
+    disabled = 0,
+    enabled = 1,
+    auto = 2,
+    pub const numbered = true;
+} = null,
 /// Disables scheduling new frames on cursor movement for fullscreen apps with VRR enabled. null: Hyprland's default, `auto`.
 no_break_fs_vrr: ?enum(i64) { disable = 0, enable = 1, auto = 2 } = null,
 /// Minimum refresh rate for cursor movement when no_break_fs_vrr is active. 10..500. null: Hyprland's default, `24`.

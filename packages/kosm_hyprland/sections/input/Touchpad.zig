@@ -14,8 +14,13 @@ tap_button_map: ?enum { lrm, lmr } = null,
 clickfinger_behavior: ?bool = null,
 /// Tapping on the touchpad with 1, 2, or 3 fingers will send LMB, RMB, and MMB respectively. null: Hyprland's default, `true`.
 tap_to_click: ?bool = null,
-/// When enabled, lifting the finger off while dragging will not drop the dragged item. 0..2. null: Hyprland's default, `0`.
-drag_lock: ?i64 = null,
+/// Lifting the finger off while dragging does not drop the dragged item: until a timeout, or until the next tap (`sticky`). null: Hyprland's default, `disabled`.
+drag_lock: ?enum(i64) {
+    disabled = 0,
+    timeout = 1,
+    sticky = 2,
+    pub const numbered = true;
+} = null,
 /// Sets the tap and drag mode for the touchpad. null: Hyprland's default, `true`.
 tap_and_drag: ?bool = null,
 /// Inverts the horizontal movement of the touchpad. null: Hyprland's default, `false`.

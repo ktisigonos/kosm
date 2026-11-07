@@ -58,12 +58,20 @@ Each inactive color left `null` derives from its active one through `inactive` (
 The types live in `kosm_hyprland.values`:
 
 - `Gradient`: up to 10 colors and an `angle` in degrees. `.solid(color)` is one color (written as
-  a plain color), `.from(&.{ a, b })` several (written `{ colors = { ... }, angle = ... }`).
+  a plain color), `.from(&.{ a, b })` several (written `{ colors = { ... }, angle = ... }`). An
+  empty gradient, or one given more than 10 colors, fails the apply naming the option (D93).
 - `CssGap`: `top`, `right`, `bottom`, `left` in layout pixels; `.all(5)` is the same everywhere.
 - `Vec2`: `x` and `y`, written `{ x, y }`.
 - `FontWeight`: `.{ .name = .bold }` or `.{ .weight = 450 }`.
-- Choices are enums written as Hyprland's names (`.frost` -> `"frost"`); `cursor.no_hardware_cursors`
-  is written as its number, since Hyprland spells its names capitalized.
+- `Layout`: `.dwindle`, `.master`, `.scrolling`, `.monocle`, or `.{ .lua = "name" }` for a layout
+  your Lua config registers.
+- `AccelProfile`: `.adaptive`, `.flat`, or `.{ .custom = .{ .step = 0.5, .points = &.{ 0, 0.5, 1.5 } } }`;
+  `scroll_points` takes the same `AccelCurve`.
+- `Transform`: `.normal`, `.rotate_90`, ..., `.flipped_180`.
+- Every choice is an enum, so no option needs the wiki's numbers. Choices Hyprland names are
+  written by name (`.frost` -> `"frost"`); choices it only reads as numbers
+  (`scrolling.follow_focus`, `cursor.no_hardware_cursors`, ...) declare `numbered` and are written
+  as the number (`.soft` -> `2`).
 
 ## App fields
 
@@ -86,7 +94,7 @@ The types live in `kosm_hyprland.values`:
 | `general.col.active_border` | `?values.Gradient` | Border color for the active window. null: Hyprland's default, `#ffffffff`. |
 | `general.col.nogroup_border` | `?values.Gradient` | Inactive border color for window that cannot be added to a group. null: `nogroup_border_active` through the app's `inactive` when that is set, else Hyprland's default (D23). |
 | `general.col.nogroup_border_active` | `?values.Gradient` | Active border color for window that cannot be added to a group. null: Hyprland's default, `#ff00ffff`. |
-| `general.layout` | `?[]const u8` | Which layout to use. [dwindle/master/scrolling/monocle/lua:<name>]. null: Hyprland's default, `dwindle`. |
+| `general.layout` | `?values.Layout` | Which layout to use: a built-in one, or one written in Lua (`.{ .lua = "name" }`). null: Hyprland's default, `dwindle`. |
 | `general.no_focus_fallback` | `?bool` | If true, will not fall back to the next available window when moving focus in a direction where no window was found. null: Hyprland's default, `false`. |
 | `general.resize_on_border` | `?bool` | Enables resizing windows by clicking and dragging on borders and gaps. null: Hyprland's default, `false`. |
 | `general.extend_border_grab_area` | `?i64` | Extends the area around the border where you can click and drag on, only used when general:resize_on_border is on. 0..100. null: Hyprland's default, `15`. |
@@ -198,11 +206,11 @@ The types live in `kosm_hyprland.values`:
 | `input.repeat_rate` | `?i64` | The repeat rate for held-down keys, in repeats per second. 0..200. null: Hyprland's default, `25`. |
 | `input.repeat_delay` | `?i64` | Delay before a held-down key is repeated, in milliseconds. 0..2000. null: Hyprland's default, `600`. |
 | `input.sensitivity` | `?f64` | Sets the mouse input sensitivity. Value is clamped to the range -1.0 to 1.0. null: Hyprland's default, `0`. |
-| `input.accel_profile` | `?[]const u8` | Sets the cursor acceleration profile. [adaptive/flat/custom]. null: Hyprland's default, empty. |
+| `input.accel_profile` | `?values.AccelProfile` | Sets the cursor acceleration profile; `.{ .custom = ... }` is a curve of points. null: Hyprland's default, the device's own. |
 | `input.force_no_accel` | `?bool` | Force no cursor acceleration. null: Hyprland's default, `false`. |
 | `input.rotation` | `?i64` | Sets the rotation of a device in degrees clockwise. Value is clamped to the range 0 to 359. 0..359. null: Hyprland's default, `0`. |
 | `input.left_handed` | `?bool` | Switches RMB and LMB. null: Hyprland's default, `false`. |
-| `input.scroll_points` | `?[]const u8` | Sets the scroll acceleration profile, when accel_profile is set to custom. null: Hyprland's default, empty. |
+| `input.scroll_points` | `?values.AccelCurve` | Sets the scroll acceleration curve, when `accel_profile` is `.custom`. null: Hyprland's default, none. |
 | `input.scroll_method` | enum: `.@"2fg"`, `.edge`, `.on_button_down`, `.no_scroll` | Sets the scroll method. [2fg/edge/on_button_down/no_scroll]. null: Hyprland's default, empty. |
 | `input.scroll_button` | `?i64` | Sets the scroll button. 0 means default. 0..300. null: Hyprland's default, `0`. |
 | `input.scroll_button_lock` | `?bool` | If the scroll button lock is enabled, the button does not need to be held down. null: Hyprland's default, `false`. |
@@ -213,7 +221,7 @@ The types live in `kosm_hyprland.values`:
 | `input.swallow_focus_click` | `?bool` | If enabled, the click that changes window focus is not forwarded to the window. null: Hyprland's default, `false`. |
 | `input.focus_on_close` | enum: `.next`, `.cursor`, `.mru` | Controls the window focus behavior when a window is closed. null: Hyprland's default, `next`. |
 | `input.mouse_refocus` | `?bool` | If disabled, mouse focus won't switch to the hovered window unless the mouse crosses a window boundary when follow_mouse=1. null: Hyprland's default, `true`. |
-| `input.float_switch_override_focus` | `?i64` | If enabled (1 or 2), focus will change to the window under the cursor when changing from tiled-to-floating and vice versa. If 2, focus will also follow mouse on float-to-float switches. 0..2. null: Hyprland's default, `1`. |
+| `input.float_switch_override_focus` | enum: `.disabled`, `.enabled`, `.floating_too` | Focus changes to the window under the cursor when switching from tiled to floating and back, and with `floating_too` also from floating to floating. null: Hyprland's default, `enabled`. |
 | `input.special_fallthrough` | `?bool` | If enabled, having only floating windows in the special workspace will not block focusing windows in the regular workspace. null: Hyprland's default, `false`. |
 | `input.off_window_axis_events` | enum: `.ignore`, `.send`, `.clamp`, `.warp` | How to handle axis events around a focused window. null: Hyprland's default, `send`. |
 | `input.emulate_discrete_scroll` | enum: `.disable`, `.non_standard`, `.force_all` | Emulates discrete scrolling from high resolution scrolling events. null: Hyprland's default, `non_standard`. |
@@ -225,18 +233,18 @@ The types live in `kosm_hyprland.values`:
 | `input.touchpad.tap_button_map` | enum: `.lrm`, `.lmr` | Sets the tap button mapping for touchpad button emulation. [lrm/lmr]. null: Hyprland's default, empty. |
 | `input.touchpad.clickfinger_behavior` | `?bool` | Button presses with 1, 2, or 3 fingers will be mapped to LMB, RMB, and MMB respectively. null: Hyprland's default, `false`. |
 | `input.touchpad.tap_to_click` | `?bool` | Tapping on the touchpad with 1, 2, or 3 fingers will send LMB, RMB, and MMB respectively. null: Hyprland's default, `true`. |
-| `input.touchpad.drag_lock` | `?i64` | When enabled, lifting the finger off while dragging will not drop the dragged item. 0..2. null: Hyprland's default, `0`. |
+| `input.touchpad.drag_lock` | enum: `.disabled`, `.timeout`, `.sticky` | Lifting the finger off while dragging does not drop the dragged item: until a timeout, or until the next tap (`sticky`). null: Hyprland's default, `disabled`. |
 | `input.touchpad.tap_and_drag` | `?bool` | Sets the tap and drag mode for the touchpad. null: Hyprland's default, `true`. |
 | `input.touchpad.flip_x` | `?bool` | Inverts the horizontal movement of the touchpad. null: Hyprland's default, `false`. |
 | `input.touchpad.flip_y` | `?bool` | Inverts the vertical movement of the touchpad. null: Hyprland's default, `false`. |
 | `input.touchpad.drag_3fg` | enum: `.disable`, `.@"3_finger"`, `.@"4_finger"` | Whether to use 3 or 4 finger drag. null: Hyprland's default, `disable`. |
-| `input.touchdevice.transform` | `?i64` | Transform the input from touchdevices. 0..6. null: Hyprland's default, `0`. |
+| `input.touchdevice.transform` | `?values.Transform` | Transform the input from touchdevices. null: Hyprland's default, `normal`. |
 | `input.touchdevice.output` | `?[]const u8` | The monitor to bind touch devices. null: Hyprland's default, `[[Auto]]`. |
 | `input.touchdevice.enabled` | `?bool` | Whether input is enabled for touch devices. null: Hyprland's default, `true`. |
 | `input.virtualkeyboard.share_states` | enum: `.disable`, `.enable`, `.only_non_ime` | Unify key down states and modifier states with other keyboards. null: Hyprland's default, `only_non_ime`. |
 | `input.virtualkeyboard.release_pressed_on_close` | `?bool` | Release all pressed keys by virtual keyboard on close. null: Hyprland's default, `false`. |
 | `input.tablet.enabled` | `?bool` | Whether input is enabled for tablets. null: Hyprland's default, `true`. |
-| `input.tablet.transform` | `?i64` | Transform the input from tablets. 0..6. null: Hyprland's default, `0`. |
+| `input.tablet.transform` | `?values.Transform` | Transform the input from tablets. null: Hyprland's default, `normal`. |
 | `input.tablet.output` | `?[]const u8` | The monitor to bind tablets. null: Hyprland's default, empty. |
 | `input.tablet.region_position` | `?values.Vec2` | Position of the mapped region in monitor layout. null: Hyprland's default, `2`. |
 | `input.tablet.absolute_region_position` | `?bool` | Whether to treat the region_position as an absolute position in monitor layout. null: Hyprland's default, `false`. |
@@ -245,7 +253,7 @@ The types live in `kosm_hyprland.values`:
 | `input.tablet.left_handed` | `?bool` | If enabled, the tablet will be rotated 180 degrees. null: Hyprland's default, `false`. |
 | `input.tablet.active_area_size` | `?values.Vec2` | Size of tablet's active area in mm. null: Hyprland's default, `2`. |
 | `input.tablet.active_area_position` | `?values.Vec2` | Position of the active area in mm. null: Hyprland's default, `2`. |
-| `input.tablettool.eraser_button_mode` | `?i64` | Change the eraser button behavior on the tool. When set to 0, use the default hardware behavior of the tool. When set to 1, the eraser button on the tool sends a button event instead. 0..6. null: Hyprland's default, `0`. |
+| `input.tablettool.eraser_button_mode` | enum: `.default`, `.button` | The eraser button on the tool: the hardware's own behavior, or a button event (see `eraser_button_override`). null: Hyprland's default, `default`. |
 | `input.tablettool.eraser_button_override` | `?i64` | Set a button to be button event when eraser_button_mode is set to 1. Has to be an int, cannot be a string. Must be a valid button (e.g. BTN_STYLUS) excluding fake buttons (e.g. BTN_TOOL_*) and keys (KEY_*). Check wev if you have any doubts regarding the ID. 0 means default. null: Hyprland's default, `0`. |
 | `input.tablettool.pressure_range_min` | `?f64` | Set the minimum pressure range for the tool, a negative number will set the default minimum pressure value. This is usually 0.0. null: Hyprland's default, `-1.0`. |
 | `input.tablettool.pressure_range_max` | `?f64` | Set the maximum pressure range for the tool, a negative number will set the default maximum pressure value. This is usually 1.0. null: Hyprland's default, `-1.0`. |
@@ -315,7 +323,7 @@ The types live in `kosm_hyprland.values`:
 | `misc.col.splash` | `?kosm.Color` | Changes the color of the splash text. null: Hyprland's default, `#ffffff55`. |
 | `misc.font_family` | `?[]const u8` | Set the global default font to render the text. null: Hyprland's default, `Sans`. |
 | `misc.splash_font_family` | `?[]const u8` | Changes the font used to render the splash text. null: Hyprland's default, empty. |
-| `misc.force_default_wallpaper` | `?i64` | Force any of the 3 default wallpapers. [-1/0/1/2]. -1..2. null: Hyprland's default, `-1`. |
+| `misc.force_default_wallpaper` | enum: `.random`, `.wall0`, `.wall1`, `.wall2` | Forces one of Hyprland's 3 default wallpapers, or a random one. null: Hyprland's default, `random`. |
 | `misc.vrr` | enum: `.off`, `.on`, `.fullscreen`, `.fullscreen_game` | Controls the VRR (Adaptive Sync) of your monitors. null: Hyprland's default, `off`. |
 | `misc.mouse_move_enables_dpms` | `?bool` | If DPMS is set to off, wake up the monitors if the mouse moves. null: Hyprland's default, `false`. |
 | `misc.key_press_enables_dpms` | `?bool` | If DPMS is set to off, wake up the monitors if a key is pressed. null: Hyprland's default, `false`. |
@@ -337,7 +345,7 @@ The types live in `kosm_hyprland.values`:
 | `misc.close_special_on_empty` | `?bool` | Close the special workspace if the last window is removed. null: Hyprland's default, `true`. |
 | `misc.on_focus_under_fullscreen` | enum: `.ignore`, `.take_over`, `.exit_fullscreen` | If there is a fullscreen or maximized window, decide whether a tiled window requested to focus should replace it. null: Hyprland's default, `exit_fullscreen`. |
 | `misc.exit_window_retains_fullscreen` | enum: `.disable`, `.enable`, `.only_when_grouped`, `.only_when_nongrouped` | Whether closing a fullscreen window makes the next focused window to be fullscreened. null: Hyprland's default, `disable`. |
-| `misc.initial_workspace_tracking` | `?i64` | If enabled, windows will open on the workspace they were invoked on. 0..2. null: Hyprland's default, `1`. |
+| `misc.initial_workspace_tracking` | enum: `.disabled`, `.single_shot`, `.persistent` | Windows open on the workspace they were launched on: for the first window only (`single_shot`), or for every window of the process (`persistent`). null: Hyprland's default, `single_shot`. |
 | `misc.initial_workspace_token_timeout` | `?i64` | The time in seconds a window has to open on its invoked workspace before the tracking token expires. 1..3600. null: Hyprland's default, `10`. |
 | `misc.middle_click_paste` | `?bool` | Whether to enable middle-click-paste (aka primary selection). null: Hyprland's default, `true`. |
 | `misc.render_unfocused_fps` | `?i64` | The maximum limit for renderunfocused windows' fps in the background. 1..120. null: Hyprland's default, `15`. |
@@ -360,8 +368,8 @@ The types live in `kosm_hyprland.values`:
 | `binds.workspace_back_and_forth` | enum: `.disabled`, `.all_monitors`, `.per_monitor` | An attempt to switch to the currently focused workspace will instead switch to the previous workspace. null: Hyprland's default, `disabled`. |
 | `binds.hide_special_on_workspace_change` | `?bool` | If enabled, changing the active workspace will hide the special workspace on the monitor. null: Hyprland's default, `false`. |
 | `binds.allow_workspace_cycles` | `?bool` | If enabled, workspaces don't forget their previous workspace. null: Hyprland's default, `false`. |
-| `binds.workspace_center_on` | `?i64` | Whether switching workspaces should center the cursor on the workspace (0) or on the last active window (1). 0..1. null: Hyprland's default, `1`. |
-| `binds.focus_preferred_method` | `?i64` | Sets the preferred focus finding method when using focuswindow/movewindow/etc with a direction. 0..1. null: Hyprland's default, `0`. |
+| `binds.workspace_center_on` | enum: `.workspace`, `.last_window` | Whether switching workspaces centers the cursor on the workspace or on its last active window. null: Hyprland's default, `last_window`. |
+| `binds.focus_preferred_method` | enum: `.history`, `.length` | How focuswindow/movewindow/etc with a direction pick a window: the most recently focused, or the longest shared edge. null: Hyprland's default, `history`. |
 | `binds.ignore_group_lock` | `?bool` | If enabled, dispatchers like moveintogroup, moveoutofgroup and movewindoworgroup will ignore lock per group. null: Hyprland's default, `false`. |
 | `binds.movefocus_cycles_fullscreen` | `?bool` | If enabled, when on a fullscreen window, movefocus will cycle fullscreen. null: Hyprland's default, `false`. |
 | `binds.movefocus_cycles_groupfirst` | `?bool` | If enabled, when in a grouped window, movefocus will cycle windows in the groups first. null: Hyprland's default, `false`. |
@@ -396,7 +404,7 @@ The types live in `kosm_hyprland.values`:
 | `render.fp16_sdr_tf` | enum: `.monitor`, `.linear` | Internal workbuffer transfer function for fp16 in SDR mode. null: Hyprland's default, `monitor`. |
 | `render.not_shown_fifo_lock` | enum: `.always`, `.ignore_unfocused`, `.never` | Control fifo locking for not shown surfaces. always - use fifo lock for any surface, ignore_unfocused - ignore render_unfocused windows, never - skip locking invisible surfaces. null: Hyprland's default, `always`. |
 | `cursor.invisible` | `?bool` | Don't render cursors. null: Hyprland's default, `false`. |
-| `cursor.no_hardware_cursors` | `?values.NoHardwareCursors` | Disables hardware cursors. null: Hyprland's default, `auto`. |
+| `cursor.no_hardware_cursors` | enum: `.disabled`, `.enabled`, `.auto` | Disables hardware cursors. null: Hyprland's default, `auto`. |
 | `cursor.no_break_fs_vrr` | enum: `.disable`, `.enable`, `.auto` | Disables scheduling new frames on cursor movement for fullscreen apps with VRR enabled. null: Hyprland's default, `auto`. |
 | `cursor.min_refresh_rate` | `?i64` | Minimum refresh rate for cursor movement when no_break_fs_vrr is active. 10..500. null: Hyprland's default, `24`. |
 | `cursor.hotspot_padding` | `?i64` | The padding, in logical px, between screen edges and the cursor. 0..20. null: Hyprland's default, `0`. |
@@ -473,7 +481,7 @@ The types live in `kosm_hyprland.values`:
 | `scrolling.fullscreen_on_one_column` | `?bool` | When enabled, a single column on a workspace will always span the entire screen. null: Hyprland's default, `true`. |
 | `scrolling.column_width` | `?f64` | The default width of a column. null: Hyprland's default, `0.5`. |
 | `scrolling.focus_fit_method` | enum: `.center`, `.fit` | When a column is focused, what method should be used to bring it into view. null: Hyprland's default, `fit`. |
-| `scrolling.follow_focus` | `?i64` | Behaviour of the scrolling tape when a window is in focus. 0: Focus doesn't cause tape move. 1: Focus may cause tape move, mouse click always moves the tape. 2: Focus may cause tape move. null: Hyprland's default, `1`. |
+| `scrolling.follow_focus` | enum: `.disabled`, `.click`, `.soft` | Whether focusing a window moves the scrolling tape: never, also always on a mouse click (`click`), or only when focus moves (`soft`). null: Hyprland's default, `click`. |
 | `scrolling.follow_min_visible` | `?f64` | When a window is focused, require that at least a given fraction of it is visible for focus to follow. null: Hyprland's default, `0.4`. |
 | `scrolling.explicit_column_widths` | `?[]const u8` | A comma-separated list of preconfigured widths for colresize +conf/-conf. null: Hyprland's default, `0.333, 0.5, 0.667, 1.0`. |
 | `scrolling.direction` | enum: `.left`, `.right`, `.up`, `.down` | Direction in which new windows appear and the layout scrolls. null: Hyprland's default, `right`. |

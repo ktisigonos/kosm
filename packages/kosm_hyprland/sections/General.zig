@@ -13,8 +13,8 @@ float_gaps: ?values.CssGap = null,
 /// Gaps between workspaces. Stacks with gaps_out. 0..100. null: Hyprland's default, `0`.
 gaps_workspaces: ?i64 = null,
 col: Col = .{},
-/// Which layout to use. [dwindle/master/scrolling/monocle/lua:<name>]. null: Hyprland's default, `dwindle`.
-layout: ?[]const u8 = null,
+/// Which layout to use: a built-in one, or one written in Lua (`.{ .lua = "name" }`). null: Hyprland's default, `dwindle`.
+layout: ?values.Layout = null,
 /// If true, will not fall back to the next available window when moving focus in a direction where no window was found. null: Hyprland's default, `false`.
 no_focus_fallback: ?bool = null,
 /// Enables resizing windows by clicking and dragging on borders and gaps. null: Hyprland's default, `false`.

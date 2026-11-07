@@ -4,8 +4,8 @@ const values = @import("../../values.zig");
 
 /// Whether input is enabled for tablets. null: Hyprland's default, `true`.
 enabled: ?bool = null,
-/// Transform the input from tablets. 0..6. null: Hyprland's default, `0`.
-transform: ?i64 = null,
+/// Transform the input from tablets. null: Hyprland's default, `normal`.
+transform: ?values.Transform = null,
 /// The monitor to bind tablets. null: Hyprland's default, empty.
 output: ?[]const u8 = null,
 /// Position of the mapped region in monitor layout. null: Hyprland's default, `2`.

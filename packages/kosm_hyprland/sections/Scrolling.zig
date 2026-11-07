@@ -6,8 +6,13 @@ fullscreen_on_one_column: ?bool = null,
 column_width: ?f64 = null,
 /// When a column is focused, what method should be used to bring it into view. null: Hyprland's default, `fit`.
 focus_fit_method: ?enum(i64) { center = 0, fit = 1 } = null,
-/// Behaviour of the scrolling tape when a window is in focus. 0: Focus doesn't cause tape move. 1: Focus may cause tape move, mouse click always moves the tape. 2: Focus may cause tape move. null: Hyprland's default, `1`.
-follow_focus: ?i64 = null,
+/// Whether focusing a window moves the scrolling tape: never, also always on a mouse click (`click`), or only when focus moves (`soft`). null: Hyprland's default, `click`.
+follow_focus: ?enum(i64) {
+    disabled = 0,
+    click = 1,
+    soft = 2,
+    pub const numbered = true;
+} = null,
 /// When a window is focused, require that at least a given fraction of it is visible for focus to follow. null: Hyprland's default, `0.4`.
 follow_min_visible: ?f64 = null,
 /// A comma-separated list of preconfigured widths for colresize +conf/-conf. null: Hyprland's default, `0.333, 0.5, 0.667, 1.0`.

@@ -140,17 +140,23 @@ pub fn reload(self: App, reloader: *kosm.Reloader) !void {
     try reloader.run(&.{ "hyprctl", "reload" });
 }
 
-/// Writes every set option to the target.
+/// Writes every set option to the target. An option Hyprland can't read (an empty gradient)
+/// fails the apply, naming it (D93).
 pub fn apply(self: App, output: *kosm.Output) !void {
-    const app = self.withDerived();
+    const file = switch (self.target) {
+        .generate => |path| path,
+        .edit => |files| files.files,
+    };
+    // Checked before deriving, so a bad active color is named instead of the inactive copy.
+    for (try settings.list(output.allocator, self, &own_fields)) |setting| {
+        if (setting.problem) |message| return output.fail(file, "option '{s}': {s}", .{ setting.path, message });
+    }
+    const set = try settings.list(output.allocator, self.withDerived(), &own_fields);
     switch (self.target) {
-        .generate => |file| {
-            const tree = try settings.tree(output.allocator, app, &own_fields);
-            try output.generate(.{ .file = file, .lang = "lua", .format = self.format }, tree);
-        },
+        .generate => try output.generate(.{ .file = file, .lang = "lua", .format = self.format }, try settings.tree(output.allocator, set)),
         .edit => |files| {
             var selection = try output.edit(.{ .files = files.files, .exclude = files.exclude, .lang = "lua", .format = self.format });
-            for (try settings.list(output.allocator, app, &own_fields)) |setting| try selection.set(setting.path, setting.value);
+            for (set) |setting| try selection.set(setting.path, setting.value);
         },
     }
 }
@@ -507,4 +513,66 @@ test "the edit target refuses an option the user's files lack, or hold twice" {
         try app.apply(&fixture.output);
         try testing.expect(std.mem.indexOf(u8, fixture.planned("~/.config/hypr/general.lua"), "border_size             = 2,") != null);
     }
+}
+
+test "choices Hyprland reads as numbers are enums, written as their number" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{});
+    defer fixture.deinit();
+    var app = bareApp();
+    app.target = .{ .generate = "~/kosm.lua" };
+    app.general.layout = .{ .lua = "my_layout" };
+    app.input.accel_profile = .{ .custom = .{ .step = 0.5, .points = &.{ 0, 0.25, 1.5 } } };
+    app.input.scroll_points = .{ .step = 1, .points = &.{ 0, 2 } };
+    app.input.float_switch_override_focus = .floating_too;
+    app.input.tablet.transform = .flipped_90;
+    app.misc.force_default_wallpaper = .random;
+    app.scrolling.follow_focus = .soft;
+    try app.apply(&fixture.output);
+    const written = fixture.planned("~/kosm.lua");
+    for ([_][]const u8{
+        "        layout = \"lua:my_layout\",\n",
+        "        accel_profile = \"custom 0.5 0 0.25 1.5\",\n",
+        "        scroll_points = \"1 0 2\",\n",
+        "        float_switch_override_focus = 2,\n",
+        "        tablet = {\n            transform = 5,\n        },\n",
+        "        force_default_wallpaper = -1,\n",
+        "    scrolling = {\n        follow_focus = 2,\n    },\n",
+    }) |expected| {
+        if (std.mem.indexOf(u8, written, expected) == null) {
+            std.debug.print("missing:\n{s}\nin:\n{s}\n", .{ expected, written });
+            return error.TestExpectedEqual;
+        }
+    }
+
+    var built_in = bareApp();
+    built_in.target = app.target;
+    built_in.general.layout = .scrolling;
+    built_in.input.accel_profile = .flat;
+    var second: Fixture = undefined;
+    try second.init(&.{});
+    defer second.deinit();
+    try built_in.apply(&second.output);
+    try testing.expectEqualStrings("return {\n    general = {\n        layout = \"scrolling\",\n    },\n    input = {\n        accel_profile = \"flat\",\n    },\n}\n", second.planned("~/kosm.lua"));
+}
+
+test "a gradient Hyprland can't draw fails the apply, naming the option (D93)" {
+    const colors: [12]kosm.Color = @splat(kosm.hex("#2e8799"));
+    var too_many = bareApp();
+    too_many.general.col.active_border = .from(&colors);
+    try testing.expectEqual(10, too_many.general.col.active_border.?.colors.len);
+    var empty = bareApp();
+    empty.target = .{ .edit = .{} };
+    empty.decoration.glow.color = .{};
+
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{});
+    defer fixture.deinit();
+    try testing.expectError(error.AppFailed, too_many.apply(&fixture.output));
+    try testing.expectEqualStrings("option 'general.col.active_border': the gradient holds 12 colors; Hyprland draws at most 10", fixture.diagnostics.message());
+    try testing.expectEqualStrings("~/.config/hypr/kosm.lua", fixture.diagnostics.file);
+    try testing.expectError(error.AppFailed, empty.apply(&fixture.output));
+    try testing.expectEqualStrings("option 'decoration.glow.color': the gradient has no colors; set at least one", fixture.diagnostics.message());
+    try testing.expectEqualStrings("~/.config/hypr/**/*.lua", fixture.diagnostics.file);
+    try testing.expectEqual(0, fixture.plan.files.items.len);
 }
