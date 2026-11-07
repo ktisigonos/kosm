@@ -35,6 +35,8 @@ pub const GenerateOptions = @import("Output/GenerateOptions.zig");
 pub const BlockOptions = @import("Output/BlockOptions.zig");
 /// Options for `edit`.
 pub const EditOptions = @import("Output/EditOptions.zig");
+/// Options for `find`.
+pub const FindOptions = @import("Output/FindOptions.zig");
 /// The files `edit` picked, and the calls setting values in them by path (D31).
 pub const Selection = @import("Output/Selection.zig");
 /// One value a path matched, from the escape hatch (D34, D80).
@@ -141,14 +143,7 @@ pub fn edit(output: *Output, options: EditOptions) Error!Selection {
         return planning.fail(output, error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no format)", .{adapter.name});
     const format = try output.checkFormat(options.files, options.format.orElse(adapter.default_format).resolve());
 
-    const pattern = try output.resolvePath(options.files);
-    const exclude = try output.allocator.alloc([]const u8, options.exclude.len);
-    for (options.exclude, exclude) |written, *resolved| resolved.* = try output.resolvePath(written);
-    var failure: glob.Failure = .{};
-    const found = glob.expand(output.allocator, output.plan.io, pattern, exclude, &failure) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.Unreadable => return planning.fail(output, error.ReadFailed, options.files, "cannot read {s}: {s}", .{ failure.path, failure.reason }),
-    };
+    const found = try output.expand(options.files, options.exclude);
     if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file; edit only changes files that exist (D28)", .{});
 
     const files = try output.allocator.alloc(Selection.File, found.len);
@@ -164,6 +159,29 @@ pub fn edit(output: *Output, options: EditOptions) Error!Selection {
         selected.* = .{ .path = file.path, .display_path = display_path, .source = source, .root = root };
     }
     return .{ .output = output, .selector = options.files, .adapter = adapter, .format = format, .files = files };
+}
+
+/// The existing files matching `options.files` and none of `options.exclude` (D79), sorted by
+/// path, written as an app writes them (`~/...` under the home directory), so they can be passed
+/// to any other call. Nothing is read. Matching no file is an error naming the glob (D95).
+pub fn find(output: *Output, options: FindOptions) Error![]const []const u8 {
+    const found = try output.expand(options.files, options.exclude);
+    if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file (D28)", .{});
+    const paths = try output.allocator.alloc([]const u8, found.len);
+    for (found, paths) |file, *path| path.* = try output.displayPath(file.path);
+    return paths;
+}
+
+/// The files `files` picks, leaving out `exclude` (D79).
+fn expand(output: *Output, files: []const u8, exclude: []const []const u8) Error![]const glob.Found {
+    const pattern = try output.resolvePath(files);
+    const resolved_exclude = try output.allocator.alloc([]const u8, exclude.len);
+    for (exclude, resolved_exclude) |written, *resolved| resolved.* = try output.resolvePath(written);
+    var failure: glob.Failure = .{};
+    return glob.expand(output.allocator, output.plan.io, pattern, resolved_exclude, &failure) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Unreadable => return planning.fail(output, error.ReadFailed, files, "cannot read {s}: {s}", .{ failure.path, failure.reason }),
+    };
 }
 
 /// `path` with the home directory written as `~`, as messages and diffs show files.
@@ -554,6 +572,25 @@ test "block creates a missing file, or appends to one lacking the block" {
     try output.block(.{ .file = "~/kitty.lines", .id = "colors" }, .{ .size = 1 });
     try output.block(.{ .file = "~/kitty.lines", .id = "tabs" }, .{ .size = 2 });
     try testing.expectEqualStrings("font = 12\n# kosm:begin colors\nsize = 1\n# kosm:end\n# kosm:begin tabs\nsize = 2\n# kosm:end\n", readPlanned(&fixture, 1));
+}
+
+test "find lists matching files under ~ in path order, and errors naming a glob matching none" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    for ([_][]const u8{ "zen/b.work/prefs.js", "zen/a.default/prefs.js", "zen/Crash Reports/x", "zen/c.old/prefs.js" }) |path| {
+        try fixture.tmp.dir.createDirPath(testing.io, std.Io.Dir.path.dirname(path).?);
+        try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = path, .data = "" });
+    }
+    var output = try fixture.output("zen", &.{});
+
+    const found = try output.find(.{ .files = "~/zen/*/prefs.js", .exclude = &.{"~/zen/c.old/**"} });
+    try testing.expectEqual(2, found.len);
+    try testing.expectEqualStrings("~/zen/a.default/prefs.js", found[0]);
+    try testing.expectEqualStrings("~/zen/b.work/prefs.js", found[1]);
+
+    try testing.expectError(error.NoFile, output.find(.{ .files = "~/firefox/*/prefs.js" }));
+    try testing.expectEqualStrings("~/firefox/*/prefs.js", fixture.diagnostics.file);
 }
 
 test "block replaces only the bytes between its markers" {
