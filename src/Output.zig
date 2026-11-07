@@ -95,22 +95,77 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
 
 /// Writes `values`, serialized like `generate`'s (D64), as block `options.id` of a file the user
 /// otherwise writes by hand (D71, D72). The rest of the file is kept byte for byte; a missing
-/// block is appended, a missing file created. Needs an adapter with `comment` and `serialize`.
+/// block is appended, a missing file created (or skipped, `options.missing`). Needs an adapter
+/// with `comment` and `serialize`.
 pub fn block(output: *Output, options: BlockOptions, values: anytype) Error!void {
     const path = try output.resolvePath(options.file);
     const adapter = try output.findAdapter(options.file, options.lang);
-    const comment = adapter.comment orelse
-        return planning.fail(output, error.MissingCapability, options.file, "adapter '{s}' cannot write blocks (it has no comment syntax)", .{adapter.name});
+    const comment = try output.blockComment(options.file, adapter);
     if (adapter.serialize == null)
         return planning.fail(output, error.MissingCapability, options.file, "adapter '{s}' cannot write data blocks (it has no serialize)", .{adapter.name});
-    if (!block_writer.isValidId(options.id))
-        return planning.fail(output, error.InvalidBlock, options.file, "block id '{s}' may only hold letters, digits, _, - and .", .{options.id});
-
+    try output.checkBlockId(options.file, options.id);
     const content = try output.serialize(options.file, adapter, options.format, values);
+    try output.planBlock(options, path, comment, content);
+}
+
+/// Writes a template, resolved against `app`'s fields like `template`'s (D60, D65), as block
+/// `options.id` of a file the user otherwise writes by hand (D71, D72). `options` is
+/// `.{ .file, .id, .text }` plus optional `.lang`, `.format` and `.missing`, as in `BlockOptions`;
+/// `.text` must be comptime. Needs an adapter with `comment`.
+pub fn templateBlock(output: *Output, app: anytype, options: anytype) Error!void {
+    const Options = @TypeOf(options);
+    comptime checkTemplateBlockOptions(Options);
+    const resolved: BlockOptions = .{
+        .file = options.file,
+        .id = options.id,
+        .lang = if (@hasField(Options, "lang")) options.lang else null,
+        .format = if (@hasField(Options, "format")) options.format else .{},
+        .missing = if (@hasField(Options, "missing")) options.missing else .create,
+    };
+    const path = try output.resolvePath(resolved.file);
+    const adapter = try output.findAdapter(resolved.file, resolved.lang);
+    const comment = try output.blockComment(resolved.file, adapter);
+    try output.checkBlockId(resolved.file, resolved.id);
+    const format = try output.checkFormat(resolved.file, resolved.format.orElse(adapter.default_format).resolve());
+
+    var content: std.Io.Writer.Allocating = .init(output.allocator);
+    defer content.deinit();
+    var failure: template_writer.Failure = .{};
+    var clipped: ClippedColors = .{};
+    const name = comptime if (isComptimeField(Options, "file")) options.file else "template block";
+    template_writer.render(&content.writer, name, options.text, app, format, &failure, &clipped) catch |err| switch (err) {
+        error.WriteFailed => return error.OutOfMemory,
+        error.MissingValue => return planning.fail(output, error.MissingValue, resolved.file, "block '{s}', template line {d}: kosm.{s} is null", .{ resolved.id, failure.line, failure.path }),
+        // checkFormat already wrote this color format once.
+        error.InvalidColorFormat => unreachable,
+    };
+    try planning.warnClipped(output, resolved.file, "", &clipped);
+    try output.planBlock(resolved, path, comment, content.written());
+}
+
+fn blockComment(output: *Output, file: []const u8, adapter: Adapter) Error!Adapter.Comment {
+    return adapter.comment orelse
+        planning.fail(output, error.MissingCapability, file, "adapter '{s}' cannot write blocks (it has no comment syntax)", .{adapter.name});
+}
+
+fn checkBlockId(output: *Output, file: []const u8, id: []const u8) Error!void {
+    if (!block_writer.isValidId(id))
+        return planning.fail(output, error.InvalidBlock, file, "block id '{s}' may only hold letters, digits, _, - and .", .{id});
+}
+
+/// Plans `content` as block `options.id` of the file at absolute `path` (D72).
+fn planBlock(output: *Output, options: BlockOptions, path: []const u8, comment: Adapter.Comment, content: []const u8) Error!void {
     var failure: block_writer.Failure = .{};
     block_writer.checkContent(content, comment, &failure) catch
         return planning.fail(output, error.InvalidBlock, options.file, "block '{s}', line {d} of its content: {s}", .{ options.id, failure.line, failure.problem.describe() });
-    const file = output.plan.load(path, options.file) catch |err| return output.failRead(options.file, err);
+    const file = switch (options.missing) {
+        .create => output.plan.load(path, options.file) catch |err| return output.failRead(options.file, err),
+        .skip => output.plan.loadExisting(path, options.file) catch |err| return output.failRead(options.file, err),
+    } orelse return output.warn(
+        options.file,
+        "does not exist, so block '{s}' is not written; apply again once it exists, or add the block's lines yourself:\n{s}",
+        .{ options.id, std.mem.trimEnd(u8, content, "\n") },
+    );
     const current = file.current();
     const found = block_writer.find(output.allocator, current, comment, options.id, &failure) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -247,6 +302,22 @@ fn checkTemplateOptions(comptime Options: type) void {
     if (!@hasField(Options, "file")) @compileError("output.template: missing option .file");
     if (!@hasField(Options, "text")) @compileError("output.template: missing option .text");
     if (!isComptimeField(Options, "text")) @compileError("output.template: .text must be comptime, e.g. @embedFile(\"templates/theme.lua\")");
+}
+
+fn checkTemplateBlockOptions(comptime Options: type) void {
+    if (@typeInfo(Options) != .@"struct") @compileError("output.templateBlock: options must be a struct literal: .{ .file = ..., .id = ..., .text = ... }");
+    for (std.meta.fieldNames(Options)) |field_name| {
+        const known = for ([_][]const u8{ "file", "id", "text", "lang", "format", "missing" }) |option| {
+            if (std.mem.eql(u8, field_name, option)) break true;
+        } else false;
+        if (!known) @compileError("output.templateBlock: unknown option '" ++ field_name ++ "'; options are file, id, text, lang, format, missing");
+    }
+    if (@hasField(Options, "format") and @FieldType(Options, "format") != Format)
+        @compileError("output.templateBlock: .format must be a kosm.Format, e.g. self.format");
+    inline for (.{ "file", "id", "text" }) |required| {
+        if (!@hasField(Options, required)) @compileError("output.templateBlock: missing option ." ++ required);
+    }
+    if (!isComptimeField(Options, "text")) @compileError("output.templateBlock: .text must be comptime, e.g. @embedFile(\"templates/block.lua\")");
 }
 
 fn isComptimeField(comptime Options: type, comptime name: []const u8) bool {
@@ -655,4 +726,56 @@ test "block errors name the line, the id or the missing capability" {
     try testing.expectError(error.MissingCapability, no_serialize.block(.{ .file = "~/a.plain", .id = "colors" }, .{ .size = 1 }));
     try testing.expectEqual(1, fixture.plan.files.items.len);
     try testing.expect(!fixture.plan.hasChanges());
+}
+
+test "templateBlock appends a template's lines to an existing file, and leaves them alone afterwards" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "main.lines", .data = "font = 12" });
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "done.lines", .data = "a\n# kosm:begin include\nload #5e81acff\n# kosm:end\nb\n" });
+    var output = try fixture.output("terminal", &.{lines_adapter});
+    const app: TemplateApp = .{ .accent = try Color.parseHex("#5e81ac") };
+
+    try output.templateBlock(app, .{ .file = "~/main.lines", .id = "include", .text = "load kosm.accent\n", .missing = .skip });
+    try testing.expectEqualStrings("font = 12\n# kosm:begin include\nload #5e81acff\n# kosm:end\n", readPlanned(&fixture, 0));
+    try output.templateBlock(app, .{ .file = "~/done.lines", .id = "include", .text = "load kosm.accent", .missing = .skip });
+    try testing.expect(!fixture.plan.files.items[1].changed());
+    try output.templateBlock(app, .{ .file = "~/new.txt", .id = "include", .text = "load kosm.accent", .lang = "lines", .format = Format{ .color = .hex } });
+    try testing.expectEqualStrings("# kosm:begin include\nload #5e81ac\n# kosm:end\n", readPlanned(&fixture, 2));
+    try testing.expectEqual(0, fixture.warnings.items.items.len);
+}
+
+test "a block skipping a missing file plans nothing and warns with its lines" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("hyprland", &.{lines_adapter});
+    const app: TemplateApp = .{ .accent = try Color.parseHex("#5e81ac") };
+
+    try output.templateBlock(app, .{ .file = "~/hypr/main.lines", .id = "include", .text = "load kosm\n", .missing = .skip });
+    try output.block(.{ .file = "~/other.lines", .id = "colors", .missing = .skip }, .{ .size = 1 });
+    try testing.expectEqual(0, fixture.plan.files.items.len);
+    const warnings = fixture.warnings.items.items;
+    try testing.expectEqual(2, warnings.len);
+    try testing.expectEqualStrings("~/hypr/main.lines", warnings[0].file);
+    try testing.expectEqualStrings("does not exist, so block 'include' is not written; apply again once it exists, or add the block's lines yourself:\nload kosm", warnings[0].message);
+
+    var terminal = try fixture.output("terminal", &.{lines_adapter});
+    try terminal.generate(.{ .file = "~/created.lines" }, .{ .size = 1 });
+    try testing.expectError(error.EditsOverlap, output.block(.{ .file = "~/created.lines", .id = "colors", .missing = .skip }, .{ .size = 2 }));
+}
+
+test "templateBlock errors name the block" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("editor", &.{ lines_adapter, .{ .name = "plain", .extensions = &.{".plain"} } });
+    const app: TemplateApp = .{ .accent = try Color.parseHex("#5e81ac") };
+    try testing.expectError(error.MissingValue, output.templateBlock(app, .{ .file = "~/a.lines", .id = "theme", .text = "a\nkosm.border_inactive\n" }));
+    try testing.expectEqualStrings("block 'theme', template line 2: kosm.border_inactive is null", fixture.diagnostics.message());
+    try testing.expectError(error.MissingCapability, output.templateBlock(app, .{ .file = "~/a.plain", .id = "theme", .text = "a" }));
+    try testing.expectError(error.InvalidBlock, output.templateBlock(app, .{ .file = "~/a.lines", .id = "two words", .text = "a" }));
+    try testing.expectError(error.InvalidBlock, output.templateBlock(app, .{ .file = "~/a.lines", .id = "theme", .text = "# kosm:end\n" }));
+    try testing.expectEqual(0, fixture.plan.files.items.len);
 }

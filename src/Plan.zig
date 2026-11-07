@@ -42,13 +42,35 @@ pub const LoadError = std.mem.Allocator.Error || std.Io.Dir.ReadFileAllocError;
 /// The planned file at absolute `path`, reading what is there now when it is new to the plan.
 /// The pointer is valid until the next `load` or `add`. Copies both paths.
 pub fn load(plan: *Plan, path: []const u8, display_path: []const u8) LoadError!*File {
+    if (plan.findPlanned(path)) |file| return file;
+    return plan.append(path, display_path, try plan.read(path));
+}
+
+/// Like `load`, but a file that is neither on disk nor planned is null, and stays out of the
+/// plan.
+pub fn loadExisting(plan: *Plan, path: []const u8, display_path: []const u8) LoadError!?*File {
+    if (plan.findPlanned(path)) |file| return file;
+    const old = try plan.read(path) orelse return null;
+    return try plan.append(path, display_path, old);
+}
+
+fn findPlanned(plan: *Plan, path: []const u8) ?*File {
     for (plan.files.items) |*file| {
         if (std.mem.eql(u8, file.path, path)) return file;
     }
-    const old = std.Io.Dir.cwd().readFileAlloc(plan.io, path, plan.allocator, .limited(max_file_size)) catch |err| switch (err) {
+    return null;
+}
+
+/// The file's contents, or null when it does not exist.
+fn read(plan: *Plan, path: []const u8) LoadError!?[]u8 {
+    return std.Io.Dir.cwd().readFileAlloc(plan.io, path, plan.allocator, .limited(max_file_size)) catch |err| switch (err) {
         error.FileNotFound => null,
-        else => return err,
+        else => err,
     };
+}
+
+/// Adds a file to the plan, taking ownership of `old`.
+fn append(plan: *Plan, path: []const u8, display_path: []const u8, old: ?[]u8) LoadError!*File {
     errdefer if (old) |bytes| plan.allocator.free(bytes);
     const owned_path = try plan.allocator.dupe(u8, path);
     errdefer plan.allocator.free(owned_path);
