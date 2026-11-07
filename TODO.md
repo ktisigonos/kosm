@@ -122,7 +122,7 @@ Markers:
   - Do: drop the `kosm_repository` root that the binary records today (D83 no longer needs it).
   - Done when: tests (offline: the URL is a local directory) show an init config lists only `kosm` and applies with a built-in app, a build uses the forked sources over the pinned ones, `kosm source` sets, prints and clears the override, a config not depending on `kosm` gets no `--fork`, and an interface mismatch fails naming both numbers.
 
-- [ ] **9f. Settings an app doesn't cover**
+- [x] **9f. Settings an app doesn't cover**
   - Do: D99: `kosm.Setting` in core, and `kosm_hyprland.extra` written to both targets after the app's own settings, nested into the generated module's tables.
   - Done when: tests show extras land in the generated module beside typed options (quoted keys too), are set by path on the edit target, and an extra equal to, inside or containing another set setting or extra fails naming both.
 

@@ -24,6 +24,10 @@ format: kosm.Format = .{ .color = .hex8 },
 /// (D23), e.g. `general.col.inactive_border` from `general.col.active_border`.
 /// Default: the theme's `state.inactive`.
 inactive: kosm.Modifier,
+/// Settings the app doesn't cover, such as a plugin's (D99), written after its own:
+/// `.{ .path = "plugin.dynamic_cursors.length", .value = .{ .integer = 24 } }`. One that
+/// overlaps a set option or another extra fails the apply. Default: none.
+extra: []const kosm.Setting = &.{},
 
 general: General = .{},
 decoration: Decoration = .{},
@@ -114,7 +118,7 @@ pub const InputCapture = @import("sections/InputCapture.zig");
 pub const Quirks = @import("sections/Quirks.zig");
 
 /// App fields that are kosm's, not Hyprland options.
-const own_fields = [_][]const u8{ "target", "include", "format", "inactive" };
+const own_fields = [_][]const u8{ "target", "include", "format", "inactive", "extra" };
 
 /// Colors from the theme (D27): the active border, glow and groupbar text from the accent
 /// (cyan) and the foreground, groups in yellow (locked: orange), windows that can't be grouped in
@@ -159,7 +163,7 @@ pub fn apply(self: App, output: *kosm.Output) !void {
     for (try settings.list(output.allocator, self, &own_fields)) |setting| {
         if (setting.problem) |message| return output.fail(file, "option '{s}': {s}", .{ setting.path, message });
     }
-    const set = try settings.list(output.allocator, self.withDerived(), &own_fields);
+    const set = try self.withExtras(output, file, try settings.list(output.allocator, self.withDerived(), &own_fields));
     switch (self.target) {
         .generate => {
             if (self.include != null and !std.mem.eql(u8, file, default_module))
@@ -173,6 +177,33 @@ pub fn apply(self: App, output: *kosm.Output) !void {
             for (set) |setting| try selection.set(setting.path, setting.value);
         },
     }
+}
+
+/// `set` followed by the extras (D99), each checked against everything before it.
+fn withExtras(self: App, output: *kosm.Output, file: []const u8, set: []const settings.Setting) ![]const settings.Setting {
+    var all: std.ArrayList(settings.Setting) = .empty;
+    try all.appendSlice(output.allocator, set);
+    for (self.extra) |extra| {
+        var failure: kosm.Path.Failure = .{};
+        const path = kosm.Path.parse(output.allocator, extra.path, &failure) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.InvalidKeyPath => return output.fail(file, "extra '{s}', column {d}: {s}", .{ extra.path, failure.column, failure.problem.describe() }),
+        };
+        const keys = try output.allocator.alloc(?[]const u8, path.segments.len);
+        for (path.segments, keys) |segment, *key| key.* = switch (segment) {
+            .key => |name| name,
+            .any => if (self.target == .generate)
+                return output.fail(file, "extra '{s}': '*' matches keys in files kosm edits, and a generated module has none to match", .{extra.path})
+            else
+                null,
+        };
+        try all.append(output.allocator, .{ .path = extra.path, .keys = keys, .value = extra.value, .extra = true });
+    }
+    if (settings.overlap(all.items)) |found| {
+        const kind = if (found.other.extra) "extra" else "option";
+        return output.fail(file, "extra '{s}' and {s} '{s}' write the same key, or one inside the other; keep one (D99)", .{ found.extra.path, kind, found.other.path });
+    }
+    return all.items;
 }
 
 /// The app with every null inactive color derived from its set active one (D23).
@@ -639,4 +670,73 @@ test "a gradient Hyprland can't draw fails the apply, naming the option (D93)" {
     try testing.expectEqualStrings("option 'decoration.glow.color': the gradient has no colors; set at least one", fixture.diagnostics.message());
     try testing.expectEqualStrings("~/.config/hypr/**/*.lua", fixture.diagnostics.file);
     try testing.expectEqual(0, fixture.plan.files.items.len);
+}
+
+test "extras land in the generated module's tables beside the options, quoted keys too (D99)" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{});
+    defer fixture.deinit();
+    var app = bareApp();
+    app.target = .{ .generate = "~/kosm.lua" };
+    app.general.border_size = 2;
+    app.decoration.rounding = 10;
+    app.extra = &.{
+        .{ .path = "plugin.dynamic_cursors.length", .value = .{ .integer = 24 } },
+        .{ .path = "general.future_option", .value = .{ .color = kosm.hex("#2e8799") } },
+        .{ .path = "plugin.\"hy.prop\".enabled", .value = .{ .boolean = false } },
+    };
+    try app.apply(&fixture.output);
+    try testing.expectEqualStrings(
+        \\return {
+        \\    general = {
+        \\        border_size = 2,
+        \\        future_option = "#2e8799",
+        \\    },
+        \\    decoration = {
+        \\        rounding = 10,
+        \\    },
+        \\    plugin = {
+        \\        dynamic_cursors = {
+        \\            length = 24,
+        \\        },
+        \\        ["hy.prop"] = {
+        \\            enabled = false,
+        \\        },
+        \\    },
+        \\}
+        \\
+    , fixture.planned("~/kosm.lua"));
+}
+
+test "the edit target sets extras by path in the user's files (D99)" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{.{ ".config/hypr/plugins.lua", "hl.config({ plugin = { dynamic_cursors = { length = 10 } } })\n" }});
+    defer fixture.deinit();
+    var app = bareApp();
+    app.target = .{ .edit = .{} };
+    app.extra = &.{.{ .path = "plugin.*.length", .value = .{ .integer = 24 } }};
+    try app.apply(&fixture.output);
+    try testing.expectEqualStrings("hl.config({ plugin = { dynamic_cursors = { length = 24 } } })\n", fixture.planned("~/.config/hypr/plugins.lua"));
+}
+
+test "an extra overlapping an option or another extra fails naming both (D99)" {
+    const cases = [_]struct { extra: []const kosm.Setting, message: []const u8 }{
+        .{ .extra = &.{.{ .path = "general.border_size", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size' and option 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
+        .{ .extra = &.{.{ .path = "general.border_size.width", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size.width' and option 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
+        .{ .extra = &.{.{ .path = "general", .value = .{ .table = &.{} } }}, .message = "extra 'general' and option 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
+        .{ .extra = &.{ .{ .path = "plugin.a", .value = .{ .integer = 1 } }, .{ .path = "plugin.\"a\".b", .value = .{ .integer = 2 } } }, .message = "extra 'plugin.\"a\".b' and extra 'plugin.a' write the same key, or one inside the other; keep one (D99)" },
+        .{ .extra = &.{.{ .path = "plugin.*.length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin.*.length': '*' matches keys in files kosm edits, and a generated module has none to match" },
+        .{ .extra = &.{.{ .path = "plugin..length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin..length', column 8: a segment is empty (two dots, or a dot at an end)" },
+    };
+    for (cases) |case| {
+        var fixture: Fixture = undefined;
+        try fixture.init(&.{});
+        defer fixture.deinit();
+        var app = bareApp();
+        app.general.border_size = 2;
+        app.extra = case.extra;
+        try testing.expectError(error.AppFailed, app.apply(&fixture.output));
+        try testing.expectEqualStrings(case.message, fixture.diagnostics.message());
+        try testing.expectEqual(0, fixture.plan.files.items.len);
+    }
 }

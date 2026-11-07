@@ -7,14 +7,21 @@ const kosm = @import("kosm");
 
 const Allocator = std.mem.Allocator;
 
-/// One set option.
+/// One set option, or an extra (D99).
 pub const Setting = struct {
-    /// Dot-separated keys, e.g. `decoration.blur.size`.
+    /// Dot-separated keys, e.g. `decoration.blur.size`, as the user wrote it.
     path: []const u8,
+    /// The keys of `path`, outermost first. Null in an extra's means `*`, any one key.
+    keys: []const ?[]const u8,
     value: kosm.Value,
     /// Why Hyprland can't read the value, if it can't.
     problem: ?[]const u8 = null,
+    /// Whether it came from the app's `extra` rather than one of its fields.
+    extra: bool = false,
 };
+
+/// Two settings where one would write over the other.
+pub const Overlap = struct { extra: Setting, other: Setting };
 
 /// Every set option of `sections` (the app, or one section) with its path, in declaration
 /// order, so the options of one section are next to each other. Fields named in `skipped` are
@@ -25,35 +32,64 @@ pub fn list(allocator: Allocator, sections: anytype, comptime skipped: []const [
     return found.items;
 }
 
-/// `settings`, from `list`, as nested tables: `general.border_size` is the table `general`
-/// holding `border_size`.
+/// The first extra whose keys equal, contain or lie inside those of another setting or an
+/// earlier extra (D99), which would write one value over the other.
+pub fn overlap(settings: []const Setting) ?Overlap {
+    for (settings, 0..) |setting, index| {
+        if (!setting.extra) continue;
+        for (settings[0..index]) |other| {
+            if (nested(setting.keys, other.keys)) return .{ .extra = setting, .other = other };
+        }
+    }
+    return null;
+}
+
+/// Whether the shorter of `a` and `b` starts the longer, `*` matching any key.
+fn nested(a: []const ?[]const u8, b: []const ?[]const u8) bool {
+    for (a[0..@min(a.len, b.len)], b[0..@min(a.len, b.len)]) |a_key, b_key| {
+        const a_name = a_key orelse continue;
+        const b_name = b_key orelse continue;
+        if (!std.mem.eql(u8, a_name, b_name)) return false;
+    }
+    return true;
+}
+
+/// `settings` as nested tables: `general.border_size` is the table `general` holding
+/// `border_size`. Settings sharing a table land in it in order, wherever they are in the list.
+/// Asserts no two overlap (`overlap`) and no key is `*`.
 pub fn tree(allocator: Allocator, settings: []const Setting) Allocator.Error!kosm.Value {
     return nest(allocator, settings, 0);
 }
 
 fn nest(allocator: Allocator, settings: []const Setting, depth: usize) Allocator.Error!kosm.Value {
     var entries: std.ArrayList(kosm.Value.Entry) = .empty;
-    var index: usize = 0;
-    while (index < settings.len) {
-        const key = segment(settings[index].path, depth);
-        if (segment(settings[index].path, depth + 1).len == 0) {
-            try entries.append(allocator, .{ .key = key, .value = settings[index].value });
-            index += 1;
+    const placed = try allocator.alloc(bool, settings.len);
+    @memset(placed, false);
+    for (settings, 0..) |setting, index| {
+        if (placed[index]) continue;
+        const key = setting.keys[depth].?;
+        if (setting.keys.len == depth + 1) {
+            try entries.append(allocator, .{ .key = key, .value = setting.value });
             continue;
         }
-        var end = index + 1;
-        while (end < settings.len and std.mem.eql(u8, segment(settings[end].path, depth), key)) end += 1;
-        try entries.append(allocator, .{ .key = key, .value = try nest(allocator, settings[index..end], depth + 1) });
-        index = end;
+        var inside: std.ArrayList(Setting) = .empty;
+        for (settings[index..], placed[index..]) |other, *other_placed| {
+            if (other.keys.len > depth + 1 and std.mem.eql(u8, other.keys[depth].?, key)) {
+                try inside.append(allocator, other);
+                other_placed.* = true;
+            }
+        }
+        try entries.append(allocator, .{ .key = key, .value = try nest(allocator, inside.items, depth + 1) });
     }
     return .{ .table = entries.items };
 }
 
-/// The `depth`-th key of `path`, or empty past its end.
-fn segment(path: []const u8, depth: usize) []const u8 {
-    var keys = std.mem.splitScalar(u8, path, '.');
-    for (0..depth) |_| _ = keys.next() orelse return "";
-    return keys.next() orelse "";
+/// The keys of a field path, which never holds quotes or `*`.
+fn fieldKeys(allocator: Allocator, path: []const u8) Allocator.Error![]const ?[]const u8 {
+    var keys: std.ArrayList(?[]const u8) = .empty;
+    var parts = std.mem.splitScalar(u8, path, '.');
+    while (parts.next()) |part| try keys.append(allocator, part);
+    return keys.items;
 }
 
 fn collect(allocator: Allocator, sections: anytype, comptime prefix: []const u8, comptime skipped: []const []const u8, found: *std.ArrayList(Setting)) Allocator.Error!void {
@@ -67,6 +103,7 @@ fn collect(allocator: Allocator, sections: anytype, comptime prefix: []const u8,
         if (@typeInfo(Field) == .optional) {
             if (field) |option| try found.append(allocator, .{
                 .path = path,
+                .keys = try fieldKeys(allocator, path),
                 .value = try value(allocator, option),
                 .problem = try problem(allocator, option),
             });

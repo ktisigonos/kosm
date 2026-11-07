@@ -79,6 +79,22 @@ The types live in `kosm_hyprland.values`:
   (`scrolling.follow_focus`, `cursor.no_hardware_cursors`, ...) declare `numbered` and are written
   as the number (`.soft` -> `2`).
 
+## Settings the app doesn't cover
+
+`extra` writes any other setting, such as a plugin's or one Hyprland added after this app, by
+path (D32, D99). Each value is a `kosm.Value`, formatted like the app's own options:
+
+```zig
+hyprland.extra = &.{
+    .{ .path = "plugin.dynamic_cursors.length", .value = .{ .integer = 24 } },
+    .{ .path = "plugin.dynamic_cursors.enabled", .value = .{ .boolean = true } },
+};
+```
+
+Extras go to the target after the app's options: into the generated module's tables, or set by
+path in your files (`*` matches one key there). An extra whose path equals, contains or lies
+inside a set option's or another extra's fails the apply naming both.
+
 ## App fields
 
 | Field | Default |
@@ -87,6 +103,7 @@ The types live in `kosm_hyprland.values`:
 | `include` | `"~/.config/hypr/hyprland.lua"`: the file that gets the block reading the generated module, `.generate` target only; `null` for no block |
 | `format` | `.{ .color = .hex8 }`: `#rrggbbaa`, so alpha is kept; the rest from the Lua adapter, then kosm (D70) |
 | `inactive` | the theme's `state.inactive`; derives the inactive colors listed above |
+| `extra` | `&.{}`: settings the app doesn't cover, by path (D99) |
 
 ## Options
 
