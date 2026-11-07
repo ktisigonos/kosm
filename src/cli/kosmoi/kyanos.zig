@@ -247,6 +247,9 @@ fn browser(theme: kosm.Theme, colors: Colors) zen.App {
         prefs.theme.accent_color = kosm.hex("080808");
         prefs.theme.gradient.value = false;
         prefs.view.grey_out_inactive_windows = false;
+        // Zen takes alpha in its color prefs, so pages sit on the translucent background.
+        profile.format.color = .hex8;
+        profile.prefs.browser.display.background_color = colors.background;
     }
     return app;
 }
