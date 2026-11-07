@@ -108,7 +108,7 @@ Markers:
   - Do: `kosm_lua`: `serialize`, writing a module (`return { ... }`) for `generate`; positional tables (`{ "a", "b" }`) as lists for `elements` (D80, D90).
   - Done when: the generated module holds Hyprland's own shape, and the edit target is tested on real-world `hl.config` snippets in a temp directory, including gradients (`{ colors = { ... } }`) and values split across files.
 
-- [ ] **9c. Zen prefs through `kosm_userjs`** `PLAN FIRST`
+- [x] **9c. Zen prefs through `kosm_userjs`** `PLAN FIRST`
   - Do: a `user.js` adapter (`user_pref("name", value);`) and `kosm_zen` fields for Zen's about:config prefs (D27). The plan asks which prefs to cover first.
   - Done when: the adapter round trips real `user.js` snippets and `kosm_zen` writes its prefs in a temp profile.
 

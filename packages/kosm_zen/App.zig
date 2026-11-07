@@ -1,5 +1,6 @@
 //! Zen Browser's theme colors (D22, D27), generated as `--kosm-*` custom properties into
 //! `file`. userChrome.css and userContent.css `@import` it and use them through `var()` (D57).
+//! Its about:config prefs go to every profile's `user.js` through `profile` (D94).
 
 const App = @This();
 
@@ -29,8 +30,12 @@ containers: Containers,
 /// Makes `button_hovered` from `button` when it is null (D23, D24). Default: the theme's
 /// `state.hovered`.
 hovered: kosm.Modifier,
+/// The about:config prefs every profile gets (D94). null: no prefs, only the CSS, e.g. on a
+/// machine without Zen. Default: `Profile.from(theme)` for every profile.
+profile: ?Profile,
 
 pub const Containers = @import("Containers.zig");
+pub const Profile = @import("Profile.zig");
 
 /// Colors from the theme (D27).
 pub fn from(theme: kosm.Theme) App {
@@ -53,10 +58,11 @@ pub fn from(theme: kosm.Theme) App {
             .purple = palette.purple,
         },
         .hovered = theme.variations.state.hovered,
+        .profile = .from(theme),
     };
 }
 
-/// Writes every color as a `--kosm-*` custom property.
+/// Writes every color as a `--kosm-*` custom property, then the prefs of `profile`.
 pub fn apply(self: App, output: *kosm.Output) !void {
     try output.generate(.{ .file = self.file, .lang = "css", .format = self.format }, .{ .kosm = .{
         .foreground = self.foreground,
@@ -67,6 +73,7 @@ pub fn apply(self: App, output: *kosm.Output) !void {
         .border = self.border,
         .containers = self.containers,
     } });
+    if (self.profile) |profile| try profile.apply(output);
 }
 
 const testing = std.testing;
@@ -95,6 +102,7 @@ test "apply writes every color as a --kosm custom property" {
 
     const theme = kosm.Theme.from(.{ .black = kosm.hex("041c26"), .white = kosm.hex("a3c5cc"), .cyan = kosm.hex("268078") }, .dark);
     var app = from(theme);
+    app.profile = null;
     app.button = kosm.hex("082e3f");
     app.containers.pink = kosm.hex("4d74af");
     try app.apply(&output);

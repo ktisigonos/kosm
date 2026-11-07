@@ -6,6 +6,7 @@
     .dependencies = .{
         .kosm = .{ .path = "../.." },
         .kosm_css = .{ .path = "../kosm_css" },
+        .kosm_userjs = .{ .path = "../kosm_userjs" },
     },
     .paths = .{
         "build.zig",
@@ -13,6 +14,10 @@
         "root.zig",
         "App.zig",
         "Containers.zig",
+        "Profile.zig",
+        "Prefs.zig",
+        "prefs",
+        "user_js.zig",
         "README.md",
     },
 }
