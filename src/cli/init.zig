@@ -362,6 +362,10 @@ test "an initialized config builds with the forked kosm sources, applies its sta
     const build = try context.runZig(&.{ "build", "-Dkosmos=kyanos" });
     if (!build.term.success()) std.debug.print("{s}\n", .{build.stderr});
     try testing.expect(build.term.success());
+    // Editors learn the config's imports from the check step (D104).
+    const check = try context.runZig(&.{ "build", "check" });
+    if (!check.term.success()) std.debug.print("{s}\n", .{check.stderr});
+    try testing.expect(check.term.success());
     const runner = try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" });
     const applied = try context.run(&.{ runner, "--config", context.config });
     if (!applied.term.success()) std.debug.print("{s}\n", .{applied.stderr});

@@ -3,7 +3,8 @@
 //! name (D43, D50, D62), and `-Dkosmos=frost.iced`
 //! builds `zig-out/bin/kosmos`, the runner for that one kosmos (D45). `-Dinspect=kosm_kitty` builds
 //! `zig-out/bin/inspect`, which reports what that installed package provides (D46). `-Dlist` builds
-//! `zig-out/bin/list`, which lists every kosmos and installed package (D85).
+//! `zig-out/bin/list`, which lists every kosmos and installed package (D85). `check` compiles
+//! every local one, so editors see the config's imports (D104).
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -58,10 +59,22 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
         }
     }
 
+    addEditorCheck(b, names.modules.items);
     if (inspected_name) |name| addInspector(b, target, optimize, kosm_dependency, names.modules.items, name);
     if (list) addLister(b, target, optimize, kosm_dependency, names.modules.items);
     const name = kosmos_name orelse return;
     addRunner(b, target, optimize, kosm_dependency, names.modules.items, name);
+}
+
+/// A `check` step compiling every local kosmos, app and adapter, which `zig build` and kosm never
+/// run. Editors read the module graph from the build's steps, so it is what gives ZLS every
+/// import of the config (D104).
+fn addEditorCheck(b: *std.Build, entries: []const Entry) void {
+    const check = b.step("check", "Compile every local kosmos, app and adapter; editors read their imports from it");
+    for (entries) |entry| {
+        if (entry.kind == .package) continue;
+        check.dependOn(&b.addObject(.{ .name = entry.name, .root_module = entry.module }).step);
+    }
 }
 
 const Kind = enum { package, kosmos, app, adapter };
