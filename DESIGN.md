@@ -544,6 +544,7 @@ Each step is usable on its own.
 8. **Warnings and fixes:** core can warn without failing (gamut clipping, D48).
 9. **Apps for the programs in use:** `kosm_ghostty`, `kosm_hyprland`, Zen's prefs through `kosm_userjs`.
 10. **Kyanos for real:** the human's own config project rices their desktop.
+11. **More adapters:** `kosm_toml`, `kosm_ini`.
 
 ## 12. Non-goals (v1)
 

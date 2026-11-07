@@ -121,6 +121,14 @@ Markers:
   - Do: a config project made by `kosm init` holding the Kyanos kosmos (ghostty, Hyprland through a local `hypr_defs` app on `defs.lua`, nvim, Zen, plus anything else Ricer rices today) and the local apps it needs. Where the project lives (in the Ktisis or `~/.config/kosm`) is the human's choice.
   - Done when: `kosm apply kyanos --diff` against the real files shows only deliberate differences, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 8).
 
+- [ ] **11a. `kosm_toml`** `PLAN FIRST` `ASK`
+  - Do: a TOML adapter with `serialize`, `format`, `comment` and `parser` (D39), mapping every way TOML nests keys (`[table]`, `[a.b]`, dotted keys `a.b = 1`, inline tables `{ a = 1 }`) onto one path (D30); arrays of tables (`[[x]]`) are lists for `elements` (D77, D80). The plan proposes a tree-sitter grammar or a hand-written parser (D40); a grammar is a dependency (hard rule 6).
+  - Done when: path matching, cardinality and byte-preserving edits are tested on real-world TOML snippets (alacritty, vicinae), including the nestings above.
+
+- [ ] **11b. `kosm_ini`** `PLAN FIRST`
+  - Do: a hand-written INI adapter (D40) with `serialize`, `format`, `comment` and `parser`: `[section]` headers, `key = value` lines, `;` and `#` comments, keys before the first section at the top level. The plan settles the dialect details real configs need (`key=value` without spaces, repeated keys, `[Section][Sub]` as in kdeglobals).
+  - Done when: path matching, cardinality and byte-preserving edits are tested on real-world snippets (dunst, qt5ct/qt6ct colors, kdeglobals, foot).
+
 ---
 
 Follow-ups with no step yet: none.
