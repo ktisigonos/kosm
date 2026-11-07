@@ -104,13 +104,18 @@ Markers:
   - Done when: the adapter round trips real ghostty config snippets, and the app's output for Kyanos matches `~/.config/ghostty/Ricer` except deliberate D27 changes (read only).
 
 - [ ] **9b. `kosm_hyprland`** `PLAN FIRST`
-  - Do: a Hyprland app that sets `hl.config` keys in any Lua file through `output.edit` and `kosm_lua` (D25, D30), following D27; a user whose values live in a defs table writes a local app instead (D25).
-  - Do: `kosm_lua`: positional tables (`{ "a", "b" }`) as lists for `elements` (D80); `Spec.list` picks lists by node type, and Lua's lists and tables are one node type.
-  - Done when: the app is tested on real-world `hl.config` snippets in a temp directory, including gradients (`{ colors = { ... } }`) and values split across files.
+  - Do: a Hyprland app covering every `hl.config` option of upstream Hyprland (D27), whose `target` (D91) either `generate`s `~/.config/hypr/kosm.lua` (the default) or sets the keys in the user's Lua files through `output.edit` (D25, D30).
+  - Do: `kosm_lua`: `serialize`, writing a module (`return { ... }`) for `generate`; positional tables (`{ "a", "b" }`) as lists for `elements` (D80, D90).
+  - Done when: the generated module holds Hyprland's own shape, and the edit target is tested on real-world `hl.config` snippets in a temp directory, including gradients (`{ colors = { ... } }`) and values split across files.
 
 - [ ] **9c. Zen prefs through `kosm_userjs`** `PLAN FIRST`
   - Do: a `user.js` adapter (`user_pref("name", value);`) and `kosm_zen` fields for Zen's about:config prefs (D27). The plan asks which prefs to cover first.
   - Done when: the adapter round trips real `user.js` snippets and `kosm_zen` writes its prefs in a temp profile.
+
+- [ ] **9d. Starting files**
+  - Do: `output.seed` (D92): writes a file only when it is missing, planned and committed like every writer.
+  - Do: `kosm_hyprland` seeds `~/.config/hypr/hyprland.lua` with a starting config that reads the generated file (`hl.config(require("kosm"))`).
+  - Done when: tests show a missing file is created, an existing one is never read or changed, and `--diff` shows the new file.
 
 - [ ] **10. Kyanos for real** `PLAN FIRST` `ASK`
   - Do: a config project made by `kosm init` holding the Kyanos kosmos (ghostty, Hyprland through a local `hypr_defs` app on `defs.lua`, nvim, Zen, plus anything else Ricer rices today) and the local apps it needs. Where the project lives (in the Ktisis or `~/.config/kosm`) is the human's choice.
