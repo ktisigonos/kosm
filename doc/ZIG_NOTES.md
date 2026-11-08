@@ -12,8 +12,8 @@ Purpose: stop agents (and humans) from repeating the same mistakes. Zig is pre-1
 
 - Toolchain verified: Zig 0.17.0 (`zig version`), 2026-11-05.
 - Language reference: `doc/generated/zig/` (run `./fetch-docs.sh`; one file per chapter, search across the directory, open only small chapters whole).
-- Zig std source: run `zig env` and use `.std_dir`; see AGENTS.md for the search commands.
-- **`zig env` prints ZON, not JSON:** the AGENTS.md one-liner (`"std_dir": *"..."`) matches nothing. Use `zig env | grep -o '\.std_dir = "[^"]*"' | cut -d'"' -f2`. `std.builtin.Type` lives in `std/lang.zig`, not `builtin.zig`.
+- Zig std source: run `zig env` and use `.std_dir`; see `.agents/zig.md` for the search commands.
+- **`zig env` prints ZON, not JSON:** a JSON-style pattern (`"std_dir": *"..."`) matches nothing. Use `zig env | grep -o '\.std_dir = "[^"]*"' | cut -d'"' -f2`. `std.builtin.Type` lives in `std/lang.zig`, not `builtin.zig`.
 - Dependencies: `zig-pkg/<package>/` (the hash-named directory changes when a dependency is updated).
 
 When unsure about any std function, grep the std source for its definition before using it.

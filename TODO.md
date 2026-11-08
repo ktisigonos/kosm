@@ -133,10 +133,10 @@ Markers:
 
 - [x] **10. Kyanos for real** `PLAN FIRST`
   - Do: `~/.config/kosm` made by `kosm init` with the installed kosm (D98), holding the Kyanos kosmos: kitty, ghostty, nvim, Zen (theme CSS, and prefs in a test profile under `~/.zen-kosm/` holding a copy of the real profile's `prefs.js`: `zen.theme.accent-color = #080808`, `zen.theme.gradient = false`, `zen.view.grey-out-inactive-windows = false`), and `kosm_hyprland` generating `~/.config/hypr/defs-kosm.lua` with every `hl.config` value `defs.lua` feeds today, with `include = null`. The palette's black has no alpha; the background is black with alpha `#80` (D101), replacing `defs.lua`'s separate `background` and `background_alpha`. No existing file is written: every app targets a new file (`theme-kosm.lua` for nvim). Other programs Ricer rices are out of scope.
-  - Done when: `kosm apply kyanos --diff` shows only deliberate differences from what Ricer and `defs.lua` hold today, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 8).
+  - Done when: `kosm apply kyanos --diff` shows only deliberate differences from what Ricer and `defs.lua` hold today, each reported. Then stop: the human runs the first real `kosm apply` (hard rule 6).
 
 - [ ] **11a. `kosm_toml`** `PLAN FIRST` `ASK`
-  - Do: a TOML adapter with `serialize`, `format`, `comment` and `parser` (D39), mapping every way TOML nests keys (`[table]`, `[a.b]`, dotted keys `a.b = 1`, inline tables `{ a = 1 }`) onto one path (D30); arrays of tables (`[[x]]`) are lists for `elements` (D77, D80). The plan proposes a tree-sitter grammar or a hand-written parser (D40); a grammar is a dependency (hard rule 6).
+  - Do: a TOML adapter with `serialize`, `format`, `comment` and `parser` (D39), mapping every way TOML nests keys (`[table]`, `[a.b]`, dotted keys `a.b = 1`, inline tables `{ a = 1 }`) onto one path (D30); arrays of tables (`[[x]]`) are lists for `elements` (D77, D80). The plan proposes a tree-sitter grammar or a hand-written parser (D40); a grammar is a dependency (hard rule 5).
   - Done when: path matching, cardinality and byte-preserving edits are tested on real-world TOML snippets (alacritty, vicinae), including the nestings above.
 
 - [ ] **11b. `kosm_ini`** `PLAN FIRST`
