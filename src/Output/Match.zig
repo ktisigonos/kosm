@@ -9,7 +9,7 @@ file: []const u8,
 line: usize,
 /// What the value is; only a `list` has `elements`.
 kind: Adapter.Node.Kind,
-/// The value's bytes in the file; null for a table spelled only through dotted keys.
+/// The value's bytes in the file; null for a table spelled only through headers or dotted keys.
 value: ?Adapter.Range,
 /// The value's source text, empty when `value` is null.
 text: []const u8,

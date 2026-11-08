@@ -12,8 +12,8 @@ key: ?[]const u8,
 kind: Kind,
 /// Where the entry starts (its key, or the value of a list element), for messages and order.
 position: usize,
-/// The value's bytes; null for a table the file spells only through dotted keys
-/// (`M.blur.enabled = true` has no bytes for `M.blur`).
+/// The value's bytes; null for a table the file spells only through headers or dotted keys
+/// (`M.blur.enabled = true` has no bytes for `M.blur`, nor `[colors]` for `colors`).
 value: ?Range,
 /// A table's entries or a list's elements, in file order. A table's entries without a key are
 /// its elements, for languages whose tables are lists too (Lua, D90); paths skip them.

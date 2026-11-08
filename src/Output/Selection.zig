@@ -212,7 +212,7 @@ fn formatValue(selection: *Selection, about: []const u8, value: anytype) Error![
 
 fn write(selection: *Selection, match: Match, text: []const u8) Error!void {
     const range = match.value orelse
-        return planning.fail(selection.output, error.NoValue, match.file, "line {d}: this table is spelled only through dotted keys, so it has no value to replace; set its keys instead", .{match.line});
+        return planning.fail(selection.output, error.NoValue, match.file, "line {d}: this table has no value of its own to replace, since headers or dotted keys spell it; set its keys instead", .{match.line});
     const file = selection.files[match.file_index];
     const planned = selection.output.plan.load(file.path, file.display_path) catch |err| return planning.failRead(selection.output, file.display_path, err);
     try planning.addEdit(selection.output, planned, .{ .target = .value, .start = range.start, .end = range.end, .content = text, .owner = selection.output.app });
