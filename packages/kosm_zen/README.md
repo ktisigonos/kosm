@@ -42,10 +42,16 @@ color goes:
 | `containers.purple` | `--kosm-containers-purple` | null; `from`: the wheel's purple |
 | `hovered` | | null: nothing derived; `from`: the theme's `state.hovered` |
 | `profile` | | null: no prefs, only the CSS; `from`: `Profile.from(theme)` |
+| `extra` | | `&.{}`: custom properties the app doesn't cover, by path (D99) |
 
 A null color is not written. A minimal config can skip `from` (D100): `kosm_zen.App{}` writes a
 `kosm.css` with an empty `:root` and no prefs, so assign only what you want
 (`.{ .accent = kosm.hex("268078") }`).
+
+`extra` writes other custom properties after the app's own (D99), the path's keys joined by `-`:
+`.{ .path = "kosm.tab.radius", .value = .{ .raw = "8px" } }` is `--kosm-tab-radius`. An extra
+whose path equals, contains or lies inside a set color's or another extra's fails the apply naming
+both.
 
 ## Prefs
 
@@ -85,6 +91,11 @@ On a machine without Zen, set `profile = null` (a profile glob matching nothing 
 | `target` | `.block` (`default_target`); `.generate` owns the whole `user.js` |
 | `format` | `.{}`: the `userjs` adapter's `#rrggbb` (D70) |
 | `prefs` | `.{}`, below; with no pref set, the profile writes nothing and needs no Zen |
+| `extra` | `&.{}`: prefs the app doesn't cover, by their whole about:config name (D99) |
+
+`extra` writes prefs `prefs` doesn't cover, after its own, each named by its whole about:config
+name (no quotes needed): `.{ .path = "zen.urlbar.behavior", .value = .{ .string = "float" } }`.
+Prefs never nest, so only a name written twice, by `prefs` or another extra, fails the apply.
 
 ### `prefs` fields
 

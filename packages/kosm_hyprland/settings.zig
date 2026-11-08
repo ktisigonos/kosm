@@ -7,21 +7,11 @@ const kosm = @import("kosm");
 
 const Allocator = std.mem.Allocator;
 
-/// One set option, or an extra (D99).
+/// One set option, and why Hyprland can't read it, if it can't.
 pub const Setting = struct {
-    /// Dot-separated keys, e.g. `decoration.blur.size`, as the user wrote it.
-    path: []const u8,
-    /// The keys of `path`, outermost first. Null in an extra's means `*`, any one key.
-    keys: []const ?[]const u8,
-    value: kosm.Value,
-    /// Why Hyprland can't read the value, if it can't.
+    keyed: kosm.Setting.Keyed,
     problem: ?[]const u8 = null,
-    /// Whether it came from the app's `extra` rather than one of its fields.
-    extra: bool = false,
 };
-
-/// Two settings where one would write over the other.
-pub const Overlap = struct { extra: Setting, other: Setting };
 
 /// Every set option of `sections` (the app, or one section) with its path, in declaration
 /// order, so the options of one section are next to each other. Fields named in `skipped` are
@@ -32,56 +22,11 @@ pub fn list(allocator: Allocator, sections: anytype, comptime skipped: []const [
     return found.items;
 }
 
-/// The first extra whose keys equal, contain or lie inside those of another setting or an
-/// earlier extra (D99), which would write one value over the other.
-pub fn overlap(settings: []const Setting) ?Overlap {
-    for (settings, 0..) |setting, index| {
-        if (!setting.extra) continue;
-        for (settings[0..index]) |other| {
-            if (nested(setting.keys, other.keys)) return .{ .extra = setting, .other = other };
-        }
-    }
-    return null;
-}
-
-/// Whether the shorter of `a` and `b` starts the longer, `*` matching any key.
-fn nested(a: []const ?[]const u8, b: []const ?[]const u8) bool {
-    for (a[0..@min(a.len, b.len)], b[0..@min(a.len, b.len)]) |a_key, b_key| {
-        const a_name = a_key orelse continue;
-        const b_name = b_key orelse continue;
-        if (!std.mem.eql(u8, a_name, b_name)) return false;
-    }
-    return true;
-}
-
-/// `settings` as nested tables: `general.border_size` is the table `general` holding
-/// `border_size`. Settings sharing a table land in it in order, wherever they are in the list.
-/// Asserts no two overlap (`overlap`) and no key is `*`.
-pub fn tree(allocator: Allocator, settings: []const Setting) Allocator.Error!kosm.Value {
-    return nest(allocator, settings, 0);
-}
-
-fn nest(allocator: Allocator, settings: []const Setting, depth: usize) Allocator.Error!kosm.Value {
-    var entries: std.ArrayList(kosm.Value.Entry) = .empty;
-    const placed = try allocator.alloc(bool, settings.len);
-    @memset(placed, false);
-    for (settings, 0..) |setting, index| {
-        if (placed[index]) continue;
-        const key = setting.keys[depth].?;
-        if (setting.keys.len == depth + 1) {
-            try entries.append(allocator, .{ .key = key, .value = setting.value });
-            continue;
-        }
-        var inside: std.ArrayList(Setting) = .empty;
-        for (settings[index..], placed[index..]) |other, *other_placed| {
-            if (other.keys.len > depth + 1 and std.mem.eql(u8, other.keys[depth].?, key)) {
-                try inside.append(allocator, other);
-                other_placed.* = true;
-            }
-        }
-        try entries.append(allocator, .{ .key = key, .value = try nest(allocator, inside.items, depth + 1) });
-    }
-    return .{ .table = entries.items };
+/// The options of `found` alone, for `kosm.Setting.withExtras`.
+pub fn keyed(allocator: Allocator, found: []const Setting) Allocator.Error![]const kosm.Setting.Keyed {
+    const result = try allocator.alloc(kosm.Setting.Keyed, found.len);
+    for (found, result) |setting, *slot| slot.* = setting.keyed;
+    return result;
 }
 
 /// The keys of a field path, which never holds quotes or `*`.
@@ -102,9 +47,7 @@ fn collect(allocator: Allocator, sections: anytype, comptime prefix: []const u8,
         const path = prefix ++ name;
         if (@typeInfo(Field) == .optional) {
             if (field) |option| try found.append(allocator, .{
-                .path = path,
-                .keys = try fieldKeys(allocator, path),
-                .value = try value(allocator, option),
+                .keyed = .{ .path = path, .keys = try fieldKeys(allocator, path), .value = try value(allocator, option) },
                 .problem = try problem(allocator, option),
             });
         } else {

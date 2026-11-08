@@ -21,6 +21,11 @@ bright: ?kosm.Modifier = null,
 /// Writes `keybind = clear` before `keybind`, removing every binding made before it, ghostty's
 /// defaults included. kosm's name for that line, since it has no trigger. Default: false.
 keybind_clear: bool = false,
+/// Options the app doesn't cover (D99), written after its own: `.{ .path = "future-option",
+/// .value = .{ .boolean = true } }`. A path is one option named as in ghostty's config. One that
+/// repeats a set option or another extra fails the apply, unless ghostty reads that option more
+/// than once (`repeatable`, e.g. `keybind`). Default: none.
+extra: []const kosm.Setting = &.{},
 
 /// Set Ghostty's graphical user interface language to a language other than the system default language. null: ghostty's default.
 language: ?[]const u8 = null,
@@ -489,9 +494,23 @@ pub fn reload(self: App, reloader: *kosm.Reloader) !void {
 
 /// Writes every set option to `file`.
 pub fn apply(self: App, output: *kosm.Output) !void {
-    const tree = try settings.tree(output.allocator, self.withDerived());
-    try output.generate(.{ .file = self.file, .lang = "ghostty", .format = self.format }, tree);
+    const options = try kosm.Setting.leaves(output.allocator, try settings.tree(output.allocator, self.withDerived()));
+    const all = try kosm.Setting.withExtras(output, self.file, options, self.extra, .{ .paths = .one_key, .repeatable = repeatable });
+    try output.generate(.{ .file = self.file, .lang = "ghostty", .format = self.format }, try kosm.Setting.tree(output.allocator, all));
 }
+
+/// Options ghostty reads more than once, each line adding another, so extras may repeat them
+/// (D99): every option the app holds as a list.
+pub const repeatable = blk: {
+    @setEvalBranchQuota(20_000);
+    var keys: []const []const u8 = &.{};
+    for (@typeInfo(App).@"struct".field_names, @typeInfo(App).@"struct".field_types) |name, Field| {
+        if (settings.isOwnField(name) or @typeInfo(Field) == .optional) continue;
+        keys = keys ++ .{settings.optionName(name)};
+    }
+    const final = keys;
+    break :blk final;
+};
 
 /// An 8-bit alpha can't hold 0.5 exactly (`80` is 0.502), so derived opacities are rounded
 /// to what the hex digits meant.
@@ -690,4 +709,38 @@ test "background_opacity follows the background's alpha below 1 and is not writt
     try testing.expectEqual(0.75, app.withDerived().background_opacity.?);
     app.background = kosm.hex("041c26");
     try testing.expectEqual(null, app.withDerived().background_opacity);
+}
+
+test "extras follow the options, repeatable ones as often as given (D99)" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var app: App = .{};
+    app.font_size = 13;
+    app.keybind = &.{.{ .trigger = "ctrl+a", .action = .{ .text = "a" } }};
+    app.extra = &.{
+        .{ .path = "keybind", .value = .{ .raw = "ctrl+b=new_tab" } },
+        .{ .path = "future-option", .value = .{ .boolean = true } },
+        .{ .path = "keybind", .value = .{ .raw = "ctrl+c=copy_to_clipboard" } },
+    };
+    try app.apply(&fixture.output);
+    try testing.expectEqualStrings(
+        \\font-size = 13
+        \\keybind = ctrl+a=text:a
+        \\keybind = ctrl+b=new_tab
+        \\future-option = true
+        \\keybind = ctrl+c=copy_to_clipboard
+        \\
+    , fixture.written());
+}
+
+test "an extra repeating a set option fails naming both (D99)" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var app: App = .{};
+    app.font_size = 13;
+    app.extra = &.{.{ .path = "font-size", .value = .{ .integer = 12 } }};
+    try testing.expectError(error.AppFailed, app.apply(&fixture.output));
+    try testing.expectEqualStrings("extra 'font-size' and setting 'font-size' write the same key, or one inside the other; keep one (D99)", fixture.diagnostics.message());
 }

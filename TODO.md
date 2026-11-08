@@ -147,6 +147,6 @@ Markers:
   - Do: D107: the runner records which package each adapter comes from; a name two packages export as different adapters fails when an app uses it, naming both packages; a re-exported adapter counts once.
   - Done when: tests show a clash fails by `.lang` and by extension naming both packages, an unused clash and a re-export apply, and one package exporting two adapters of one name fails too.
 
-- [ ] **12b. `extra` everywhere**
+- [x] **12b. `extra` everywhere**
   - Do: D99 for `kosm_kitty`, `kosm_ghostty`, `kosm_zen` and `kosm_nvim`, as in `kosm_hyprland`; each README lists it.
   - Done when: each app's tests show extras written after its own settings, and an extra clashing with a set setting fails naming both.

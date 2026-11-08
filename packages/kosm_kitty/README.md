@@ -24,6 +24,23 @@ keeps its defaults for the rest.
 After every apply the app reloads every running kitty by sending it SIGUSR1
 (`pkill -USR1 -x kitty`, D74). If no kitty is running, kosm prints a warning and carries on.
 
+## Options the app doesn't cover
+
+`extra` writes any other option, such as `map` or one kitty added after this app (D99). A path is
+one kitty option name and each value is a `kosm.Value`, formatted like the app's own options:
+
+```zig
+kitty.extra = &.{
+    .{ .path = "map", .value = .{ .raw = "ctrl+t new_tab" } },
+    .{ .path = "map", .value = .{ .raw = "ctrl+w close_tab" } },
+};
+```
+
+Extras go after the app's options, under `# extra`. An extra naming a set option or another
+extra fails the apply naming both, unless kitty reads that option more than once
+(`App.repeatable`: `map`, `mouse_map`, the `include` family and the app's list options such as
+`env`), where each extra is one more line.
+
 ## App fields
 
 | Field | Default |
@@ -31,6 +48,7 @@ After every apply the app reloads every running kitty by sending it SIGUSR1
 | `file` | `~/.config/kitty/kosm.conf` |
 | `format` | `.{}`: the kitty adapter's `#rrggbb` and `yes`/`no`, then 6 float decimals (D70) |
 | `bright` | null: nothing derived; `from`: the theme's `lightness.bright`, making `color8`..`color15` from `color0`..`color7` |
+| `extra` | `&.{}`: options the app doesn't cover, by name (D99) |
 
 ### `fonts` (Fonts)
 

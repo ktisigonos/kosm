@@ -11,7 +11,7 @@ const Allocator = std.mem.Allocator;
 const Entry = kosm.Value.Entry;
 
 /// App fields that are kosm's, not ghostty options.
-const own_fields = [_][]const u8{ "file", "format", "bright", "keybind_clear" };
+const own_fields = [_][]const u8{ "file", "format", "bright", "keybind_clear", "extra" };
 
 /// One entry per line of the file, in the order `App` declares its options. Lists repeat their
 /// key; `palette` writes `N=color` per set index; `keybind_clear` writes `keybind = clear` first.
@@ -104,14 +104,16 @@ fn tagText(allocator: Allocator, comptime T: type, name: []const u8) Allocator.E
     return text.written();
 }
 
-fn isOwnField(comptime name: []const u8) bool {
+/// Whether the app field `name` is kosm's rather than a ghostty option.
+pub fn isOwnField(comptime name: []const u8) bool {
     for (own_fields) |own| {
         if (std.mem.eql(u8, own, name)) return true;
     }
     return false;
 }
 
-fn optionName(comptime name: []const u8) []const u8 {
+/// The ghostty option an app field writes: `font_family` is `font-family`.
+pub fn optionName(comptime name: []const u8) []const u8 {
     comptime {
         var text: [name.len]u8 = undefined;
         for (name, &text) |byte, *slot| slot.* = if (byte == '_') '-' else byte;

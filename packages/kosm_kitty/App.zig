@@ -16,6 +16,11 @@ format: kosm.Format = .{},
 /// Derives `color8`..`color15` from `color0`..`color7` when they are null (D23). null: they
 /// are not derived. `from`: the theme's `lightness.bright`.
 bright: ?kosm.Modifier = null,
+/// Options the app doesn't cover, such as `map` (D99), written after its own under `# extra`:
+/// `.{ .path = "map", .value = .{ .string = "ctrl+t new_tab" } }`. A path is one kitty option
+/// name. One that repeats a set option or another extra fails the apply, unless kitty reads
+/// that option more than once (`repeatable`). Default: none.
+extra: []const kosm.Setting = &.{},
 
 fonts: Fonts = .{},
 cursor: Cursor = .{},
@@ -42,6 +47,17 @@ pub const Colors = @import("sections/Colors.zig");
 pub const Advanced = @import("sections/Advanced.zig");
 pub const Os = @import("sections/Os.zig");
 pub const Shortcuts = @import("sections/Shortcuts.zig");
+
+/// Options kitty reads more than once, each line adding another, so extras may repeat them
+/// (D99): the sections' `repeated` options, and those the app doesn't cover.
+pub const repeatable = blk: {
+    var keys: []const []const u8 = &.{ "map", "mouse_map", "include", "globinclude", "envinclude", "geninclude" };
+    for (@typeInfo(App).@"struct".field_types) |Field| {
+        if (@typeInfo(Field) == .@"struct" and @hasDecl(Field, "repeated")) keys = keys ++ Field.repeated;
+    }
+    const final = keys;
+    break :blk final;
+};
 
 /// Colors from the theme (D27): foreground and background from white and black (swapped in
 /// light mode), the 8 terminal colors from the wheel, cyan for URLs and the active border.
@@ -85,7 +101,7 @@ pub fn reload(self: App, reloader: *kosm.Reloader) !void {
     try reloader.run(&.{ "pkill", "-USR1", "-x", "kitty" });
 }
 
-/// Writes every set option to `file`.
+/// Writes every set option to `file`, then the extras.
 pub fn apply(self: App, output: *kosm.Output) !void {
     const derived = self.withDerived();
     const tree = try settings.tree(output.allocator, .{
@@ -102,7 +118,26 @@ pub fn apply(self: App, output: *kosm.Output) !void {
         .os = derived.os,
         .shortcuts = derived.shortcuts,
     });
-    try output.generate(.{ .file = self.file, .lang = "kitty", .format = self.format }, tree);
+    const options = try optionKeys(output.allocator, tree);
+    const all = try kosm.Setting.withExtras(output, self.file, options, self.extra, .{ .paths = .one_key, .repeatable = repeatable });
+    try output.generate(.{ .file = self.file, .lang = "kitty", .format = self.format }, try withExtraSection(output.allocator, tree, all[options.len..]));
+}
+
+/// Every option of `tree` under its kitty name; sections are only comments in kitty.conf.
+fn optionKeys(allocator: std.mem.Allocator, tree: kosm.Value) std.mem.Allocator.Error![]const kosm.Setting.Keyed {
+    var options: std.ArrayList(kosm.Setting.Keyed) = .empty;
+    for (tree.table) |section| for (section.value.table) |option| {
+        try options.append(allocator, .{ .path = option.key, .keys = try allocator.dupe(?[]const u8, &.{option.key}), .value = option.value });
+    };
+    return options.items;
+}
+
+/// `tree` with an `extra` section after the others holding `extras`.
+fn withExtraSection(allocator: std.mem.Allocator, tree: kosm.Value, extras: []const kosm.Setting.Keyed) std.mem.Allocator.Error!kosm.Value {
+    if (extras.len == 0) return tree;
+    const options = try allocator.alloc(kosm.Value.Entry, extras.len);
+    for (extras, options) |extra, *option| option.* = .{ .key = extra.keys[0].?, .value = extra.value };
+    return .{ .table = try std.mem.concat(allocator, kosm.Value.Entry, &.{ tree.table, &.{.{ .key = "extra", .value = .{ .table = options } }} }) };
 }
 
 /// An 8-bit alpha can't hold 0.5 exactly (`80` is 0.502), so derived opacities are rounded
@@ -218,4 +253,55 @@ test "App{} writes an empty file, and without bright no bright color is derived"
     var app: App = .{};
     app.colors.color1 = kosm.hex("80333c");
     try testing.expectEqual(null, app.withDerived().colors.color9);
+}
+
+test "extras follow the options under # extra, repeatable ones as often as given (D99)" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const home = home_buffer[0..try tmp.dir.realPath(testing.io, &home_buffer)];
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var plan: kosm.Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    var diagnostics: kosm.Diagnostics = .{};
+    var warnings: kosm.Warnings = .init(arena.allocator());
+    var output: kosm.Output = .{
+        .allocator = arena.allocator(),
+        .home = home,
+        .adapters = &.{adapter},
+        .plan = &plan,
+        .diagnostics = &diagnostics,
+        .warnings = &warnings,
+        .app = "kitty",
+    };
+
+    var app: App = .{};
+    app.fonts.font_size = 13;
+    app.advanced.env = &.{.{ .name = "EDITOR", .value = "nvim" }};
+    app.extra = &.{
+        .{ .path = "map", .value = .{ .raw = "ctrl+t new_tab" } },
+        .{ .path = "map", .value = .{ .raw = "ctrl+w close_tab" } },
+        .{ .path = "env", .value = .{ .raw = "PAGER=less" } },
+        .{ .path = "future_option", .value = .{ .boolean = true } },
+    };
+    try app.apply(&output);
+    try testing.expectEqualStrings(
+        \\# fonts
+        \\font_size 13
+        \\
+        \\# advanced
+        \\env EDITOR=nvim
+        \\
+        \\# extra
+        \\map ctrl+t new_tab
+        \\map ctrl+w close_tab
+        \\env PAGER=less
+        \\future_option yes
+        \\
+    , plan.files.items[0].new);
+
+    app.extra = &.{.{ .path = "font_size", .value = .{ .integer = 12 } }};
+    try testing.expectError(error.AppFailed, app.apply(&output));
+    try testing.expectEqualStrings("extra 'font_size' and setting 'font_size' write the same key, or one inside the other; keep one (D99)", diagnostics.message());
 }

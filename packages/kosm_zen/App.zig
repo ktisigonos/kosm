@@ -34,6 +34,11 @@ containers: Containers = .{},
 /// Makes `button_hovered` from `button` when it is null (D23, D24). null: nothing derived.
 /// `from`: the theme's `state.hovered`.
 hovered: ?kosm.Modifier = null,
+/// Custom properties the app doesn't cover (D99), written after its own, the path's keys joined
+/// by `-`: `.{ .path = "kosm.tab.radius", .value = .{ .raw = "8px" } }` is `--kosm-tab-radius`.
+/// One whose path equals, contains or lies inside a set color's or another extra's fails the
+/// apply. Prefs have their own, `Profile.extra`. Default: none.
+extra: []const kosm.Setting = &.{},
 /// The about:config prefs every profile gets (D94). null: no prefs, only the CSS, e.g. on a
 /// machine without Zen. `from`: `Profile.from(theme)` for every profile.
 profile: ?Profile = null,
@@ -68,16 +73,33 @@ pub fn from(theme: kosm.Theme) App {
 
 /// Writes every set color as a `--kosm-*` custom property, then the prefs of `profile`.
 pub fn apply(self: App, output: *kosm.Output) !void {
-    try output.generate(.{ .file = self.file, .lang = "css", .format = self.format }, .{ .kosm = .{
+    const colors = try kosm.Setting.leaves(output.allocator, try self.properties(output.allocator));
+    const all = try kosm.Setting.withExtras(output, self.file, colors, self.extra, .{});
+    try output.generate(.{ .file = self.file, .lang = "css", .format = self.format }, try kosm.Setting.tree(output.allocator, all));
+    if (self.profile) |profile| try profile.apply(output);
+}
+
+/// The set colors under `kosm`, which the CSS adapter writes as `--kosm-*` properties.
+fn properties(self: App, allocator: std.mem.Allocator) std.mem.Allocator.Error!kosm.Value {
+    var colors: std.ArrayList(kosm.Value.Entry) = .empty;
+    try appendColors(allocator, &colors, .{
         .foreground = self.foreground,
         .accent = self.accent,
         .background = self.background,
         .button = self.button,
         .button_hovered = self.button_hovered orelse self.derivedButtonHovered(),
         .border = self.border,
-        .containers = self.containers,
-    } });
-    if (self.profile) |profile| try profile.apply(output);
+    });
+    var containers: std.ArrayList(kosm.Value.Entry) = .empty;
+    try appendColors(allocator, &containers, self.containers);
+    try colors.append(allocator, .{ .key = "containers", .value = .{ .table = containers.items } });
+    return .{ .table = try allocator.dupe(kosm.Value.Entry, &.{.{ .key = "kosm", .value = .{ .table = colors.items } }}) };
+}
+
+fn appendColors(allocator: std.mem.Allocator, entries: *std.ArrayList(kosm.Value.Entry), colors: anytype) std.mem.Allocator.Error!void {
+    inline for (@typeInfo(@TypeOf(colors)).@"struct".field_names) |name| {
+        if (@field(colors, name)) |color| try entries.append(allocator, .{ .key = name, .value = .{ .color = color } });
+    }
 }
 
 fn derivedButtonHovered(self: App) ?kosm.Color {
@@ -153,4 +175,46 @@ test "App{} writes an empty :root and no prefs, and without hovered no hover col
 
     const app: App = .{ .button = kosm.hex("082e3f") };
     try testing.expectEqual(null, app.derivedButtonHovered());
+}
+
+test "extras follow the colors as custom properties, and a clash fails naming both (D99)" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const home = home_buffer[0..try tmp.dir.realPath(testing.io, &home_buffer)];
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var plan: kosm.Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    var diagnostics: kosm.Diagnostics = .{};
+    var warnings: kosm.Warnings = .init(arena.allocator());
+    var output: kosm.Output = .{
+        .allocator = arena.allocator(),
+        .home = home,
+        .adapters = &.{css.adapter},
+        .plan = &plan,
+        .diagnostics = &diagnostics,
+        .warnings = &warnings,
+        .app = "zen",
+    };
+
+    var app: App = .{ .accent = kosm.hex("268078"), .containers = .{ .blue = kosm.hex("4d74af") } };
+    app.extra = &.{
+        .{ .path = "kosm.tab.radius", .value = .{ .raw = "8px" } },
+        .{ .path = "zen.colors.primary", .value = .{ .color = kosm.hex("082e3f") } },
+    };
+    try app.apply(&output);
+    try testing.expectEqualStrings(
+        \\:root {
+        \\  --kosm-accent: #268078ff;
+        \\  --kosm-containers-blue: #4d74afff;
+        \\  --kosm-tab-radius: 8px;
+        \\  --zen-colors-primary: #082e3fff;
+        \\}
+        \\
+    , plan.files.items[0].new);
+
+    app.extra = &.{.{ .path = "kosm.containers", .value = .{ .raw = "none" } }};
+    try testing.expectError(error.AppFailed, app.apply(&output));
+    try testing.expectEqualStrings("extra 'kosm.containers' and setting 'kosm.containers.blue' write the same key, or one inside the other; keep one (D99)", diagnostics.message());
 }

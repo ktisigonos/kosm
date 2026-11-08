@@ -61,6 +61,7 @@ test {
     std.testing.refAllDecls(Output);
     std.testing.refAllDecls(Output.Selection);
     std.testing.refAllDecls(@import("Path.zig"));
+    std.testing.refAllDecls(Setting);
     std.testing.refAllDecls(@import("glob.zig"));
     std.testing.refAllDecls(treesitter);
     std.testing.refAllDecls(Diagnostics);

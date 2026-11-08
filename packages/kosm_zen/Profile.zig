@@ -20,6 +20,10 @@ format: kosm.Format = .{},
 /// The prefs to write, named like about:config (`prefs.zen.theme.accent_color`). Null prefs are
 /// not written; with none set, no profile is looked for or written (D100).
 prefs: Prefs = .{},
+/// Prefs the app doesn't cover (D99), written after its own, each named by its whole
+/// about:config name: `.{ .path = "zen.urlbar.behavior", .value = .{ .string = "float" } }`. A
+/// name a set pref or another extra already has fails the apply. Default: none.
+extra: []const kosm.Setting = &.{},
 
 /// Zen's about:config prefs.
 pub const Prefs = @import("Prefs.zig");
@@ -53,9 +57,9 @@ pub fn from(theme: kosm.Theme) Profile {
     return .{ .prefs = prefs };
 }
 
-/// Writes the set prefs to the `user.js` of every picked profile.
+/// Writes the set prefs, then the extras, to the `user.js` of every picked profile.
 pub fn apply(self: Profile, output: *kosm.Output) !void {
-    const prefs = try user_js.table(output.allocator, self.prefs);
+    const prefs = try self.withExtras(output);
     if (prefs.table.len == 0) return;
     const exclude = try output.allocator.alloc([]const u8, self.exclude.len);
     for (self.exclude, exclude) |directory, *file| file.* = try prefsFile(output.allocator, directory);
@@ -67,6 +71,16 @@ pub fn apply(self: Profile, output: *kosm.Output) !void {
             .generate => try output.generate(.{ .file = file, .lang = "userjs", .format = self.format }, prefs),
         }
     }
+}
+
+/// The set prefs followed by the extras, checked so no name is written twice (D99).
+fn withExtras(self: Profile, output: *kosm.Output) !kosm.Value {
+    const own = (try user_js.table(output.allocator, self.prefs)).table;
+    const prefs = try output.allocator.alloc(kosm.Setting.Keyed, own.len);
+    for (own, prefs) |pref, *slot| slot.* = .{ .path = pref.key, .keys = try output.allocator.dupe(?[]const u8, &.{pref.key}), .value = pref.value };
+    const files = try std.mem.concat(output.allocator, u8, &.{ std.mem.trimEnd(u8, self.profiles, "/"), "/user.js" });
+    const all = try kosm.Setting.withExtras(output, files, prefs, self.extra, .{ .paths = .whole_name });
+    return kosm.Setting.tree(output.allocator, all);
 }
 
 /// The `prefs.js` Firefox keeps in every profile directory `directories` picks.
@@ -213,4 +227,28 @@ test "Profile{} sets no prefs, so it looks for no profile and plans nothing" {
     const empty: Profile = .{};
     try empty.apply(&fixture.output);
     try testing.expectEqual(0, fixture.plan.files.items.len);
+}
+
+test "extras follow the prefs under their whole names, and a name set twice fails naming both (D99)" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&test_profiles);
+    defer fixture.deinit();
+    var profile: Profile = .{ .profiles = "~/.zen/b.work", .target = .generate };
+    profile.prefs.zen.theme.gradient.value = false;
+    profile.extra = &.{
+        .{ .path = "zen.theme.gradient.show-custom-colors", .value = .{ .boolean = true } },
+        .{ .path = "zen.urlbar.behavior", .value = .{ .string = "float" } },
+    };
+    try profile.apply(&fixture.output);
+    try testing.expectEqualStrings(
+        \\user_pref("zen.theme.gradient", false);
+        \\user_pref("zen.theme.gradient.show-custom-colors", true);
+        \\user_pref("zen.urlbar.behavior", "float");
+        \\
+    , try fixture.planned(".zen/b.work/user.js"));
+
+    profile.extra = &.{.{ .path = "zen.theme.gradient", .value = .{ .boolean = true } }};
+    try testing.expectError(error.AppFailed, profile.apply(&fixture.output));
+    try testing.expectEqualStrings("extra 'zen.theme.gradient' and setting 'zen.theme.gradient' write the same key, or one inside the other; keep one (D99)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("~/.zen/b.work/user.js", fixture.diagnostics.file);
 }

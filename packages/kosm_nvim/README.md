@@ -14,6 +14,11 @@ through the `lua` adapter of `kosm_lua`. Null values are not written.
 A minimal config can skip `from` (D100): `kosm_nvim.App{}` writes an empty module
 (`return {}`), so assign only what you want (`.{ .base16 = .{ .base0D = kosm.hex("2d8699") } }`).
 
+`extra` adds values the app doesn't cover to the module after its own (D99), nested by path, each
+a `kosm.Value`: `.{ .path = "accent.soft", .value = .{ .color = kosm.hex("2d8699") } }` is
+`theme.accent.soft`. An extra whose path equals, contains or lies inside a set value's or another
+extra's fails the apply naming both.
+
 ## Fields
 
 Every color is null by default; the column says what `from(theme)` sets.
@@ -23,6 +28,7 @@ Every color is null by default; the column says what `from(theme)` sets.
 | `file` | `~/.config/nvim/lua/theme.lua` |
 | `format` | `.{}`: the Lua adapter's `true`/`false`, then `#rrggbb` and 6 float decimals (D70) |
 | `transparent` | null: not written |
+| `extra` | `&.{}`: values the app doesn't cover, by path (D99) |
 | `base16.base00` | black, white in light mode (background) |
 | `base16.base01` | `surface.raised` of `base00` |
 | `base16.base02` | `state.selected` of `base00` |

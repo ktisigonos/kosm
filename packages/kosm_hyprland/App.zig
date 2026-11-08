@@ -161,14 +161,15 @@ pub fn apply(self: App, output: *kosm.Output) !void {
     };
     // Checked before deriving, so a bad active color is named instead of the inactive copy.
     for (try settings.list(output.allocator, self, &own_fields)) |setting| {
-        if (setting.problem) |message| return output.fail(file, "option '{s}': {s}", .{ setting.path, message });
+        if (setting.problem) |message| return output.fail(file, "option '{s}': {s}", .{ setting.keyed.path, message });
     }
-    const set = try self.withExtras(output, file, try settings.list(output.allocator, self.withDerived(), &own_fields));
+    const options = try settings.keyed(output.allocator, try settings.list(output.allocator, self.withDerived(), &own_fields));
+    const set = try kosm.Setting.withExtras(output, file, options, self.extra, .{ .any_key = self.target == .edit });
     switch (self.target) {
         .generate => {
             if (self.include != null and !std.mem.eql(u8, file, default_module))
                 return output.fail(self.include.?, "the include block reads require(\"kosm\"), which finds only {s}, not {s}; set include = null and read it yourself", .{ default_module, file });
-            try output.generate(.{ .file = file, .lang = "lua", .format = self.format }, try settings.tree(output.allocator, set));
+            try output.generate(.{ .file = file, .lang = "lua", .format = self.format }, try kosm.Setting.tree(output.allocator, set));
             if (self.include) |include|
                 try output.templateBlock(self, .{ .file = include, .id = "hyprland", .text = "hl.config(require(\"kosm\"))\n", .lang = "lua", .missing = .skip });
         },
@@ -177,33 +178,6 @@ pub fn apply(self: App, output: *kosm.Output) !void {
             for (set) |setting| try selection.set(setting.path, setting.value);
         },
     }
-}
-
-/// `set` followed by the extras (D99), each checked against everything before it.
-fn withExtras(self: App, output: *kosm.Output, file: []const u8, set: []const settings.Setting) ![]const settings.Setting {
-    var all: std.ArrayList(settings.Setting) = .empty;
-    try all.appendSlice(output.allocator, set);
-    for (self.extra) |extra| {
-        var failure: kosm.Path.Failure = .{};
-        const path = kosm.Path.parse(output.allocator, extra.path, &failure) catch |err| switch (err) {
-            error.OutOfMemory => return error.OutOfMemory,
-            error.InvalidKeyPath => return output.fail(file, "extra '{s}', column {d}: {s}", .{ extra.path, failure.column, failure.problem.describe() }),
-        };
-        const keys = try output.allocator.alloc(?[]const u8, path.segments.len);
-        for (path.segments, keys) |segment, *key| key.* = switch (segment) {
-            .key => |name| name,
-            .any => if (self.target == .generate)
-                return output.fail(file, "extra '{s}': '*' matches keys in files kosm edits, and a generated module has none to match", .{extra.path})
-            else
-                null,
-        };
-        try all.append(output.allocator, .{ .path = extra.path, .keys = keys, .value = extra.value, .extra = true });
-    }
-    if (settings.overlap(all.items)) |found| {
-        const kind = if (found.other.extra) "extra" else "option";
-        return output.fail(file, "extra '{s}' and {s} '{s}' write the same key, or one inside the other; keep one (D99)", .{ found.extra.path, kind, found.other.path });
-    }
-    return all.items;
 }
 
 /// The app with every null inactive color derived from its set active one (D23).
@@ -719,14 +693,10 @@ test "the edit target sets extras by path in the user's files (D99)" {
     try testing.expectEqualStrings("hl.config({ plugin = { dynamic_cursors = { length = 24 } } })\n", fixture.planned("~/.config/hypr/plugins.lua"));
 }
 
-test "an extra overlapping an option or another extra fails naming both (D99)" {
+test "an extra overlapping an option fails naming both, and '*' only edits (D99)" {
     const cases = [_]struct { extra: []const kosm.Setting, message: []const u8 }{
-        .{ .extra = &.{.{ .path = "general.border_size", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size' and option 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extra = &.{.{ .path = "general.border_size.width", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size.width' and option 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extra = &.{.{ .path = "general", .value = .{ .table = &.{} } }}, .message = "extra 'general' and option 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extra = &.{ .{ .path = "plugin.a", .value = .{ .integer = 1 } }, .{ .path = "plugin.\"a\".b", .value = .{ .integer = 2 } } }, .message = "extra 'plugin.\"a\".b' and extra 'plugin.a' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extra = &.{.{ .path = "plugin.*.length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin.*.length': '*' matches keys in files kosm edits, and a generated module has none to match" },
-        .{ .extra = &.{.{ .path = "plugin..length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin..length', column 8: a segment is empty (two dots, or a dot at an end)" },
+        .{ .extra = &.{.{ .path = "general.border_size", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size' and setting 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
+        .{ .extra = &.{.{ .path = "plugin.*.length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin.*.length': '*' matches keys only in files kosm edits, not in one it generates" },
     };
     for (cases) |case| {
         var fixture: Fixture = undefined;

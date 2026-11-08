@@ -63,6 +63,24 @@ ghostty.keybind = &.{
 kosm checks only that a binding fits on one line; ghostty reports a trigger or action it can't
 read in its own log.
 
+## Options the app doesn't cover
+
+`extra` writes any other option, such as one ghostty added after this app (D99). A path is one
+option named as in ghostty's config (`font-size`, not `font_size`), and each value is a
+`kosm.Value`, formatted like the app's own options:
+
+```zig
+ghostty.extra = &.{
+    .{ .path = "future-option", .value = .{ .boolean = true } },
+    .{ .path = "keybind", .value = .{ .raw = "ctrl+b=new_tab" } },
+};
+```
+
+Extras go after the app's options. An extra naming a set option or another extra fails the apply
+naming both, unless ghostty reads that option more than once (`App.repeatable`: every option the
+app holds as a list, such as `keybind`, `palette` and `font-family`), where each extra is one more
+line.
+
 ## App fields
 
 | Field | Default |
@@ -71,6 +89,7 @@ read in its own log.
 | `format` | `.{}`: the ghostty adapter's `#rrggbb` and `true`/`false`, then 6 float decimals (D70) |
 | `bright` | null: nothing derived; `from`: the theme's `lightness.bright`, making `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` |
 | `keybind_clear` | `false`; `true` writes `keybind = clear` before `keybind` |
+| `extra` | `&.{}`: options the app doesn't cover, by name (D99) |
 
 ## Options
 

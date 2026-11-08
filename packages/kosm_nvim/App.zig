@@ -18,6 +18,11 @@ transparent: ?bool = null,
 base16: Base16 = .{},
 /// The 8 terminal colors and their bright variants.
 terminal: Terminal = .{},
+/// Values the app doesn't cover (D99), written into the module after its own, nested by path:
+/// `.{ .path = "accent.soft", .value = .{ .color = kosm.hex("2d8699") } }` is `theme.accent.soft`.
+/// One whose path equals, contains or lies inside a set value's or another extra's fails the
+/// apply. Default: none.
+extra: []const kosm.Setting = &.{},
 
 pub const Base16 = @import("Base16.zig");
 pub const Terminal = @import("Terminal.zig");
@@ -70,9 +75,11 @@ pub fn from(theme: kosm.Theme) App {
     };
 }
 
-/// Writes every set value to `file`.
+/// Writes every set value to `file`, then the extras.
 pub fn apply(self: App, output: *kosm.Output) !void {
-    try output.generate(.{ .file = self.file, .lang = "lua", .format = self.format }, try self.tree(output.allocator));
+    const values = try kosm.Setting.leaves(output.allocator, try self.tree(output.allocator));
+    const all = try kosm.Setting.withExtras(output, self.file, values, self.extra, .{});
+    try output.generate(.{ .file = self.file, .lang = "lua", .format = self.format }, try kosm.Setting.tree(output.allocator, all));
 }
 
 /// `transparent`, then the base16 slots, then the terminal colors, in one table as the user's
@@ -158,4 +165,33 @@ test "App{} writes an empty module, and only set values are written" {
     try testing.expectEqual(2, tree_value.table.len);
     try testing.expectEqualStrings("base0D", tree_value.table[0].key);
     try testing.expectEqualStrings("cyan", tree_value.table[1].key);
+}
+
+test "extras follow the app's values, nested by path, and a clash fails naming both (D99)" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var app: App = .{};
+    app.base16.base00 = kosm.hex("041c26");
+    app.extra = &.{
+        .{ .path = "accent.soft", .value = .{ .color = kosm.hex("2d8699") } },
+        .{ .path = "italic_comments", .value = .{ .boolean = true } },
+        .{ .path = "accent.strong", .value = .{ .color = kosm.hex("268078") } },
+    };
+    try app.apply(&fixture.output);
+    try testing.expectEqualStrings(
+        \\return {
+        \\    base00 = "#041c26",
+        \\    accent = {
+        \\        soft = "#2d8699",
+        \\        strong = "#268078",
+        \\    },
+        \\    italic_comments = true,
+        \\}
+        \\
+    , fixture.plan.files.items[0].new);
+
+    app.extra = &.{.{ .path = "base00.dim", .value = .{ .color = kosm.hex("000000") } }};
+    try testing.expectError(error.AppFailed, app.apply(&fixture.output));
+    try testing.expectEqualStrings("extra 'base00.dim' and setting 'base00' write the same key, or one inside the other; keep one (D99)", fixture.diagnostics.message());
 }

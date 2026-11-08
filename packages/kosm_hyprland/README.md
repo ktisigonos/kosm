@@ -98,7 +98,8 @@ hyprland.extra = &.{
 
 Extras go to the target after the app's options: into the generated module's tables, or set by
 path in your files (`*` matches one key there). An extra whose path equals, contains or lies
-inside a set option's or another extra's fails the apply naming both.
+inside a set option's or another extra's fails the apply naming both, checked by
+`kosm.Setting.withExtras`, which any app can use.
 
 ## App fields
 
