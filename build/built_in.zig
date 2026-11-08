@@ -20,6 +20,7 @@ pub const packages = [_]Package{
     .{ .name = "kosm_kitty" },
     .{ .name = "kosm_lua", .grammars = &.{"tree_sitter_lua"} },
     .{ .name = "kosm_nvim" },
+    .{ .name = "kosm_toml" },
     .{ .name = "kosm_userjs" },
     .{ .name = "kosm_zen" },
 };
