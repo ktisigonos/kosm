@@ -16,6 +16,7 @@ pub const packages = [_]Package{
     .{ .name = "kosm_css" },
     .{ .name = "kosm_ghostty" },
     .{ .name = "kosm_hyprland" },
+    .{ .name = "kosm_ini" },
     .{ .name = "kosm_json", .grammars = &.{"tree_sitter_json"} },
     .{ .name = "kosm_kitty" },
     .{ .name = "kosm_lua", .grammars = &.{"tree_sitter_lua"} },

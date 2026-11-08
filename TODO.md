@@ -139,7 +139,7 @@ Markers:
   - Do: a TOML adapter with `serialize`, `format`, `comment` and `parser` (D39), mapping every way TOML nests keys (`[table]`, `[a.b]`, dotted keys `a.b = 1`, inline tables `{ a = 1 }`) onto one path (D30); arrays of tables (`[[x]]`) are lists for `elements` (D77, D80). The plan proposes a tree-sitter grammar or a hand-written parser (D40); a grammar is a dependency (hard rule 5).
   - Done when: path matching, cardinality and byte-preserving edits are tested on real-world TOML snippets (alacritty, vicinae), including the nestings above.
 
-- [ ] **11b. `kosm_ini`** `PLAN FIRST`
+- [x] **11b. `kosm_ini`** `PLAN FIRST`
   - Do: a hand-written INI adapter (D40) with `serialize`, `format`, `comment` and `parser`: `[section]` headers, `key = value` lines, `;` and `#` comments, keys before the first section at the top level. The plan settles the dialect details real configs need (`key=value` without spaces, repeated keys, `[Section][Sub]` as in kdeglobals).
   - Done when: path matching, cardinality and byte-preserving edits are tested on real-world snippets (dunst, qt5ct/qt6ct colors, kdeglobals, foot).
 
@@ -147,3 +147,4 @@ Markers:
 
 Follow-ups with no step yet:
 - `extra` (D99) for `kosm_kitty`, `kosm_ghostty`, `kosm_zen` and `kosm_nvim`.
+- Fail on two collected adapters with the same name (two packages exporting one `kosm_ini` dialect): `.lang` lookup takes the first silently.
