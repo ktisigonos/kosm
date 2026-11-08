@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const kosm = @import("kosm");
+const Target = @import("Target.zig");
 
 /// Nested app trees and big package roots need far more than the default 1000 branches.
 pub const branch_quota = 100_000;
@@ -109,17 +110,59 @@ fn isParams(comptime T: type) bool {
     return true;
 }
 
-/// Every public `kosm.Adapter` constant declared at the top of each module in `sources`.
-pub fn adapters(comptime sources: []const type) []const kosm.Adapter {
+/// The adapters a kosmos can use, and the names packages export as different adapters (D107).
+pub const Adapters = struct {
+    /// One adapter per name: the first found when packages clash.
+    list: []const kosm.Adapter,
+    clashes: []const kosm.Output.AdapterClash,
+};
+
+/// Every public `kosm.Adapter` constant declared at the top of `Module`.
+pub fn declaredAdapters(comptime Module: type) []const kosm.Adapter {
     @setEvalBranchQuota(branch_quota);
     comptime var found: []const kosm.Adapter = &.{};
-    inline for (sources) |Source| {
-        inline for (@typeInfo(Source).@"struct".decl_names) |name| {
-            if (@TypeOf(@field(Source, name)) == kosm.Adapter) found = found ++ .{@field(Source, name)};
-        }
+    inline for (@typeInfo(Module).@"struct".decl_names) |name| {
+        if (@TypeOf(@field(Module, name)) == kosm.Adapter) found = found ++ .{@field(Module, name)};
     }
     const final = found[0..found.len].*;
     return &final;
+}
+
+/// The adapters of every module in `sources`. An adapter reached twice (a re-export) counts
+/// once; a name exported as two different adapters is a clash (D107).
+pub fn adapters(comptime sources: []const Target.AdapterSource) Adapters {
+    @setEvalBranchQuota(branch_quota);
+    comptime var list: []const kosm.Adapter = &.{};
+    comptime var packages: []const []const u8 = &.{};
+    comptime var clashes: []const kosm.Output.AdapterClash = &.{};
+    inline for (sources) |source| {
+        inline for (comptime declaredAdapters(source.module)) |adapter| {
+            const index = comptime indexOfName(list, adapter.name);
+            if (index == null) {
+                list = list ++ .{adapter};
+                packages = packages ++ .{source.package};
+            } else if (!std.meta.eql(list[index.?], adapter) and indexOfClash(clashes, adapter.name) == null) {
+                clashes = clashes ++ .{kosm.Output.AdapterClash{ .name = adapter.name, .first_package = packages[index.?], .second_package = source.package }};
+            }
+        }
+    }
+    const final_list = list[0..list.len].*;
+    const final_clashes = clashes[0..clashes.len].*;
+    return .{ .list = &final_list, .clashes = &final_clashes };
+}
+
+fn indexOfName(list: []const kosm.Adapter, name: []const u8) ?usize {
+    for (list, 0..) |adapter, index| {
+        if (std.mem.eql(u8, adapter.name, name)) return index;
+    }
+    return null;
+}
+
+fn indexOfClash(clashes: []const kosm.Output.AdapterClash, name: []const u8) ?usize {
+    for (clashes, 0..) |clash, index| {
+        if (std.mem.eql(u8, clash.name, name)) return index;
+    }
+    return null;
 }
 
 const testing = std.testing;
@@ -193,7 +236,54 @@ test "kosmoi are found by shape, and the rest say why not" {
 }
 
 test "adapters are collected from every source" {
-    const found = comptime adapters(&.{ test_kosmoi, struct {} });
-    try testing.expectEqual(1, found.len);
-    try testing.expectEqualStrings("lines", found[0].name);
+    const found = comptime adapters(&.{ .{ .package = "frost", .module = test_kosmoi }, .{ .package = "empty", .module = struct {} } });
+    try testing.expectEqual(1, found.list.len);
+    try testing.expectEqualStrings("lines", found.list[0].name);
+    try testing.expectEqual(0, found.clashes.len);
+}
+
+const lines_adapter: kosm.Adapter = .{ .name = "lines", .extensions = &.{".lines"} };
+const other_lines_adapter: kosm.Adapter = .{ .name = "lines", .extensions = &.{".text"} };
+
+test "a re-exported adapter counts once and is no clash" {
+    const original = struct {
+        pub const lines = lines_adapter;
+    };
+    const reexporting = struct {
+        pub const lines = original.lines;
+        pub const alias = original.lines;
+    };
+    const found = comptime adapters(&.{ .{ .package = "kosm_lines", .module = original }, .{ .package = "my_lines", .module = reexporting } });
+    try testing.expectEqual(1, found.list.len);
+    try testing.expectEqual(0, found.clashes.len);
+}
+
+test "one name exported as two adapters clashes, naming both packages once" {
+    const first = struct {
+        pub const lines = lines_adapter;
+    };
+    const second = struct {
+        pub const lines = other_lines_adapter;
+    };
+    const third = struct {
+        pub const lines: kosm.Adapter = .{ .name = "lines", .extensions = &.{".third"} };
+    };
+    const found = comptime adapters(&.{ .{ .package = "kosm_lines", .module = first }, .{ .package = "my_lines", .module = second }, .{ .package = "more_lines", .module = third } });
+    try testing.expectEqual(1, found.list.len);
+    try testing.expectEqualStrings(".lines", found.list[0].extensions[0]);
+    try testing.expectEqual(1, found.clashes.len);
+    try testing.expectEqualStrings("lines", found.clashes[0].name);
+    try testing.expectEqualStrings("kosm_lines", found.clashes[0].first_package);
+    try testing.expectEqualStrings("my_lines", found.clashes[0].second_package);
+}
+
+test "one package exporting two adapters of one name clashes with itself" {
+    const both = struct {
+        pub const lines = lines_adapter;
+        pub const other = other_lines_adapter;
+    };
+    const found = comptime adapters(&.{.{ .package = "kosm_lines", .module = both }});
+    try testing.expectEqual(1, found.clashes.len);
+    try testing.expectEqualStrings("kosm_lines", found.clashes[0].first_package);
+    try testing.expectEqualStrings("kosm_lines", found.clashes[0].second_package);
 }

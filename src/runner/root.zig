@@ -83,7 +83,7 @@ fn checkTarget(comptime target: Target) void {
 /// Failed; `diagnostics` says why.
 const Reported = error{Reported};
 
-fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: []const kosm.Adapter, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const arena = init.arena.allocator();
     const all_arguments = try init.minimal.args.toSlice(arena);
     const arguments = Arguments.split(arena, all_arguments[1..]) catch |err| switch (err) {
@@ -99,7 +99,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: []const kos
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
     var warnings: kosm.Warnings = .init(arena);
-    const context: walk.Context = .{ .allocator = arena, .home = home, .adapters = adapters, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings };
+    const context: walk.Context = .{ .allocator = arena, .home = home, .adapters = adapters.list, .adapter_clashes = adapters.clashes, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings };
     try planWarning(tree, context, streams.stderr);
     try deliver(tree, &plan, .{
         .gpa = init.gpa,

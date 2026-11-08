@@ -143,8 +143,10 @@ Markers:
   - Do: a hand-written INI adapter (D40) with `serialize`, `format`, `comment` and `parser`: `[section]` headers, `key = value` lines, `;` and `#` comments, keys before the first section at the top level. The plan settles the dialect details real configs need (`key=value` without spaces, repeated keys, `[Section][Sub]` as in kdeglobals).
   - Done when: path matching, cardinality and byte-preserving edits are tested on real-world snippets (dunst, qt5ct/qt6ct colors, kdeglobals, foot).
 
----
+- [x] **12a. Adapters with one name**
+  - Do: D107: the runner records which package each adapter comes from; a name two packages export as different adapters fails when an app uses it, naming both packages; a re-exported adapter counts once.
+  - Done when: tests show a clash fails by `.lang` and by extension naming both packages, an unused clash and a re-export apply, and one package exporting two adapters of one name fails too.
 
-Follow-ups with no step yet:
-- `extra` (D99) for `kosm_kitty`, `kosm_ghostty`, `kosm_zen` and `kosm_nvim`.
-- Fail on two collected adapters with the same name (two packages exporting one `kosm_ini` dialect): `.lang` lookup takes the first silently.
+- [ ] **12b. `extra` everywhere**
+  - Do: D99 for `kosm_kitty`, `kosm_ghostty`, `kosm_zen` and `kosm_nvim`, as in `kosm_hyprland`; each README lists it.
+  - Done when: each app's tests show extras written after its own settings, and an extra clashing with a set setting fails naming both.

@@ -14,6 +14,8 @@ pub const Context = struct {
     /// Absolute home directory that `~` expands to.
     home: []const u8,
     adapters: []const kosm.Adapter,
+    /// Adapter names packages clash on; using one fails (D107).
+    adapter_clashes: []const kosm.Output.AdapterClash = &.{},
     plan: *kosm.Plan,
     diagnostics: *kosm.Diagnostics,
     /// What the apps report without failing (D88).
@@ -48,6 +50,7 @@ fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void
         .allocator = context.allocator,
         .home = context.home,
         .adapters = context.adapters,
+        .adapter_clashes = context.adapter_clashes,
         .plan = context.plan,
         .diagnostics = context.diagnostics,
         .warnings = context.warnings,

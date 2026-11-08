@@ -22,6 +22,8 @@ allocator: std.mem.Allocator,
 home: []const u8,
 /// Every adapter the applied kosmos can use: from packages, adapters/ and the locals it reaches (D87).
 adapters: []const Adapter,
+/// Names in `adapters` that two packages export as different adapters; using one fails (D107).
+adapter_clashes: []const AdapterClash = &.{},
 plan: *Plan,
 diagnostics: *Diagnostics,
 /// What the apply reports without failing (D88).
@@ -29,6 +31,8 @@ warnings: *Warnings,
 /// The app being applied, as its path in the kosmos tree ("terminal.kitty").
 app: []const u8,
 
+/// An adapter name two packages export (D107).
+pub const AdapterClash = @import("Output/AdapterClash.zig");
 /// Options for `generate`.
 pub const GenerateOptions = @import("Output/GenerateOptions.zig");
 /// Options for `block`.
@@ -337,6 +341,7 @@ fn templateFormat(output: *Output, options: anytype) Error!Format.Resolved {
     var found: ?Adapter = null;
     for (output.adapters) |adapter| {
         if (!adapter.claims(extension)) continue;
+        try output.checkUnclashed(options.file, adapter.name);
         if (found) |first| return planning.fail(output, error.AmbiguousLanguage, options.file, "adapters '{s}' and '{s}' both handle '{s}' files; set every field of .format", .{ first.name, adapter.name, extension });
         found = adapter;
     }
@@ -353,6 +358,7 @@ fn resolvePath(output: *Output, file: []const u8) Error![]const u8 {
 /// The adapter named `lang`, or the one claiming the file's extension (D26).
 fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapter {
     if (lang) |name| {
+        try output.checkUnclashed(file, name);
         for (output.adapters) |adapter| {
             if (std.mem.eql(u8, adapter.name, name)) return adapter;
         }
@@ -362,10 +368,22 @@ fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapt
     var found: ?Adapter = null;
     for (output.adapters) |adapter| {
         if (!adapter.claims(extension)) continue;
+        try output.checkUnclashed(file, adapter.name);
         if (found) |first| return planning.fail(output, error.AmbiguousLanguage, file, "adapters '{s}' and '{s}' both handle '{s}' files; pass .lang", .{ first.name, adapter.name, extension });
         found = adapter;
     }
     return found orelse planning.fail(output, error.UnknownLanguage, file, "no adapter handles '{s}' files; pass .lang", .{extension});
+}
+
+/// Fails when two packages export different adapters named `name`, never picking one (D107).
+fn checkUnclashed(output: *Output, file: []const u8, name: []const u8) Error!void {
+    for (output.adapter_clashes) |clash| {
+        if (!std.mem.eql(u8, clash.name, name)) continue;
+        if (std.mem.eql(u8, clash.first_package, clash.second_package)) {
+            return planning.fail(output, error.AmbiguousLanguage, file, "package '{s}' exports two different adapters named '{s}' (D107)", .{ clash.first_package, name });
+        }
+        return planning.fail(output, error.AmbiguousLanguage, file, "packages '{s}' and '{s}' both export an adapter named '{s}'; remove one of them (D107)", .{ clash.first_package, clash.second_package, name });
+    }
 }
 
 /// A hand-built color format whose template does not match its components, or a float
@@ -471,6 +489,37 @@ test "generate serializes through the adapter claiming the extension, under ~" {
     try testing.expectEqual(null, file.old);
     try testing.expectEqualStrings("name = \"frost\"\nsize = 12\naccent = #bf616aff\n", file.new);
     try testing.expectEqualStrings("accent = #bf616a\nblur = yes\nopacity = 0.3\n", fixture.plan.files.items[1].new);
+}
+
+test "an adapter name two packages export fails when used, naming both (D107)" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("terminal", &.{lines_adapter});
+    output.adapter_clashes = &.{.{ .name = "lines", .first_package = "kosm_lines", .second_package = "my_lines" }};
+
+    try testing.expectError(error.AmbiguousLanguage, output.generate(.{ .file = "~/a.conf", .lang = "lines" }, .{ .size = 1 }));
+    try testing.expectEqualStrings("packages 'kosm_lines' and 'my_lines' both export an adapter named 'lines'; remove one of them (D107)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("~/a.conf", fixture.diagnostics.file);
+    try testing.expectEqualStrings("terminal", fixture.diagnostics.app);
+
+    try testing.expectError(error.AmbiguousLanguage, output.generate(.{ .file = "~/a.lines" }, .{ .size = 1 }));
+    try testing.expectError(error.AmbiguousLanguage, output.template(.{}, .{ .file = "~/a.lines", .text = "size" }));
+    try testing.expectEqual(0, fixture.plan.files.items.len);
+
+    output.adapter_clashes = &.{.{ .name = "lines", .first_package = "kosm_lines", .second_package = "kosm_lines" }};
+    try testing.expectError(error.AmbiguousLanguage, output.generate(.{ .file = "~/a.lines" }, .{ .size = 1 }));
+    try testing.expectEqualStrings("package 'kosm_lines' exports two different adapters named 'lines' (D107)", fixture.diagnostics.message());
+}
+
+test "an adapter name clash nobody uses is no error (D107)" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("terminal", &.{lines_adapter});
+    output.adapter_clashes = &.{.{ .name = "css", .first_package = "kosm_css", .second_package = "my_css" }};
+    try output.generate(.{ .file = "~/a.lines" }, .{ .size = 1 });
+    try testing.expectEqual(1, fixture.plan.files.items.len);
 }
 
 test "generate errors name the problem and the file" {

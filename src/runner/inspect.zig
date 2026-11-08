@@ -68,7 +68,7 @@ pub fn provided(comptime name: []const u8, comptime Package: type) Provided {
         }
     }
     comptime var adapters: []const []const u8 = &.{};
-    inline for (comptime discovery.adapters(&.{Package})) |adapter| adapters = adapters ++ .{adapter.name};
+    inline for (comptime discovery.declaredAdapters(Package)) |adapter| adapters = adapters ++ .{adapter.name};
     const final_apps = apps[0..apps.len].*;
     const final_adapters = adapters[0..adapters.len].*;
     const final_kosmoi = kosmoi[0..kosmoi.len].*;

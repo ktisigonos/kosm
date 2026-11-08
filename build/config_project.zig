@@ -209,7 +209,7 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         \\
     , .{ std.zig.fmtString(name), std.zig.fmtString(kosmos.origin), std.zig.fmtString(kosmos.name), std.zig.fmtString(function) }) catch @panic("OOM");
     for (entries) |entry| {
-        if (providesAdapters(entry, reached)) writer.print("            @import(\"{f}\"),\n", .{std.zig.fmtString(entry.name)}) catch @panic("OOM");
+        if (providesAdapters(entry, reached)) writer.print("            .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry.name) }) catch @panic("OOM");
     }
     writer.writeAll(
         \\        },
