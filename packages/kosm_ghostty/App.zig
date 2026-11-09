@@ -11,7 +11,7 @@ const values = @import("values.zig");
 const settings = @import("settings.zig");
 
 /// The file kosm owns; ghostty's config includes it. Default: `~/.config/ghostty/kosm.ghostty`.
-file: []const u8 = "~/.config/ghostty/kosm.ghostty",
+file: []const u8 = "~/.config/ghostty/kosm",
 /// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the ghostty
 /// adapter's: `#rrggbb`, `true`/`false`, then kosm's 6 float decimals.
 format: kosm.Format = .{},
