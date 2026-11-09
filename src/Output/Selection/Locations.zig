@@ -1,4 +1,4 @@
-//! Prints where matches are, `~/a.json:3, ~/b.json:7`, for messages naming them (G6).
+//! Prints where matches are, `~/a.json:3, ~/b.json:7`, for messages naming them.
 
 const Locations = @This();
 

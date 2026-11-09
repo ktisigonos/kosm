@@ -1,4 +1,4 @@
-//! Color text as people type it on the command line (D55): hex, `rgb()`, `rgba()`, `hsl()`,
+//! Color text as people type it on the command line: hex, `rgb()`, `rgba()`, `hsl()`,
 //! `hsla()` and `oklch()`, with commas or spaces between values and an optional `/ alpha`.
 
 const std = @import("std");

@@ -1,5 +1,5 @@
-//! What an apply reports without failing (D88): each warning names its app and file like an
-//! error does (G6). Filled while planning and printed by the runner.
+//! What an apply reports without failing: each warning names its app and file like an
+//! error does. Filled while planning and printed by the runner.
 
 const Warnings = @This();
 

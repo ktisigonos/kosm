@@ -1,5 +1,5 @@
 //! A config project's `packages.zon`: for each package `kosm add` installed, the url and ref the
-//! user asked for, so `kosm update` can fetch them again (D46).
+//! user asked for, so `kosm update` can fetch them again.
 
 const Packages = @This();
 
@@ -28,7 +28,7 @@ pub const file_name = "packages.zon";
 
 /// Kept at the top of the file, so nobody deletes it as a copy of build.zig.zon.
 const header =
-    \\// Written by kosm add, remove and update (D46); edit it through them.
+    \\// Written by kosm add, remove and update; edit it through them.
     \\// This file records what you asked for: each package's url and the ref to follow.
     \\// build.zig.zon records the commit and hash that resolved to, which loses the ref,
     \\// so this is not a duplicate: kosm update fetches each package from here.

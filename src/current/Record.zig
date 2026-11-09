@@ -1,4 +1,4 @@
-//! The last successful apply, kept in the state directory for `kosm current` (D75).
+//! The last successful apply, kept in the state directory for `kosm current`.
 
 const Record = @This();
 
@@ -66,7 +66,7 @@ const max_size = 1024 * 1024;
 
 /// Prints the command that applies this record again:
 /// `kosm apply frost.iced --accent '#ff0000' --config /tmp/config`. `--config` is left out when
-/// the recorded config is `default_config` (D75).
+/// the recorded config is `default_config`.
 pub fn writeCommand(record: Record, default_config: ?[]const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     try writer.writeAll("kosm apply ");
     try writeShellWord(writer, record.kosmos);

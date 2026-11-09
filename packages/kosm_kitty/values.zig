@@ -1,6 +1,6 @@
 //! The types kitty options take. A union writes its tag (`none`) or its payload (a color);
 //! a type with a `write` method builds a joined value whose numbers, booleans and colors follow
-//! the file's format (D89), and a type with a `format` method writes plain text. Enum tags are written with dashes
+//! the file's format, and a type with a `format` method writes plain text. Enum tags are written with dashes
 //! (`thin_sparse` -> `thin-sparse`) unless the enum declares `underscored`.
 
 const std = @import("std");

@@ -1,11 +1,11 @@
 # kosm_zen
 
 Zen Browser for kosm: its theme colors as CSS custom properties, and its about:config prefs in
-every profile's `user.js` (D94). Needs `kosm_css` and `kosm_userjs` installed, which write the
+every profile's `user.js`. Needs `kosm_css` and `kosm_userjs` installed, which write the
 files.
 
 The app writes `~/.config/ZenBrowser/kosm.css`. Make your `userChrome.css` and
-`userContent.css` use it once (D57): `@import` it first, then use the properties wherever a
+`userContent.css` use it once: `@import` it first, then use the properties wherever a
 color goes:
 
 ```css
@@ -25,7 +25,7 @@ color goes:
 | Field | Property | Default |
 |---|---|---|
 | `file` | | `~/.config/ZenBrowser/kosm.css` |
-| `format` | | `.{}`: the CSS adapter's `#rrggbbaa`, then 6 float decimals (D70) |
+| `format` | | `.{}`: the CSS adapter's `#rrggbbaa`, then 6 float decimals |
 | `foreground` | `--kosm-foreground` | null; `from`: white, black in light mode |
 | `accent` | `--kosm-accent` | null; `from`: cyan |
 | `background` | `--kosm-background` | null; `from`: black, white in light mode |
@@ -42,13 +42,13 @@ color goes:
 | `containers.purple` | `--kosm-containers-purple` | null; `from`: the wheel's purple |
 | `hovered` | | null: nothing derived; `from`: the theme's `state.hovered` |
 | `profile` | | null: no prefs, only the CSS; `from`: `Profile.from(theme)` |
-| `extra` | | `&.{}`: custom properties the app doesn't cover, by path (D99) |
+| `extra` | | `&.{}`: custom properties the app doesn't cover, by path |
 
-A null color is not written. A minimal config can skip `from` (D100): `kosm_zen.App{}` writes a
+A null color is not written. A minimal config can skip `from`: `kosm_zen.App{}` writes a
 `kosm.css` with an empty `:root` and no prefs, so assign only what you want
 (`.{ .accent = kosm.hex("268078") }`).
 
-`extra` writes other custom properties after the app's own (D99), the path's keys joined by `-`:
+`extra` writes other custom properties after the app's own, the path's keys joined by `-`:
 `.{ .path = "kosm.tab.radius", .value = .{ .raw = "8px" } }` is `--kosm-tab-radius`. An extra
 whose path equals, contains or lies inside a set color's or another extra's fails the apply naming
 both.
@@ -89,9 +89,9 @@ On a machine without Zen, set `profile = null` (a profile glob matching nothing 
 | `profiles` | `~/.zen/*`: a glob of profile directories; only ones holding a `prefs.js` count |
 | `exclude` | none: globs of profile directories to leave out |
 | `target` | `.block` (`default_target`); `.generate` owns the whole `user.js` |
-| `format` | `.{}`: the `userjs` adapter's `#rrggbb` (D70) |
+| `format` | `.{}`: the `userjs` adapter's `#rrggbb` |
 | `prefs` | `.{}`, below; with no pref set, the profile writes nothing and needs no Zen |
-| `extra` | `&.{}`: prefs the app doesn't cover, by their whole about:config name (D99) |
+| `extra` | `&.{}`: prefs the app doesn't cover, by their whole about:config name |
 
 `extra` writes prefs `prefs` doesn't cover, after its own, each named by its whole about:config
 name (no quotes needed): `.{ .path = "zen.urlbar.behavior", .value = .{ .string = "float" } }`.
@@ -102,7 +102,7 @@ Prefs never nest, so only a name written twice, by `prefs` or another extra, fai
 Named like about:config: `prefs.zen.theme.accent_color` is `zen.theme.accent-color`. A null pref
 is not written, so Zen's own value stays. A pref that also has prefs below it is a group, and
 its own value is the group's `value` field: `prefs.zen.theme.gradient.value` is
-`zen.theme.gradient` (D102).
+`zen.theme.gradient`.
 
 | Field | Pref | Default |
 |---|---|---|

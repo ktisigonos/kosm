@@ -1,5 +1,5 @@
-//! Walks a kosmos tree (D18): plans every app in it, each `apply` writing into one shared plan
-//! under its path in the tree ("terminal.kitty"), and later reloads them (D74). Null optional
+//! Walks a kosmos tree: plans every app in it, each `apply` writing into one shared plan
+//! under its path in the tree ("terminal.kitty"), and later reloads them. Null optional
 //! apps are skipped.
 
 const std = @import("std");
@@ -14,11 +14,11 @@ pub const Context = struct {
     /// Absolute home directory that `~` expands to.
     home: []const u8,
     adapters: []const kosm.Adapter,
-    /// Adapter names packages clash on; using one fails (D107).
+    /// Adapter names packages clash on; using one fails.
     adapter_clashes: []const kosm.Output.AdapterClash = &.{},
     plan: *kosm.Plan,
     diagnostics: *kosm.Diagnostics,
-    /// What the apps report without failing (D88).
+    /// What the apps report without failing.
     warnings: *kosm.Warnings,
 };
 

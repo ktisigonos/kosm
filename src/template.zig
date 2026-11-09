@@ -1,4 +1,4 @@
-//! Template placeholders (D60): `kosm.<path>` or `{kosm.<path>}`, resolved against an app's
+//! Template placeholders: `kosm.<path>` or `{kosm.<path>}`, resolved against an app's
 //! fields. Templates are comptime text, so an unknown path is a compile error.
 
 const std = @import("std");
@@ -20,9 +20,9 @@ pub const Failure = struct {
 pub const Error = ColorFormat.WriteError || error{MissingValue};
 
 /// Writes `text` with every placeholder replaced by the value at its path in `app`. Colors
-/// print in `format` (D70): a color without a component in its color format. `name` names the template in compile
+/// print in `format`: a color without a component in its color format. `name` names the template in compile
 /// errors. A `null` on the way is `error.MissingValue`, described in `failure`. Colors printed
-/// clipped to the gamut (D48) are noted in `clipped` with their line, for kosm to warn about (D88).
+/// clipped to the gamut are noted in `clipped` with their line, for kosm to warn about.
 pub fn render(
     writer: *std.Io.Writer,
     comptime name: []const u8,
@@ -239,7 +239,7 @@ fn fail(comptime location: Location, comptime message: []const u8) noreturn {
     @compileError(std.fmt.comptimePrint("template {s}, line {d}: kosm.{s}: {s}", .{ location.name, location.line, location.path, message }));
 }
 
-/// "unknown field", with the nearest field as a suggestion (D60): a field glued to text
+/// "unknown field", with the nearest field as a suggestion: a field glued to text
 /// (`kosm.roundingpx`) suggests the braced form. `rest` starts with the unknown segment.
 fn unknownField(comptime T: type, comptime location: Location, comptime rest: []const []const u8) []const u8 {
     comptime {

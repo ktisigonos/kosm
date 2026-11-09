@@ -10,12 +10,12 @@ The app writes Lua through the `lua` adapter of `kosm_lua`, which the config nee
 
 ## Who owns the values
 
-`target` decides (D91):
+`target` decides:
 
 - **`.generate`** (the default, `default_target`): kosm writes every set option to
   `~/.config/hypr/kosm.lua`, a module shaped like `hl.config`'s argument. kosm is the source of
   truth, so any option can be set. kosm makes `hyprland.lua` read it by keeping this block at
-  the end of the file, after your own `hl.config` calls so its values win (D97):
+  the end of the file, after your own `hl.config` calls so its values win:
 
   ```lua
   -- kosm:begin hyprland
@@ -28,10 +28,10 @@ The app writes Lua through the `lua` adapter of `kosm_lua`, which the config nee
   `require("kosm")` only finds `~/.config/hypr/kosm.lua`, so generating elsewhere needs
   `include = null` and a `require` of your own.
   Or read single values from it (`require("kosm").decoration.blur.size`).
-- **`.edit`**: kosm sets each option where your own Lua files already hold it (D25, D30), so
+- **`.edit`**: kosm sets each option where your own Lua files already hold it, so
   they stay the source of truth. Every set option must exist exactly once in the selected files,
   however they nest it (`col = { active_border = ... }` inside `hl.config({ general = ... })`).
-  kosm never inserts a key (D28), so leave the options your files lack `null`, including the
+  kosm never inserts a key, so leave the options your files lack `null`, including the
   colors `from` fills.
 
   ```zig
@@ -39,28 +39,28 @@ The app writes Lua through the `lua` adapter of `kosm_lua`, which the config nee
   ```
 
 Values your files keep elsewhere (a `defs.lua` table that `hl.config` reads) belong to a local
-app instead (D25).
+app instead.
 
-After every apply the app runs `hyprctl reload` (D74). If Hyprland isn't running, kosm prints a
+After every apply the app runs `hyprctl reload`. If Hyprland isn't running, kosm prints a
 warning and carries on.
 
 ## Colors
 
-`from(theme)` sets (D27): `general.col.active_border` and `decoration.glow.color` from cyan,
+`from(theme)` sets: `general.col.active_border` and `decoration.glow.color` from cyan,
 `general.col.nogroup_border_active` from magenta, group borders and the groupbar from yellow
 (locked: orange), groupbar text and `misc.col.splash` from the foreground, `misc.background_color`
 from the background (white and black, swapped in light mode), and `decoration.shadow.color` from
 the background through `surface.shadow`. The blur effects' own colors (`aurora`, `fluid_jar`,
 `acrylic`) stay Hyprland's.
 
-Each inactive color left `null` derives from its active one through `inactive` (D23):
+Each inactive color left `null` derives from its active one through `inactive`:
 `general.col.inactive_border`, `general.col.nogroup_border`, `decoration.shadow.color_inactive`,
 `decoration.glow.color_inactive`, `group.col.border_inactive`, `group.col.border_locked_inactive`,
 `group.groupbar.col.inactive`, `group.groupbar.col.locked_inactive`,
 `group.groupbar.text_color_inactive` and `group.groupbar.text_color_locked_inactive`.
 With `inactive` left null, none of them derive.
 
-A minimal config can skip `from` (D100): `kosm_hyprland.App{}` writes an empty module
+A minimal config can skip `from`: `kosm_hyprland.App{}` writes an empty module
 (`return {}`) and its include block, so assign only what you want
 (`.{ .decoration = .{ .rounding = 10 } }`) and Hyprland keeps its defaults for the rest.
 
@@ -70,7 +70,7 @@ The types live in `kosm_hyprland.values`:
 
 - `Gradient`: up to 10 colors and an `angle` in degrees. `.solid(color)` is one color (written as
   a plain color), `.from(&.{ a, b })` several (written `{ colors = { ... }, angle = ... }`). An
-  empty gradient, or one given more than 10 colors, fails the apply naming the option (D93).
+  empty gradient, or one given more than 10 colors, fails the apply naming the option.
 - `CssGap`: `top`, `right`, `bottom`, `left` in layout pixels; `.all(5)` is the same everywhere.
 - `Vec2`: `x` and `y`, written `{ x, y }`.
 - `FontWeight`: `.{ .name = .bold }` or `.{ .weight = 450 }`.
@@ -87,7 +87,7 @@ The types live in `kosm_hyprland.values`:
 ## Settings the app doesn't cover
 
 `extra` writes any other setting, such as a plugin's or one Hyprland added after this app, by
-path (D32, D99). Each value is a `kosm.Value`, formatted like the app's own options:
+path. Each value is a `kosm.Value`, formatted like the app's own options:
 
 ```zig
 hyprland.extra = &.{
@@ -107,9 +107,9 @@ inside a set option's or another extra's fails the apply naming both, checked by
 |---|---|
 | `target` | `default_target`: `.{ .generate = "~/.config/hypr/kosm.lua" }` |
 | `include` | `"~/.config/hypr/hyprland.lua"`: the file that gets the block reading the generated module, `.generate` target only; `null` for no block |
-| `format` | `.{ .color = .hex8 }`: `#rrggbbaa`, so alpha is kept; the rest from the Lua adapter, then kosm (D70) |
+| `format` | `.{ .color = .hex8 }`: `#rrggbbaa`, so alpha is kept; the rest from the Lua adapter, then kosm |
 | `inactive` | null: nothing derived; `from`: the theme's `state.inactive`, deriving the inactive colors listed above |
-| `extra` | `&.{}`: settings the app doesn't cover, by path (D99) |
+| `extra` | `&.{}`: settings the app doesn't cover, by path |
 
 ## Options
 
@@ -120,9 +120,9 @@ inside a set option's or another extra's fails the apply naming both, checked by
 | `general.gaps_out` | `?values.CssGap` | Gaps between windows and monitor edges. null: Hyprland's default, `20`. |
 | `general.float_gaps` | `?values.CssGap` | Gaps between windows and monitor edges for floating windows. null: Hyprland's default, `0`. |
 | `general.gaps_workspaces` | `?i64` | Gaps between workspaces. Stacks with gaps_out. 0..100. null: Hyprland's default, `0`. |
-| `general.col.inactive_border` | `?values.Gradient` | Border color for inactive windows. null: `active_border` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `general.col.inactive_border` | `?values.Gradient` | Border color for inactive windows. null: `active_border` through the app's `inactive` when that is set, else Hyprland's default. |
 | `general.col.active_border` | `?values.Gradient` | Border color for the active window. null: Hyprland's default, `#ffffffff`. |
-| `general.col.nogroup_border` | `?values.Gradient` | Inactive border color for window that cannot be added to a group. null: `nogroup_border_active` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `general.col.nogroup_border` | `?values.Gradient` | Inactive border color for window that cannot be added to a group. null: `nogroup_border_active` through the app's `inactive` when that is set, else Hyprland's default. |
 | `general.col.nogroup_border_active` | `?values.Gradient` | Active border color for window that cannot be added to a group. null: Hyprland's default, `#ff00ffff`. |
 | `general.layout` | `?values.Layout` | Which layout to use: a built-in one, or one written in Lua (`.{ .lua = "name" }`). null: Hyprland's default, `dwindle`. |
 | `general.no_focus_fallback` | `?bool` | If true, will not fall back to the next available window when moving focus in a direction where no window was found. null: Hyprland's default, `false`. |
@@ -148,14 +148,14 @@ inside a set option's or another extra's fails the apply naming both, checked by
 | `decoration.shadow.render_power` | `?i64` | In what power to render the falloff (more power, the faster the falloff). 1..4. null: Hyprland's default, `3`. |
 | `decoration.shadow.sharp` | `?bool` | Whether the shadow should be sharp or not. null: Hyprland's default, `false`. |
 | `decoration.shadow.color` | `?values.Gradient` | Shadow's color. Alpha dictates shadow's opacity. null: Hyprland's default, `#1a1a1aee`. |
-| `decoration.shadow.color_inactive` | `?values.Gradient` | Inactive shadow color. null: `color` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `decoration.shadow.color_inactive` | `?values.Gradient` | Inactive shadow color. null: `color` through the app's `inactive` when that is set, else Hyprland's default. |
 | `decoration.shadow.offset` | `?values.Vec2` | Shadow's rendering offset. null: Hyprland's default, `2`. |
 | `decoration.shadow.scale` | `?f64` | Shadow's scale. null: Hyprland's default, `1`. |
 | `decoration.glow.enabled` | `?bool` | Enable inner glow on windows. null: Hyprland's default, `false`. |
 | `decoration.glow.range` | `?i64` | Glow range (size) in layout px. 0..100. null: Hyprland's default, `10`. |
 | `decoration.glow.render_power` | `?i64` | In what power to render the falloff (more power, the faster the falloff). 1..4. null: Hyprland's default, `3`. |
 | `decoration.glow.color` | `?values.Gradient` | Glow's color. Alpha dictates glow's opacity. null: Hyprland's default, `#33ccffee`. |
-| `decoration.glow.color_inactive` | `?values.Gradient` | Inactive glow color. null: `color` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `decoration.glow.color_inactive` | `?values.Gradient` | Inactive glow color. null: `color` through the app's `inactive` when that is set, else Hyprland's default. |
 | `decoration.dim_modal` | `?bool` | Enables dimming of parents of modal windows. null: Hyprland's default, `true`. |
 | `decoration.dim_inactive` | `?bool` | Enables dimming of inactive windows. null: Hyprland's default, `false`. |
 | `decoration.dim_strength` | `?f64` | How much inactive windows should be dimmed. null: Hyprland's default, `0.5`. |
@@ -306,8 +306,8 @@ inside a set option's or another extra's fails the apply naming both, checked by
 | `group.merge_groups_on_drag` | `?bool` | Whether window groups can be dragged into other groups. null: Hyprland's default, `true`. |
 | `group.merge_groups_on_groupbar` | `?bool` | Whether one group will be merged with another when dragged into its groupbar. null: Hyprland's default, `true`. |
 | `group.col.border_active` | `?values.Gradient` | Active group border color. null: Hyprland's default, `#ffff0066`. |
-| `group.col.border_inactive` | `?values.Gradient` | Inactive group border color. null: `border_active` through the app's `inactive` when that is set, else Hyprland's default (D23). |
-| `group.col.border_locked_inactive` | `?values.Gradient` | Inactive locked group border color. null: `border_locked_active` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `group.col.border_inactive` | `?values.Gradient` | Inactive group border color. null: `border_active` through the app's `inactive` when that is set, else Hyprland's default. |
+| `group.col.border_locked_inactive` | `?values.Gradient` | Inactive locked group border color. null: `border_locked_active` through the app's `inactive` when that is set, else Hyprland's default. |
 | `group.col.border_locked_active` | `?values.Gradient` | Active locked group border color. null: Hyprland's default, `#77550066`. |
 | `group.auto_group` | `?bool` | Automatically group new windows. null: Hyprland's default, `true`. |
 | `group.drag_into_group` | enum: `.disabled`, `.enabled`, `.only_into_groupbar` | Whether dragging a window into a unlocked group will merge them. null: Hyprland's default, `enabled`. |
@@ -335,13 +335,13 @@ inside a set option's or another extra's fails the apply naming both, checked by
 | `group.groupbar.round_only_edges` | `?bool` | If yes, will only round at the groupbar edges. null: Hyprland's default, `true`. |
 | `group.groupbar.gradient_round_only_edges` | `?bool` | If yes, will only round at the groupbar gradient edges. null: Hyprland's default, `true`. |
 | `group.groupbar.text_color` | `?kosm.Color` | Color for window titles in the groupbar. null: Hyprland's default, `#ffffffff`. |
-| `group.groupbar.text_color_inactive` | `?kosm.Color` | Color for inactive windows' titles in the groupbar. null: `text_color` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `group.groupbar.text_color_inactive` | `?kosm.Color` | Color for inactive windows' titles in the groupbar. null: `text_color` through the app's `inactive` when that is set, else Hyprland's default. |
 | `group.groupbar.text_color_locked_active` | `?kosm.Color` | Color for the active window's title in a locked group. null: Hyprland's default. |
-| `group.groupbar.text_color_locked_inactive` | `?kosm.Color` | Color for inactive windows' titles in locked groups. null: `text_color_locked_active` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `group.groupbar.text_color_locked_inactive` | `?kosm.Color` | Color for inactive windows' titles in locked groups. null: `text_color_locked_active` through the app's `inactive` when that is set, else Hyprland's default. |
 | `group.groupbar.col.active` | `?values.Gradient` | Active group border color. null: Hyprland's default, `#ffff0066`. |
-| `group.groupbar.col.inactive` | `?values.Gradient` | Inactive (out of focus) group border color. null: `active` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `group.groupbar.col.inactive` | `?values.Gradient` | Inactive (out of focus) group border color. null: `active` through the app's `inactive` when that is set, else Hyprland's default. |
 | `group.groupbar.col.locked_active` | `?values.Gradient` | Active locked group border color. null: Hyprland's default, `#ff550066`. |
-| `group.groupbar.col.locked_inactive` | `?values.Gradient` | Inactive locked group border color. null: `locked_active` through the app's `inactive` when that is set, else Hyprland's default (D23). |
+| `group.groupbar.col.locked_inactive` | `?values.Gradient` | Inactive locked group border color. null: `locked_active` through the app's `inactive` when that is set, else Hyprland's default. |
 | `group.groupbar.gaps_out` | `?i64` | Gap between gradients and window. 0..20. null: Hyprland's default, `2`. |
 | `group.groupbar.gaps_in` | `?i64` | Gap between gradients. 0..20. null: Hyprland's default, `2`. |
 | `group.groupbar.keep_upper_gap` | `?bool` | Keep an upper gap above gradient. null: Hyprland's default, `true`. |

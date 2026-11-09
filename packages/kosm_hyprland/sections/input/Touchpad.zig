@@ -1,4 +1,4 @@
-//! Hyprland's `input.touchpad` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `input.touchpad` options. Field names are Hyprland's option names.
 
 /// Disable the touchpad while typing. null: Hyprland's default, `true`.
 disable_while_typing: ?bool = null,

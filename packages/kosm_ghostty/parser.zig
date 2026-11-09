@@ -1,4 +1,4 @@
-//! Reads a ghostty config file into the tree kosm matches paths against (D40): every
+//! Reads a ghostty config file into the tree kosm matches paths against: every
 //! `key = value` line is one entry of the file's table, so a repeated key (`font-family`,
 //! `palette`, `keybind`) is one match per line. A value's bytes run from the first character
 //! after `=` to the last on the line, quotes included, as ghostty trims them.

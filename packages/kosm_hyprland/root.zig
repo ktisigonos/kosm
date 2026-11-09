@@ -4,7 +4,7 @@ const std = @import("std");
 
 /// Hyprland's settings; build one with `from`.
 pub const App = @import("App.zig");
-/// Colors from the theme, everything else left to Hyprland (D27).
+/// Colors from the theme, everything else left to Hyprland.
 pub const from = App.from;
 /// The types Hyprland options take, for naming them in a kosmos.
 pub const values = @import("values.zig");

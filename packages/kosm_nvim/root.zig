@@ -4,7 +4,7 @@ const std = @import("std");
 
 /// The palette; build one with `from`.
 pub const App = @import("App.zig");
-/// Colors from the theme (D27).
+/// Colors from the theme.
 pub const from = App.from;
 
 test {

@@ -1,4 +1,4 @@
-//! kitty's "Performance tuning" options. Field names are kitty's option names (D27).
+//! kitty's "Performance tuning" options. Field names are kitty's option names.
 
 /// Delay between screen updates (in milliseconds). null: kitty's default, `10`.
 repaint_delay: ?u32 = null,

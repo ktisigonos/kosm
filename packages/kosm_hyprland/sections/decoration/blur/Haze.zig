@@ -1,4 +1,4 @@
-//! Hyprland's `decoration.blur.haze` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `decoration.blur.haze` options. Field names are Hyprland's option names.
 
 /// Strength of the haze pearlescent sheen. null: Hyprland's default, `0.35`.
 intensity: ?f64 = null,

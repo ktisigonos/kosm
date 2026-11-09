@@ -1,4 +1,4 @@
-//! Picks whichever of two colors reads better on top of the color, by WCAG 2 contrast ratio (D15).
+//! Picks whichever of two colors reads better on top of the color, by WCAG 2 contrast ratio.
 
 const Contrast = @This();
 

@@ -1,5 +1,5 @@
 //! A color in HSV (= HSB) over gamma-encoded sRGB. Channels are not clamped, so colors
-//! outside sRGB survive the trip (D48).
+//! outside sRGB survive the trip.
 
 const Hsv = @This();
 

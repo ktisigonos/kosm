@@ -1,4 +1,4 @@
-//! A setting an app doesn't cover, written by path through the app's `extra` (D99), and what an
+//! A setting an app doesn't cover, written by path through the app's `extra`, and what an
 //! app needs to write its extras beside its own settings: `withExtras` checks them, `tree` nests
 //! them for `generate`.
 
@@ -11,7 +11,7 @@ const Output = @import("Output.zig");
 
 const Allocator = std.mem.Allocator;
 
-/// Where it goes: dot-separated keys, `"quoted.keys"` for a key holding a dot (D32), e.g.
+/// Where it goes: dot-separated keys, `"quoted.keys"` for a key holding a dot, e.g.
 /// `plugin.dynamic_cursors.length`.
 path: []const u8,
 /// What to write there, formatted like the app's own settings: `.{ .integer = 24 }`.
@@ -24,7 +24,7 @@ pub const Rules = @import("Setting/Rules.zig");
 
 /// `own` followed by `extras`, read by `rules`. An extra whose path is bad, or whose keys equal,
 /// contain or lie inside those of an own setting or an earlier extra, fails the apply naming
-/// both (D99, G6). `file` is the file the extras go to, for the message.
+/// both. `file` is the file the extras go to, for the message.
 pub fn withExtras(output: *Output, file: []const u8, own: []const Keyed, extras: []const Setting, rules: Rules) Output.Error![]const Keyed {
     var all: std.ArrayList(Keyed) = .empty;
     try all.appendSlice(output.allocator, own);
@@ -37,7 +37,7 @@ pub fn withExtras(output: *Output, file: []const u8, own: []const Keyed, extras:
         for (all.items[0..index]) |other| {
             if (!clash(setting.keys, other.keys, rules.repeatable)) continue;
             const kind = if (other.extra) "extra" else "setting";
-            return output.fail(file, "extra '{s}' and {s} '{s}' write the same key, or one inside the other; keep one (D99)", .{ setting.path, kind, other.path });
+            return output.fail(file, "extra '{s}' and {s} '{s}' write the same key, or one inside the other; keep one", .{ setting.path, kind, other.path });
         }
     }
     return all.items;
@@ -82,7 +82,7 @@ fn clash(a: []const ?[]const u8, b: []const ?[]const u8, repeatable: []const []c
 }
 
 /// Every value of `root`, a table, with the keys leading to it: tables are stepped into, every
-/// other value is one setting. Paths quote keys holding a dot (D32).
+/// other value is one setting. Paths quote keys holding a dot.
 pub fn leaves(allocator: Allocator, root: Value) Allocator.Error![]const Keyed {
     var found: std.ArrayList(Keyed) = .empty;
     var keys: std.ArrayList(?[]const u8) = .empty;
@@ -187,14 +187,14 @@ const own_tree: Value = .{ .table = &.{
     .{ .key = "map", .value = .{ .string = "ctrl+a new_tab" } },
 } };
 
-test "extras that clash with a setting or an earlier extra fail naming both (D99)" {
+test "extras that clash with a setting or an earlier extra fail naming both" {
     const cases = [_]struct { extras: []const Setting, rules: Rules = .{}, message: []const u8 }{
-        .{ .extras = &.{.{ .path = "general.border_size", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size' and setting 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extras = &.{.{ .path = "general.border_size.width", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size.width' and setting 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extras = &.{.{ .path = "general", .value = .{ .table = &.{} } }}, .message = "extra 'general' and setting 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extras = &.{ .{ .path = "plugin.a", .value = .{ .integer = 1 } }, .{ .path = "plugin.\"a\".b", .value = .{ .integer = 2 } } }, .message = "extra 'plugin.\"a\".b' and extra 'plugin.a' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extras = &.{.{ .path = "*.border_size", .value = .{ .integer = 1 } }}, .rules = .{ .any_key = true }, .message = "extra '*.border_size' and setting 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
-        .{ .extras = &.{.{ .path = "map", .value = .{ .string = "x" } }}, .message = "extra 'map' and setting 'map' write the same key, or one inside the other; keep one (D99)" },
+        .{ .extras = &.{.{ .path = "general.border_size", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size' and setting 'general.border_size' write the same key, or one inside the other; keep one" },
+        .{ .extras = &.{.{ .path = "general.border_size.width", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size.width' and setting 'general.border_size' write the same key, or one inside the other; keep one" },
+        .{ .extras = &.{.{ .path = "general", .value = .{ .table = &.{} } }}, .message = "extra 'general' and setting 'general.border_size' write the same key, or one inside the other; keep one" },
+        .{ .extras = &.{ .{ .path = "plugin.a", .value = .{ .integer = 1 } }, .{ .path = "plugin.\"a\".b", .value = .{ .integer = 2 } } }, .message = "extra 'plugin.\"a\".b' and extra 'plugin.a' write the same key, or one inside the other; keep one" },
+        .{ .extras = &.{.{ .path = "*.border_size", .value = .{ .integer = 1 } }}, .rules = .{ .any_key = true }, .message = "extra '*.border_size' and setting 'general.border_size' write the same key, or one inside the other; keep one" },
+        .{ .extras = &.{.{ .path = "map", .value = .{ .string = "x" } }}, .message = "extra 'map' and setting 'map' write the same key, or one inside the other; keep one" },
         .{ .extras = &.{.{ .path = "plugin.*.length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin.*.length': '*' matches keys only in files kosm edits, not in one it generates" },
         .{ .extras = &.{.{ .path = "plugin..length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin..length', column 8: a segment is empty (two dots, or a dot at an end)" },
         .{ .extras = &.{.{ .path = "font.size", .value = .{ .integer = 1 } }}, .rules = .{ .paths = .one_key }, .message = "extra 'font.size': this file's keys don't nest, so a path is one key" },

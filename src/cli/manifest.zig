@@ -1,6 +1,6 @@
-//! Reads and edits `build.zig.zon` manifests: a config project's dependencies (D46) and a
-//! directory kosmos' own manifest (D62). An edit replaces only the bytes of the entry or value
-//! involved, so comments and formatting elsewhere survive (D35).
+//! Reads and edits `build.zig.zon` manifests: a config project's dependencies and a
+//! directory kosmos' own manifest. An edit replaces only the bytes of the entry or value
+//! involved, so comments and formatting elsewhere survive.
 
 const std = @import("std");
 const Ast = std.zig.Ast;

@@ -165,7 +165,7 @@ fn valueNode(builder: *Builder, value: c.TSNode, depth: usize) Adapter.ParseErro
     return node;
 }
 
-/// The entries of a node that is both a table and a list (D90), in file order: pairs with a key,
+/// The entries of a node that is both a table and a list, in file order: pairs with a key,
 /// and the values of pairs without one as keyless elements.
 fn mixedEntries(builder: *Builder, container: c.TSNode, depth: usize) Adapter.ParseError![]const Node {
     var entries: std.ArrayList(Node) = .empty;

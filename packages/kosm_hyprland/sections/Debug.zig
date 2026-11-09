@@ -1,4 +1,4 @@
-//! Hyprland's `debug` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `debug` options. Field names are Hyprland's option names.
 
 /// Print the debug performance overlay. null: Hyprland's default, `false`.
 overlay: ?bool = null,

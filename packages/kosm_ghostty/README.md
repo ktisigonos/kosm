@@ -13,13 +13,13 @@ default. Make ghostty read it once, at the end of your own config so its values 
 config-file = kosm.ghostty
 ```
 
-`from(theme)` sets the colors (D27): foreground and background from white and black (swapped in
+`from(theme)` sets the colors: foreground and background from white and black (swapped in
 light mode), `palette[0]`..`palette[7]` from the wheel, the selection from the `emphasis.strong`
 and `state.selected` variations. `palette[8]`..`palette[15]` derive from those through `bright`,
-and `background_opacity` from the background's alpha when it is below 1 (D101), unless you set
-them (D23).
+and `background_opacity` from the background's alpha when it is below 1, unless you set
+them.
 
-A minimal config can skip `from` (D100): `kosm_ghostty.App{}` writes an empty `kosm.ghostty`,
+A minimal config can skip `from`: `kosm_ghostty.App{}` writes an empty `kosm.ghostty`,
 so assign only what you want (`.{ .font_size = 13 }`) and ghostty keeps its defaults for the
 rest.
 
@@ -35,7 +35,7 @@ Left out: `config-default-files`, which ghostty only reads from the command line
 which ghostty can't set yet.
 
 After every apply the app reloads every running ghostty by sending it SIGUSR2
-(`pkill -USR2 -x ghostty`, D74). If no ghostty is running, kosm prints a warning and carries on.
+(`pkill -USR2 -x ghostty`). If no ghostty is running, kosm prints a warning and carries on.
 
 ## Keybinds
 
@@ -65,7 +65,7 @@ read in its own log.
 
 ## Options the app doesn't cover
 
-`extra` writes any other option, such as one ghostty added after this app (D99). A path is one
+`extra` writes any other option, such as one ghostty added after this app. A path is one
 option named as in ghostty's config (`font-size`, not `font_size`), and each value is a
 `kosm.Value`, formatted like the app's own options:
 
@@ -86,10 +86,10 @@ line.
 | Field | Default |
 |---|---|
 | `file` | `~/.config/ghostty/kosm.ghostty` |
-| `format` | `.{}`: the ghostty adapter's `#rrggbb` and `true`/`false`, then 6 float decimals (D70) |
+| `format` | `.{}`: the ghostty adapter's `#rrggbb` and `true`/`false`, then 6 float decimals |
 | `bright` | null: nothing derived; `from`: the theme's `lightness.bright`, making `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` |
 | `keybind_clear` | `false`; `true` writes `keybind = clear` before `keybind` |
-| `extra` | `&.{}`: options the app doesn't cover, by name (D99) |
+| `extra` | `&.{}`: options the app doesn't cover, by name |
 
 ## Options
 
@@ -146,7 +146,7 @@ line.
 | `selection_clear_on_copy` | `?bool` | Whether to clear selected text after copying. null: ghostty's default, `false`. |
 | `selection_word_chars` | `?[]const u8` | Characters that mark word boundaries when selecting by word. null: ghostty's default, spaces, quotes, brackets and shell punctuation. |
 | `minimum_contrast` | `?f64` | The minimum contrast ratio between the foreground and background colors. null: ghostty's default, `1`. |
-| `palette` | `[256]?kosm.Color` | The 256 terminal colors by index; 0..15 are the ANSI colors, 8..15 their bright forms. `from` sets 0..7 from the wheel; null 8..15 derive from 0..7 through `bright` (D23). Each set index is written as `palette = N=#rrggbb`; the rest are ghostty's. |
+| `palette` | `[256]?kosm.Color` | The 256 terminal colors by index; 0..15 are the ANSI colors, 8..15 their bright forms. `from` sets 0..7 from the wheel; null 8..15 derive from 0..7 through `bright`. Each set index is written as `palette = N=#rrggbb`; the rest are ghostty's. |
 | `palette_generate` | `?bool` | Whether to generate the extended 256 color palette (16..255) from the base 16 colors. null: ghostty's default, `false`. |
 | `palette_harmonious` | `?bool` | Invert the palette colors generated when `palette-generate` is enabled, so that the colors go in reverse order. null: ghostty's default, `false`. |
 | `cursor_color` | `?values.CellColor` | The color of the cursor. null: ghostty's default. |
@@ -160,7 +160,7 @@ line.
 | `mouse_shift_capture` | `?union(enum) { boolean: bool, always, never }` | Determines whether running programs can detect the shift key pressed with a mouse click. null: ghostty's default, `false`. |
 | `mouse_reporting` | `?bool` | Enable or disable mouse reporting. null: ghostty's default, `true`. |
 | `mouse_scroll_multiplier` | `?values.MouseScrollMultiplier` | Multiplier for scrolling distance with the mouse wheel. null: ghostty's default, `precision:1,discrete:3`. |
-| `background_opacity` | `?f64` | The opacity level (opposite of transparency) of the background. null: the background's alpha when it is below 1 (D101), else ghostty's default, `1`. |
+| `background_opacity` | `?f64` | The opacity level (opposite of transparency) of the background. null: the background's alpha when it is below 1, else ghostty's default, `1`. |
 | `background_opacity_cells` | `?bool` | Applies background opacity to cells with an explicit background color set. null: ghostty's default, `false`. |
 | `background_blur` | `?values.BackgroundBlur` | How much to blur the background when `background_opacity` is below 1. null: ghostty's default, `false`. |
 | `unfocused_split_opacity` | `?f64` | The opacity level (opposite of transparency) of an unfocused split. null: ghostty's default, `0.7`. |

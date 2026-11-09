@@ -1,11 +1,11 @@
-//! A color in OKLCH with alpha, stored in f64 so nothing is lost between edits (D48).
+//! A color in OKLCH with alpha, stored in f64 so nothing is lost between edits.
 
 const Color = @This();
 
 const std = @import("std");
 const parsing = @import("Color/parse.zig");
 
-/// Perceptual lightness: 0 is black, 1 is white. Values outside 0..1 are kept (D48).
+/// Perceptual lightness: 0 is black, 1 is white. Values outside 0..1 are kept.
 lightness: f64,
 /// Colorfulness, 0 for grays. Never negative; about 0.37 is the most sRGB can show.
 chroma: f64,
@@ -92,7 +92,7 @@ pub fn parseHex(text: []const u8) ParseHexError!Color {
 /// Errors from parsing color text.
 pub const ParseError = parsing.Error;
 
-/// Parses any common color text (D55): hex as `parseHex` takes it, `rgb()`, `rgba()`,
+/// Parses any common color text: hex as `parseHex` takes it, `rgb()`, `rgba()`,
 /// `hsl()`, `hsla()` or `oklch()`, with commas or spaces and an optional `/ alpha`.
 pub fn parse(text: []const u8) ParseError!Color {
     return parsing.parse(text);
@@ -132,7 +132,7 @@ pub fn contrastRatio(color: Color, other: Color) f64 {
     return (@max(color_luminance, other_luminance) + 0.05) / (@min(color_luminance, other_luminance) + 0.05);
 }
 
-/// One value a `format` template can print (D47).
+/// One value a `format` template can print.
 pub const Component = enum {
     /// sRGB channel as an integer 0..255, clipped to the gamut.
     red_255,
@@ -163,7 +163,7 @@ pub const Component = enum {
 /// Space reserved per component; the longest is a float clamped to `max_float_magnitude`.
 const component_width = 24;
 
-/// Fills `template`: each `{}` takes the next component, `{{` and `}}` are literal braces (D47).
+/// Fills `template`: each `{}` takes the next component, `{{` and `}}` are literal braces.
 /// A count mismatch or text that might not fit in `Text` is a compile error.
 pub fn format(color: Color, comptime template: []const u8, comptime components: []const Component) Text {
     comptime checkTemplate(template, components.len);
@@ -200,7 +200,7 @@ pub fn hex8(color: Color) Text {
     return color.format("#{}", &.{.hex8});
 }
 
-/// Compile error unless `template` has exactly `component_count` placeholders and fits `Text` (D47).
+/// Compile error unless `template` has exactly `component_count` placeholders and fits `Text`.
 pub fn checkTemplate(comptime template: []const u8, comptime component_count: usize) void {
     var placeholders: usize = 0;
     var literal_bytes: usize = 0;
@@ -237,7 +237,7 @@ pub fn formatComponent(color: Color, component: Component, decimals: u8) Text {
     return text;
 }
 
-/// Whether printing `component` clips this color to the sRGB gamut (D48): a byte component
+/// Whether printing `component` clips this color to the sRGB gamut: a byte component
 /// whose channel rounds outside 0..255, so the printed byte differs. Floats never clip.
 pub fn clips(color: Color, component: Component) bool {
     return clipsRgb(color.toRgb(), component);

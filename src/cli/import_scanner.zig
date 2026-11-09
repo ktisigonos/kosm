@@ -1,5 +1,5 @@
-//! Finds the names a Zig file imports, for the import walk of D76 and D87. Shared by the
-//! command line and the config project's build, so both walk the same way.
+//! Finds the names a Zig file imports, for the walk that finds which local packages a
+//! kosmos reaches. Shared by the command line and the config project's build, so both walk the same way.
 
 const std = @import("std");
 

@@ -17,11 +17,11 @@ try output.generate(.{ .file = "~/.config/app/kosm.css" }, .{ .kosm = .{ .tab_ba
 
 | Value | Written as |
 |---|---|
-| color | the file's color format; default `#rrggbbaa` (D61) |
+| color | the file's color format; default `#rrggbbaa` |
 | string | a quoted CSS string |
 | integer, float | the number |
 | `kosm.raw(text)` | `text`, verbatim (`10px`, `1px solid red`) |
 | bool, list | an error: CSS has neither, so pass `kosm.raw` text |
 
 `block` writes the same text between `/* kosm:begin <id> */` and `/* kosm:end */` in a CSS file
-you otherwise write by hand (D72).
+you otherwise write by hand.

@@ -1,5 +1,5 @@
 //! A color in HSL over gamma-encoded sRGB, as CSS `hsl()` uses it. Channels are not clamped,
-//! so colors outside sRGB survive the trip (D48).
+//! so colors outside sRGB survive the trip.
 
 const Hsl = @This();
 

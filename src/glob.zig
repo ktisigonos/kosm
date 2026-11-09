@@ -1,4 +1,4 @@
-//! The files a selector glob picks (D79): `*` matches any part of a name inside one directory,
+//! The files a selector glob picks: `*` matches any part of a name inside one directory,
 //! `**` as a whole segment matches zero or more directories. Hidden entries match only a segment
 //! that itself starts with a dot. Symlinks are followed; a file reached twice counts once.
 
@@ -14,7 +14,7 @@ pub const Failure = @import("glob/Failure.zig");
 pub const Error = std.mem.Allocator.Error || error{Unreadable};
 
 /// The files matching absolute `pattern` and none of the absolute `exclude` globs, sorted by
-/// path (D31's match order). Missing directories match nothing. Everything lives in `allocator`.
+/// path (the order matches are reported in). Missing directories match nothing. Everything lives in `allocator`.
 pub fn expand(allocator: std.mem.Allocator, io: std.Io, pattern: []const u8, exclude: []const []const u8, failure: *Failure) Error![]const Found {
     std.debug.assert(std.Io.Dir.path.isAbsolute(pattern));
     var segments = try split(allocator, pattern);

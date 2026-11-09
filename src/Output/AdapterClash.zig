@@ -1,4 +1,4 @@
-//! An adapter name that two packages export as different adapters (D107). Kosm finds these
+//! An adapter name that two packages export as different adapters. Kosm finds these
 //! before planning; an app using the name fails naming both packages.
 
 /// The adapter name both packages export, as apps pass it in `.lang`.

@@ -1,4 +1,4 @@
-//! kitty's "Terminal bell" options. Field names are kitty's option names (D27).
+//! kitty's "Terminal bell" options. Field names are kitty's option names.
 
 const values = @import("../values.zig");
 

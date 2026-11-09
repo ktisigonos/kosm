@@ -1,4 +1,4 @@
-//! Hyprland's `group.groupbar` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `group.groupbar` options. Field names are Hyprland's option names.
 
 const kosm = @import("kosm");
 const values = @import("../../values.zig");
@@ -47,11 +47,11 @@ round_only_edges: ?bool = null,
 gradient_round_only_edges: ?bool = null,
 /// Color for window titles in the groupbar. null: Hyprland's default, `#ffffffff`.
 text_color: ?kosm.Color = null,
-/// Color for inactive windows' titles in the groupbar. null: `text_color` through the app's `inactive` when that is set, else Hyprland's default (D23).
+/// Color for inactive windows' titles in the groupbar. null: `text_color` through the app's `inactive` when that is set, else Hyprland's default.
 text_color_inactive: ?kosm.Color = null,
 /// Color for the active window's title in a locked group. null: Hyprland's default.
 text_color_locked_active: ?kosm.Color = null,
-/// Color for inactive windows' titles in locked groups. null: `text_color_locked_active` through the app's `inactive` when that is set, else Hyprland's default (D23).
+/// Color for inactive windows' titles in locked groups. null: `text_color_locked_active` through the app's `inactive` when that is set, else Hyprland's default.
 text_color_locked_inactive: ?kosm.Color = null,
 col: Col = .{},
 /// Gap between gradients and window. 0..20. null: Hyprland's default, `2`.

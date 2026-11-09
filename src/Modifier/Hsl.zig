@@ -1,5 +1,5 @@
-//! Deltas added to a color in HSL, converted from and back to OKLCH (D68).
-//! Absolute and not clamped: a lightness past 1 is kept, and clips only when printed as bytes (D48).
+//! Deltas added to a color in HSL, converted from and back to OKLCH.
+//! Absolute and not clamped: a lightness past 1 is kept, and clips only when printed as bytes.
 
 const Hsl = @This();
 

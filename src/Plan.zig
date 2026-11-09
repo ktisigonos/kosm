@@ -1,5 +1,5 @@
 //! Every file an apply will write, with its old contents and the edits apps planned in it,
-//! computed in memory before anything is written (D36, D73). Owns all of its memory.
+//! computed in memory before anything is written. Owns all of its memory.
 
 const Plan = @This();
 
@@ -86,7 +86,7 @@ fn append(plan: *Plan, path: []const u8, display_path: []const u8, old: ?[]u8) L
 pub const EditError = std.mem.Allocator.Error || error{EditsOverlap};
 
 /// Plans `edit` in `file` and updates `file.new`. An edit clashing with a planned one is
-/// `error.EditsOverlap` (D38); `File.clash` names it. Copies the edit's slices.
+/// `error.EditsOverlap`; `File.clash` names it. Copies the edit's slices.
 pub fn addEdit(plan: *Plan, file: *File, edit: Edit) EditError!void {
     std.debug.assert(edit.start <= edit.end and edit.end <= file.current().len);
     if (file.clash(edit) != null) return error.EditsOverlap;

@@ -5,15 +5,15 @@ const Arguments = @This();
 
 const std = @import("std");
 
-/// Print the plan as a diff instead of committing it (D37).
+/// Print the plan as a diff instead of committing it.
 diff: bool = false,
-/// The config project's absolute path, which `kosm apply` passes on for the record (D75).
+/// The config project's absolute path, which `kosm apply` passes on for the record.
 config: ?[]const u8 = null,
-/// The `path=value` text of every `--set`, in order (D20).
+/// The `path=value` text of every `--set`, in order.
 assignments: []const []const u8 = &.{},
-/// Everything else, in order, for the kosmos' `Params` (D19).
+/// Everything else, in order, for the kosmos' `Params`.
 parameters: []const []const u8 = &.{},
-/// The parameters and `--set`s as typed, for the record of the apply (D75).
+/// The parameters and `--set`s as typed, for the record of the apply.
 recorded: []const []const u8 = &.{},
 
 pub const Error = error{ SetWithoutAssignment, ConfigWithoutDirectory, OutOfMemory };

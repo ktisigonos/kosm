@@ -11,22 +11,22 @@ once, at the end of your own `kitty.conf` so its colors win:
 include kosm.conf
 ```
 
-`from(theme)` sets the colors (D27): foreground and background from white and black (swapped in
+`from(theme)` sets the colors: foreground and background from white and black (swapped in
 light mode), `color0`..`color7` from the wheel, cyan for URLs and the active border. Choices
 are enums in Zig spelling (`.thin_sparse` for `thin-sparse`); structured values are typed
 (`window_padding_width = .all(10)`, `window_border_width = .{ .pixels = 1 }`); the types live in
 `kosm_kitty.values`. Keyboard and mouse mappings (`map`, `mouse_map`) are not covered yet.
 
-A minimal config can skip `from` (D100): `kosm_kitty.App{}` writes an empty `kosm.conf`, so
+A minimal config can skip `from`: `kosm_kitty.App{}` writes an empty `kosm.conf`, so
 assign only what you want (`.{ .colors = .{ .background = kosm.hex("041c26") } }`) and kitty
 keeps its defaults for the rest.
 
 After every apply the app reloads every running kitty by sending it SIGUSR1
-(`pkill -USR1 -x kitty`, D74). If no kitty is running, kosm prints a warning and carries on.
+(`pkill -USR1 -x kitty`). If no kitty is running, kosm prints a warning and carries on.
 
 ## Options the app doesn't cover
 
-`extra` writes any other option, such as `map` or one kitty added after this app (D99). A path is
+`extra` writes any other option, such as `map` or one kitty added after this app. A path is
 one kitty option name and each value is a `kosm.Value`, formatted like the app's own options:
 
 ```zig
@@ -46,9 +46,9 @@ extra fails the apply naming both, unless kitty reads that option more than once
 | Field | Default |
 |---|---|
 | `file` | `~/.config/kitty/kosm.conf` |
-| `format` | `.{}`: the kitty adapter's `#rrggbb` and `yes`/`no`, then 6 float decimals (D70) |
+| `format` | `.{}`: the kitty adapter's `#rrggbb` and `yes`/`no`, then 6 float decimals |
 | `bright` | null: nothing derived; `from`: the theme's `lightness.bright`, making `color8`..`color15` from `color0`..`color7` |
-| `extra` | `&.{}`: options the app doesn't cover, by name (D99) |
+| `extra` | `&.{}`: options the app doesn't cover, by name |
 
 ### `fonts` (Fonts)
 
@@ -75,8 +75,8 @@ extra fails the apply naming both, unless kitty reads that option more than once
 
 | Option | Type | Meaning |
 |---|---|---|
-| `cursor` | `?values.ColorOrNone` | Default text cursor color; `none` renders it as reverse video. null: `colors.foreground` (D23). |
-| `cursor_text_color` | `?values.ColorOrBackground` | The color of text under the cursor, or the cell's background color. null: `colors.background` (D23). |
+| `cursor` | `?values.ColorOrNone` | Default text cursor color; `none` renders it as reverse video. null: `colors.foreground`. |
+| `cursor_text_color` | `?values.ColorOrBackground` | The color of text under the cursor, or the cell's background color. null: `colors.background`. |
 | `cursor_shape` | `?enum { block, beam, underline }` | The cursor shape can be one of `block`, `beam`, `underline`. null: kitty's default, `block`. |
 | `cursor_shape_unfocused` | `?enum { block, beam, underline, hollow, unchanged }` | Defines the text cursor shape when the OS window is not focused. null: kitty's default, `hollow`. |
 | `cursor_beam_thickness` | `?f64` | The thickness of the beam cursor (in pts). null: kitty's default, `1.5`. |
@@ -251,7 +251,7 @@ extra fails the apply naming both, unless kitty reads that option more than once
 |---|---|---|
 | `foreground` | `?kosm.Color` | The foreground and background colors. null: kitty's default, `#dddddd`. |
 | `background` | `?kosm.Color` | kitty's `background`. null: kitty's default, `#000000`. |
-| `background_opacity` | `?f64` | The opacity of the background color, 0..1. null: the alpha of `colors.background`, written only when below 1, rounded to two decimals (D23). |
+| `background_opacity` | `?f64` | The opacity of the background color, 0..1. null: the alpha of `colors.background`, written only when below 1, rounded to two decimals. |
 | `background_blur` | `?i64` | Set to a positive value to enable background blur (blurring of the visuals behind a transparent window) on platforms that support it. null: kitty's default, `0`. |
 | `transparent_background_colors` | `?[]const values.TransparentColor` | A space separated list of upto 7 colors, with opacity. null: kitty's default. |
 | `dynamic_background_opacity` | `?bool` | Allow changing `background_opacity` at runtime, by shortcut or remote control. null: kitty's default, `no`. |
@@ -265,21 +265,21 @@ extra fails the apply naming both, unless kitty reads that option more than once
 | `selection_background` | `?values.ColorOrNone` | The background color of text selected with the mouse. null: kitty's default, `#fffacd`. |
 | `palette_generate` | `?enum { fixed, semantic, legacy }` | How to fill in any colors that are unset (set to `none`) in the 256-color palette. null: kitty's default, `fixed`. |
 | `color0` | `?kosm.Color` | black null: kitty's default, `#000000`. |
-| `color8` | `?kosm.Color` | Bright variant of `color0`. null: `color0` through the app's `bright` modifier (D23). |
+| `color8` | `?kosm.Color` | Bright variant of `color0`. null: `color0` through the app's `bright` modifier. |
 | `color1` | `?kosm.Color` | red null: kitty's default, `#cc0403`. |
-| `color9` | `?kosm.Color` | Bright variant of `color1`. null: `color1` through the app's `bright` modifier (D23). |
+| `color9` | `?kosm.Color` | Bright variant of `color1`. null: `color1` through the app's `bright` modifier. |
 | `color2` | `?kosm.Color` | green null: kitty's default, `#19cb00`. |
-| `color10` | `?kosm.Color` | Bright variant of `color2`. null: `color2` through the app's `bright` modifier (D23). |
+| `color10` | `?kosm.Color` | Bright variant of `color2`. null: `color2` through the app's `bright` modifier. |
 | `color3` | `?kosm.Color` | yellow null: kitty's default, `#cecb00`. |
-| `color11` | `?kosm.Color` | Bright variant of `color3`. null: `color3` through the app's `bright` modifier (D23). |
+| `color11` | `?kosm.Color` | Bright variant of `color3`. null: `color3` through the app's `bright` modifier. |
 | `color4` | `?kosm.Color` | blue null: kitty's default, `#0d73cc`. |
-| `color12` | `?kosm.Color` | Bright variant of `color4`. null: `color4` through the app's `bright` modifier (D23). |
+| `color12` | `?kosm.Color` | Bright variant of `color4`. null: `color4` through the app's `bright` modifier. |
 | `color5` | `?kosm.Color` | magenta null: kitty's default, `#cb1ed1`. |
-| `color13` | `?kosm.Color` | Bright variant of `color5`. null: `color5` through the app's `bright` modifier (D23). |
+| `color13` | `?kosm.Color` | Bright variant of `color5`. null: `color5` through the app's `bright` modifier. |
 | `color6` | `?kosm.Color` | cyan null: kitty's default, `#0dcdcd`. |
-| `color14` | `?kosm.Color` | Bright variant of `color6`. null: `color6` through the app's `bright` modifier (D23). |
+| `color14` | `?kosm.Color` | Bright variant of `color6`. null: `color6` through the app's `bright` modifier. |
 | `color7` | `?kosm.Color` | white null: kitty's default, `#dddddd`. |
-| `color15` | `?kosm.Color` | Bright variant of `color7`. null: `color7` through the app's `bright` modifier (D23). |
+| `color15` | `?kosm.Color` | Bright variant of `color7`. null: `color7` through the app's `bright` modifier. |
 | `mark1_foreground` | `?kosm.Color` | Color for marks of type 1 null: kitty's default, `black`. |
 | `mark1_background` | `?kosm.Color` | Color for marks of type 1 (light steel blue) null: kitty's default, `#98d3cb`. |
 | `mark2_foreground` | `?kosm.Color` | Color for marks of type 2 null: kitty's default, `black`. |

@@ -1,6 +1,6 @@
-//! Zen Browser's theme colors (D22, D27), generated as `--kosm-*` custom properties into
-//! `file`. userChrome.css and userContent.css `@import` it and use them through `var()` (D57).
-//! Its about:config prefs go to every profile's `user.js` through `profile` (D94).
+//! Zen Browser's theme colors, generated as `--kosm-*` custom properties into
+//! `file`. userChrome.css and userContent.css `@import` it and use them through `var()`.
+//! Its about:config prefs go to every profile's `user.js` through `profile`.
 
 const App = @This();
 
@@ -9,7 +9,7 @@ const kosm = @import("kosm");
 
 /// The file kosm owns. Default: `~/.config/ZenBrowser/kosm.css`.
 file: []const u8 = "~/.config/ZenBrowser/kosm.css",
-/// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the CSS
+/// How values are spelled, e.g. `.color = .hex_upper`. Null fields take the CSS
 /// adapter's: `#rrggbbaa`, then kosm's 6 float decimals.
 format: kosm.Format = .{},
 /// Text and icons (`--kosm-foreground`). null: not written. `from`: white, black in light mode.
@@ -24,29 +24,29 @@ background: ?kosm.Color = null,
 /// `background`.
 button: ?kosm.Color = null,
 /// Buttons under the pointer (`--kosm-button-hovered`). null: `hovered` of `button` when both
-/// are set (D23), else not written.
+/// are set, else not written.
 button_hovered: ?kosm.Color = null,
 /// Borders and outlines (`--kosm-border`). null: not written. `from`: cyan.
 border: ?kosm.Color = null,
 /// Container tab colors (`--kosm-containers-blue`, ...). null ones are not written. `from`:
 /// the wheel's hues.
 containers: Containers = .{},
-/// Makes `button_hovered` from `button` when it is null (D23, D24). null: nothing derived.
+/// Makes `button_hovered` from `button` when it is null. null: nothing derived.
 /// `from`: the theme's `state.hovered`.
 hovered: ?kosm.Modifier = null,
-/// Custom properties the app doesn't cover (D99), written after its own, the path's keys joined
+/// Custom properties the app doesn't cover, written after its own, the path's keys joined
 /// by `-`: `.{ .path = "kosm.tab.radius", .value = .{ .raw = "8px" } }` is `--kosm-tab-radius`.
 /// One whose path equals, contains or lies inside a set color's or another extra's fails the
 /// apply. Prefs have their own, `Profile.extra`. Default: none.
 extra: []const kosm.Setting = &.{},
-/// The about:config prefs every profile gets (D94). null: no prefs, only the CSS, e.g. on a
+/// The about:config prefs every profile gets. null: no prefs, only the CSS, e.g. on a
 /// machine without Zen. `from`: `Profile.from(theme)` for every profile.
 profile: ?Profile = null,
 
 pub const Containers = @import("Containers.zig");
 pub const Profile = @import("Profile.zig");
 
-/// Colors from the theme (D27).
+/// Colors from the theme.
 pub fn from(theme: kosm.Theme) App {
     const palette = theme.palette;
     const background = if (theme.mode == .dark) palette.black else palette.white;
@@ -177,7 +177,7 @@ test "App{} writes an empty :root and no prefs, and without hovered no hover col
     try testing.expectEqual(null, app.derivedButtonHovered());
 }
 
-test "extras follow the colors as custom properties, and a clash fails naming both (D99)" {
+test "extras follow the colors as custom properties, and a clash fails naming both" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
@@ -216,5 +216,5 @@ test "extras follow the colors as custom properties, and a clash fails naming bo
 
     app.extra = &.{.{ .path = "kosm.containers", .value = .{ .raw = "none" } }};
     try testing.expectError(error.AppFailed, app.apply(&output));
-    try testing.expectEqualStrings("extra 'kosm.containers' and setting 'kosm.containers.blue' write the same key, or one inside the other; keep one (D99)", diagnostics.message());
+    try testing.expectEqualStrings("extra 'kosm.containers' and setting 'kosm.containers.blue' write the same key, or one inside the other; keep one", diagnostics.message());
 }

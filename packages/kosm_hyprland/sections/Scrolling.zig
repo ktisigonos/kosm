@@ -1,4 +1,4 @@
-//! Hyprland's `scrolling` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `scrolling` options. Field names are Hyprland's option names.
 
 /// When enabled, a single column on a workspace will always span the entire screen. null: Hyprland's default, `true`.
 fullscreen_on_one_column: ?bool = null,

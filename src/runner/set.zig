@@ -1,5 +1,5 @@
-//! `--set path=value`: assigns one field of the tree a kosmos returned, by reflection (D20).
-//! Values parse like `Params` flags (D19, D55); `null` clears an optional.
+//! `--set path=value`: assigns one field of the tree a kosmos returned, by reflection.
+//! Values parse like `Params` flags; `null` clears an optional.
 
 const std = @import("std");
 const kosm = @import("kosm");

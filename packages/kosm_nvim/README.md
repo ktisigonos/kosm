@@ -1,7 +1,7 @@
 # kosm_nvim
 
 Neovim for kosm: a base16 palette written to `~/.config/nvim/lua/theme.lua`, which returns it as
-a Lua table. Load it from your own nvim config (D57), for example with a base16 colorscheme
+a Lua table. Load it from your own nvim config, for example with a base16 colorscheme
 plugin:
 
 ```lua
@@ -11,10 +11,10 @@ local theme = require('theme')
 The file is a Lua module returning one flat table (`theme.base00`, `theme.br_white`), written
 through the `lua` adapter of `kosm_lua`. Null values are not written.
 
-A minimal config can skip `from` (D100): `kosm_nvim.App{}` writes an empty module
+A minimal config can skip `from`: `kosm_nvim.App{}` writes an empty module
 (`return {}`), so assign only what you want (`.{ .base16 = .{ .base0D = kosm.hex("2d8699") } }`).
 
-`extra` adds values the app doesn't cover to the module after its own (D99), nested by path, each
+`extra` adds values the app doesn't cover to the module after its own, nested by path, each
 a `kosm.Value`: `.{ .path = "accent.soft", .value = .{ .color = kosm.hex("2d8699") } }` is
 `theme.accent.soft`. An extra whose path equals, contains or lies inside a set value's or another
 extra's fails the apply naming both.
@@ -26,9 +26,9 @@ Every color is null by default; the column says what `from(theme)` sets.
 | Field | Default |
 |---|---|
 | `file` | `~/.config/nvim/lua/theme.lua` |
-| `format` | `.{}`: the Lua adapter's `true`/`false`, then `#rrggbb` and 6 float decimals (D70) |
+| `format` | `.{}`: the Lua adapter's `true`/`false`, then `#rrggbb` and 6 float decimals |
 | `transparent` | null: not written |
-| `extra` | `&.{}`: values the app doesn't cover, by path (D99) |
+| `extra` | `&.{}`: values the app doesn't cover, by path |
 | `base16.base00` | black, white in light mode (background) |
 | `base16.base01` | `surface.raised` of `base00` |
 | `base16.base02` | `state.selected` of `base00` |

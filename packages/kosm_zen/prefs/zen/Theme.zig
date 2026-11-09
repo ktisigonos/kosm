@@ -2,7 +2,7 @@
 
 /// `accent-color`: links, focus rings and the selected tab. Default: cyan.
 accent_color: ?@import("kosm").Color = null,
-/// `gradient`: the window background gradient; `gradient.value` is the pref itself (D102).
+/// `gradient`: the window background gradient; `gradient.value` is the pref itself.
 gradient: Gradient = .{},
 /// `content-element-separation`: the gap around web content, in pixels. null: Zen's, 8.
 content_element_separation: ?u16 = null,

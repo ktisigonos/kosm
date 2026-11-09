@@ -1,11 +1,11 @@
 //! One change an app plans inside a file: a byte range of its current contents and the bytes
-//! that replace it (D73).
+//! that replace it.
 
 const Edit = @This();
 
 const std = @import("std");
 
-/// What the edit owns, which decides what it clashes with (D38).
+/// What the edit owns, which decides what it clashes with.
 target: Target,
 /// First byte replaced, in the file's current contents.
 start: usize,
@@ -20,13 +20,13 @@ owner: []const u8,
 pub const Target = union(enum) {
     /// The whole file (`generate`, `template`).
     whole_file,
-    /// The block with this id (D72).
+    /// The block with this id.
     block: []const u8,
-    /// A value set by path (D31, D35); clashes only where the bytes overlap.
+    /// A value set by path; clashes only where the bytes overlap.
     value,
 };
 
-/// Whether the two edits may not both be planned (D38, D73).
+/// Whether the two edits may not both be planned.
 pub fn clashes(edit: Edit, other: Edit) bool {
     if (edit.target == .whole_file or other.target == .whole_file) return true;
     if (edit.target == .block and other.target == .block and std.mem.eql(u8, edit.target.block, other.target.block)) return true;

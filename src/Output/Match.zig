@@ -1,5 +1,5 @@
-//! One value a path matched, from `Selection.nodes` or `Selection.elements` (D34, D80).
-//! Read its text if needed, but never parse it (D1): `elements` gives a list's structure.
+//! One value a path matched, from `Selection.nodes` or `Selection.elements`.
+//! Read its text if needed, but never parse it: `elements` gives a list's structure.
 
 const Adapter = @import("../Adapter.zig");
 

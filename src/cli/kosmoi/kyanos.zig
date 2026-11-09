@@ -1,5 +1,5 @@
 //! Kyanos, ported from Ricer's Kyanos.toml and Hyprland's defs.lua. kosm init wrote this file; it
-//! is yours to edit (D84).
+//! is yours to edit.
 
 const kosm = @import("kosm");
 const kitty = @import("kosm_kitty");
@@ -19,7 +19,7 @@ pub const kyanos_palette: kosm.Palette = .{
     .cyan = kosm.hex("268078"),
 };
 
-/// The background is black at this alpha, so the terminals' opacity is 0.5 (D101).
+/// The background is black at this alpha, so the terminals' opacity is 0.5.
 pub const background_alpha: f64 = @as(f64, 0x80) / 255;
 
 pub const font = "Maple Mono Normal NFP";

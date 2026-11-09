@@ -1,4 +1,4 @@
-//! Turns `Prefs` into the flat table of prefs the `userjs` adapter writes (D96).
+//! Turns `Prefs` into the flat table of prefs the `userjs` adapter writes.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -11,7 +11,7 @@ pub fn table(allocator: std.mem.Allocator, prefs: Prefs) std.mem.Allocator.Error
     return .{ .table = entries.items };
 }
 
-/// The field holding a group's own pref when that pref also has prefs below it (D102).
+/// The field holding a group's own pref when that pref also has prefs below it.
 const own_value = "value";
 
 fn appendGroup(allocator: std.mem.Allocator, entries: *std.ArrayList(kosm.Value.Entry), prefix: []const u8, group: anytype) std.mem.Allocator.Error!void {

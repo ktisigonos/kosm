@@ -1,4 +1,4 @@
-//! Why a file's block markers can't be trusted, and where (D72).
+//! Why a file's block markers can't be trusted, and where.
 
 const Failure = @This();
 

@@ -4,7 +4,7 @@ const std = @import("std");
 
 /// kitty's settings; build one with `from`.
 pub const App = @import("App.zig");
-/// Colors from the theme, everything else left to kitty (D27).
+/// Colors from the theme, everything else left to kitty.
 pub const from = App.from;
 /// Writes kitty.conf files.
 pub const adapter = @import("adapter.zig").adapter;

@@ -1,4 +1,4 @@
-//! Hyprland's `binds` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `binds` options. Field names are Hyprland's option names.
 
 /// If disabled, will not pass the mouse events to apps / dragging windows around if a keybind has been triggered. null: Hyprland's default, `false`.
 pass_mouse_when_bound: ?bool = null,

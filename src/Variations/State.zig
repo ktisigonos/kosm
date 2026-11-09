@@ -1,5 +1,5 @@
 //! Mode-aware: interaction and window focus. CSS pseudo-classes, GTK states, Material state
-//! layers, Fluent, JetBrains, Qt Inactive group / GTK :backdrop. No `active` (D14).
+//! layers, Fluent, JetBrains, Qt Inactive group / GTK :backdrop. No `active`.
 
 const State = @This();
 
@@ -26,7 +26,7 @@ placeholder: Modifier,
 /// Unfocused window or widget. Default: 0.1 lightness toward the background, chroma -0.06.
 inactive: Modifier,
 /// Selected in an unfocused window. Null: `selected`, then `inactive`. Read it with
-/// `selectedInactive()` so changes to `selected` or `inactive` flow into it (D16).
+/// `selectedInactive()` so changes to `selected` or `inactive` flow into it.
 selected_inactive: ?Modifier = null,
 
 /// `selected_inactive` if set, otherwise `selected` then `inactive` as they are now.

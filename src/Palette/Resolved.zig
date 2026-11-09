@@ -1,4 +1,4 @@
-//! The palette modules see: every hue filled in, plus gray (D9).
+//! The palette modules see: every hue filled in, plus gray.
 
 const Resolved = @This();
 
@@ -7,7 +7,7 @@ const Hue = @import("../Palette.zig").Hue;
 
 black: Color,
 white: Color,
-/// Halfway between black and white (D8).
+/// Halfway between black and white.
 gray: Color,
 red: Color,
 orange: Color,

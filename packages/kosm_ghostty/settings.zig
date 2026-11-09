@@ -1,6 +1,6 @@
-//! Turns the app's options into the `kosm.Value` tree the ghostty adapter writes (D64): one
+//! Turns the app's options into the `kosm.Value` tree the ghostty adapter writes: one
 //! entry per line, keyed by ghostty's option name (`font_family` -> `font-family`). Null options
-//! and empty lists are left out, so the file only holds what the kosmos set (D27).
+//! and empty lists are left out, so the file only holds what the kosmos set.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -58,8 +58,8 @@ fn appendKeybinds(allocator: Allocator, entries: *std.ArrayList(Entry), clear: b
     }
 }
 
-/// One option's value: scalars stay scalars, compound values are joined (D89) so numbers,
-/// booleans and colors follow the file's format (D70), and a list is written comma-separated.
+/// One option's value: scalars stay scalars, compound values are joined so numbers,
+/// booleans and colors follow the file's format, and a list is written comma-separated.
 fn value(allocator: Allocator, option: anytype) Allocator.Error!kosm.Value {
     const T = @TypeOf(option);
     if (T == kosm.Color) return .{ .color = option };

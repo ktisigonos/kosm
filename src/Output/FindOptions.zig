@@ -1,6 +1,6 @@
-//! Which files `find` picks (D79, D95).
+//! Which files `find` picks.
 
-/// A glob of existing files: `~/...` or absolute, `*` inside a name, `**` for any depth (D79).
+/// A glob of existing files: `~/...` or absolute, `*` inside a name, `**` for any depth.
 files: []const u8,
-/// Globs of files to leave out, written like `files` (D33).
+/// Globs of files to leave out, written like `files`.
 exclude: []const []const u8 = &.{},

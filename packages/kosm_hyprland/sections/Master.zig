@@ -1,4 +1,4 @@
-//! Hyprland's `master` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `master` options. Field names are Hyprland's option names.
 
 /// Enable adding additional master windows in a horizontal split style. null: Hyprland's default, `false`.
 allow_small_split: ?bool = null,

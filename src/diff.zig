@@ -1,4 +1,4 @@
-//! Unified diffs of a plan, for `kosm apply --diff` (D37).
+//! Unified diffs of a plan, for `kosm apply --diff`.
 
 const std = @import("std");
 const Plan = @import("Plan.zig");
@@ -10,7 +10,7 @@ const context_lines = 3;
 const max_edit_distance = 2000;
 
 /// Prints every file the plan would change, in plan order. Unchanged files print nothing.
-/// `terminal.mode` decides whether lines are colored like git's (D103).
+/// `terminal.mode` decides whether lines are colored like git's.
 pub fn writePlan(allocator: std.mem.Allocator, terminal: std.Io.Terminal, plan: *const Plan) !void {
     for (plan.files.items) |file| {
         if (!file.changed()) continue;

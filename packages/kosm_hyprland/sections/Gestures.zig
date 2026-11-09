@@ -1,4 +1,4 @@
-//! Hyprland's `gestures` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `gestures` options. Field names are Hyprland's option names.
 
 /// In px, the distance of the touchpad gesture. 0..2000. null: Hyprland's default, `300`.
 workspace_swipe_distance: ?i64 = null,

@@ -1,10 +1,10 @@
-//! kitty's "Text cursor customization" options. Field names are kitty's option names (D27).
+//! kitty's "Text cursor customization" options. Field names are kitty's option names.
 
 const values = @import("../values.zig");
 
-/// Default text cursor color; `none` renders it as reverse video. null: `colors.foreground` (D23).
+/// Default text cursor color; `none` renders it as reverse video. null: `colors.foreground`.
 cursor: ?values.ColorOrNone = null,
-/// The color of text under the cursor, or the cell's background color. null: `colors.background` (D23).
+/// The color of text under the cursor, or the cell's background color. null: `colors.background`.
 cursor_text_color: ?values.ColorOrBackground = null,
 /// The cursor shape can be one of `block`, `beam`, `underline`. null: kitty's default, `block`.
 cursor_shape: ?enum { block, beam, underline } = null,

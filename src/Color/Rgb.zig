@@ -1,4 +1,4 @@
-//! A color in gamma-encoded sRGB, one f64 per channel. Channels may leave 0..1 (D48).
+//! A color in gamma-encoded sRGB, one f64 per channel. Channels may leave 0..1.
 
 const Rgb = @This();
 

@@ -1,5 +1,5 @@
-//! Deltas added to a color's gamma-encoded sRGB channels, converted from and back to OKLCH (D68).
-//! Absolute and not clamped: a channel past 1 is kept, and clips only when printed as bytes (D48).
+//! Deltas added to a color's gamma-encoded sRGB channels, converted from and back to OKLCH.
+//! Absolute and not clamped: a channel past 1 is kept, and clips only when printed as bytes.
 
 const Rgb = @This();
 

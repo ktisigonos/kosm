@@ -1,4 +1,4 @@
-//! `kosm new kosmos|app|adapter <name>` (D63, D86): scaffolds a directory package with a
+//! `kosm new kosmos|app|adapter <name>`: scaffolds a directory package with a
 //! commented `root.zig`, and the `build.zig` and `build.zig.zon` every directory package has.
 
 const std = @import("std");
@@ -37,8 +37,8 @@ const name_placeholder = "scaffold_name";
 const reserved_names = [_][]const u8{ "std", "builtin", "root" };
 
 /// Creates `<kind directory>/<name>/` in the config, printing each file it writes. A name that
-/// is no Zig identifier (D51) or already names a local kosmos, app or adapter or an installed
-/// package (D50) is refused, and nothing is written.
+/// is no Zig identifier or already names a local kosmos, app or adapter or an installed
+/// package is refused, and nothing is written.
 pub fn new(context: Context, kind: Kind, name: []const u8) Error!void {
     try checkName(context, name);
     const directory = try std.Io.Dir.path.join(context.arena, &.{ kind.directory(), name });
@@ -55,7 +55,7 @@ pub fn new(context: Context, kind: Kind, name: []const u8) Error!void {
 
 fn checkName(context: Context, name: []const u8) Error!void {
     if (!std.zig.isValidId(name)) {
-        return context.fail("'{s}' cannot be a package name: it must be a Zig identifier, like my_bar (D51)", .{name});
+        return context.fail("'{s}' cannot be a package name: it must be a Zig identifier, like my_bar", .{name});
     }
     for (reserved_names) |reserved| {
         if (std.mem.eql(u8, name, reserved)) return context.fail("'{s}' cannot be a package name: Zig's own @import(\"{s}\") already means something", .{ name, name });
@@ -68,7 +68,7 @@ fn checkName(context: Context, name: []const u8) Error!void {
                 error.FileNotFound => continue,
                 else => return context.fail("cannot read {s}: {s}", .{ path, @errorName(err) }),
             };
-            return context.fail("'{s}' is taken by {s}; kosmoi, apps, adapters and packages need unique names (D50)", .{ name, path });
+            return context.fail("'{s}' is taken by {s}; kosmoi, apps, adapters and packages need unique names", .{ name, path });
         }
     }
     const config_manifest = std.Io.Dir.cwd().readFileAllocOptions(context.io, try std.Io.Dir.path.join(context.arena, &.{ context.config, "build.zig.zon" }), context.arena, .limited(16 * 1024 * 1024), .of(u8), 0) catch |err| switch (err) {
@@ -81,10 +81,10 @@ fn checkName(context: Context, name: []const u8) Error!void {
         error.InvalidManifest => return context.fail("build.zig.zon is not a valid manifest; zig build says why", .{}),
     };
     for (installed) |package| {
-        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the installed package '{s}'; kosmoi, apps, adapters and packages need unique names (D50)", .{ name, name });
+        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the installed package '{s}'; kosmoi, apps, adapters and packages need unique names", .{ name, name });
     }
     for (@import("kosm_package").built_in_packages) |package| {
-        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the built-in package '{s}' kosm provides; kosmoi, apps, adapters and packages need unique names (D50, D98)", .{ name, name });
+        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the built-in package '{s}' kosm provides; kosmoi, apps, adapters and packages need unique names", .{ name, name });
     }
 }
 
@@ -173,11 +173,11 @@ test "new refuses a name that is taken or no identifier, and writes nothing" {
     try testing.expectError(error.Failed, new(test_config.context(), .app, "my-bar"));
     try testing.expectError(error.Failed, new(test_config.context(), .app, "std"));
     try testing.expectEqualStrings(
-        \\error: 'frost' is taken by kosmoi/frost.zig; kosmoi, apps, adapters and packages need unique names (D50)
-        \\error: 'lang' is taken by adapters/lang; kosmoi, apps, adapters and packages need unique names (D50)
-        \\error: 'kosm_kitty' is taken by the installed package 'kosm_kitty'; kosmoi, apps, adapters and packages need unique names (D50)
-        \\error: 'kosm_lua' is taken by the built-in package 'kosm_lua' kosm provides; kosmoi, apps, adapters and packages need unique names (D50, D98)
-        \\error: 'my-bar' cannot be a package name: it must be a Zig identifier, like my_bar (D51)
+        \\error: 'frost' is taken by kosmoi/frost.zig; kosmoi, apps, adapters and packages need unique names
+        \\error: 'lang' is taken by adapters/lang; kosmoi, apps, adapters and packages need unique names
+        \\error: 'kosm_kitty' is taken by the installed package 'kosm_kitty'; kosmoi, apps, adapters and packages need unique names
+        \\error: 'kosm_lua' is taken by the built-in package 'kosm_lua' kosm provides; kosmoi, apps, adapters and packages need unique names
+        \\error: 'my-bar' cannot be a package name: it must be a Zig identifier, like my_bar
         \\error: 'std' cannot be a package name: Zig's own @import("std") already means something
         \\
     , test_config.stderr.written());

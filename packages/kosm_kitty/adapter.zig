@@ -1,10 +1,10 @@
-//! kitty.conf: one `key value` line per option (D39). A table is a section, written as a
+//! kitty.conf: one `key value` line per option. A table is a section, written as a
 //! `# name` comment above its options, since kitty.conf has no nesting.
 
 const std = @import("std");
 const kosm = @import("kosm");
 
-/// The adapter for kitty.conf files; enables `generate` and `block` (D71). It claims no extension, since many
+/// The adapter for kitty.conf files; enables `generate` and `block`. It claims no extension, since many
 /// formats use `.conf`: pass `.lang = "kitty"`.
 pub const adapter: kosm.Adapter = .{
     .name = "kitty",

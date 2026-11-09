@@ -1,4 +1,4 @@
-//! What `Output` and `Selection` share for planning edits and reporting failures (G6).
+//! What `Output` and `Selection` share for planning edits and reporting failures.
 //! Kosm's own; apps never call these.
 
 const std = @import("std");
@@ -7,16 +7,16 @@ const Plan = @import("../Plan.zig");
 const Color = @import("../Color.zig");
 const ClippedColors = @import("../ClippedColors.zig");
 
-/// Plans `edit` in `file`, naming the app already writing those bytes when it clashes (D38).
+/// Plans `edit` in `file`, naming the app already writing those bytes when it clashes.
 pub fn addEdit(output: *Output, file: *Plan.File, edit: Plan.Edit) Output.Error!void {
     output.plan.addEdit(file, edit) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.EditsOverlap => {
             const other = file.clash(edit).?;
             return switch (other.target) {
-                .whole_file => fail(output, error.EditsOverlap, file.display_path, "app '{s}' writes this whole file; two apps cannot write the same bytes (D38)", .{other.owner}),
-                .block => |id| fail(output, error.EditsOverlap, file.display_path, "app '{s}' writes block '{s}' of this file; two apps cannot write the same bytes (D38)", .{ other.owner, id }),
-                .value => fail(output, error.EditsOverlap, file.display_path, "app '{s}' already writes the value on line {d} of this file; the same bytes cannot be written twice (D38)", .{ other.owner, lineOf(file.current(), other.start) }),
+                .whole_file => fail(output, error.EditsOverlap, file.display_path, "app '{s}' writes this whole file; two apps cannot write the same bytes", .{other.owner}),
+                .block => |id| fail(output, error.EditsOverlap, file.display_path, "app '{s}' writes block '{s}' of this file; two apps cannot write the same bytes", .{ other.owner, id }),
+                .value => fail(output, error.EditsOverlap, file.display_path, "app '{s}' already writes the value on line {d} of this file; the same bytes cannot be written twice", .{ other.owner, lineOf(file.current(), other.start) }),
             };
         },
     };
@@ -34,7 +34,7 @@ pub fn fail(output: *Output, err: Output.Error, file: []const u8, comptime forma
     return err;
 }
 
-/// Warns once per color that printing `file` clipped to the gamut (D48, D88). `about` names
+/// Warns once per color that printing `file` clipped to the gamut. `about` names
 /// what was written (`path 'general.border'`) or is empty; a template line takes its place.
 pub fn warnClipped(output: *Output, file: []const u8, about: []const u8, clipped: *const ClippedColors) Output.Error!void {
     for (clipped.list()) |entry| {
@@ -46,10 +46,10 @@ pub fn warnClipped(output: *Output, file: []const u8, about: []const u8, clipped
             "";
         const times = if (entry.count > 1) try output.allocator.print(" ({d} times)", .{entry.count}) else "";
         const printed = if (entry.color.alpha == 1) entry.color.hex() else entry.color.hex8();
-        try output.warnings.add(output.app, file, "{s}color {f} is outside sRGB and is clipped to {s}{s} (D48)", .{ where, Oklch{ .color = entry.color }, printed.slice(), times });
+        try output.warnings.add(output.app, file, "{s}color {f} is outside sRGB and is clipped to {s}{s}", .{ where, Oklch{ .color = entry.color }, printed.slice(), times });
     }
     if (clipped.uncounted != 0)
-        try output.warnings.add(output.app, file, "{d} more colors outside sRGB are clipped (D48)", .{clipped.uncounted});
+        try output.warnings.add(output.app, file, "{d} more colors outside sRGB are clipped", .{clipped.uncounted});
 }
 
 /// A color as `oklch(0.9 0.4 140)`, rounded for reading, with `/ alpha` when not opaque.

@@ -1,4 +1,4 @@
-//! Finds kosmoi (D17), apps (D18, D53) and adapters (D39) by reflection, all at compile time.
+//! Finds kosmoi, apps and adapters by reflection, all at compile time.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -7,7 +7,7 @@ const Target = @import("Target.zig");
 /// Nested app trees and big package roots need far more than the default 1000 branches.
 pub const branch_quota = 100_000;
 
-/// Whether `T` is an app: a struct with exactly `pub fn apply(self: T, output: *kosm.Output) !void` (D53).
+/// Whether `T` is an app: a struct with exactly `pub fn apply(self: T, output: *kosm.Output) !void`.
 /// `Modifier.apply(Color) Color` does not count.
 pub fn isApp(comptime T: type) bool {
     @setEvalBranchQuota(branch_quota);
@@ -25,12 +25,12 @@ pub fn isApp(comptime T: type) bool {
     };
 }
 
-/// Whether app `T` declares a reload (D74). A `reload` of any other shape than
+/// Whether app `T` declares a reload. A `reload` of any other shape than
 /// `pub fn reload(self: T, reloader: *kosm.Reloader) !void` is a compile error, so it is never skipped silently.
 pub fn hasReload(comptime T: type) bool {
     @setEvalBranchQuota(branch_quota);
     if (!@hasDecl(T, "reload")) return false;
-    const wrong_shape = @typeName(T) ++ ".reload must be `pub fn reload(self: " ++ @typeName(T) ++ ", reloader: *kosm.Reloader) !void` (D74)";
+    const wrong_shape = @typeName(T) ++ ".reload must be `pub fn reload(self: " ++ @typeName(T) ++ ", reloader: *kosm.Reloader) !void`";
     const function = switch (@typeInfo(@TypeOf(T.reload))) {
         .@"fn" => |function| function,
         else => @compileError(wrong_shape),
@@ -60,7 +60,7 @@ pub fn containsApp(comptime T: type) bool {
     return false;
 }
 
-/// Why `File.name` is not a kosmos (D17), or null when it is one.
+/// Why `File.name` is not a kosmos, or null when it is one.
 pub fn notKosmosReason(comptime File: type, comptime name: []const u8) ?[]const u8 {
     @setEvalBranchQuota(branch_quota);
     if (!@hasDecl(File, name)) return "there is no public declaration with that name";
@@ -110,7 +110,7 @@ fn isParams(comptime T: type) bool {
     return true;
 }
 
-/// The adapters a kosmos can use, and the names packages export as different adapters (D107).
+/// The adapters a kosmos can use, and the names packages export as different adapters.
 pub const Adapters = struct {
     /// One adapter per name: the first found when packages clash.
     list: []const kosm.Adapter,
@@ -129,7 +129,7 @@ pub fn declaredAdapters(comptime Module: type) []const kosm.Adapter {
 }
 
 /// The adapters of every module in `sources`. An adapter reached twice (a re-export) counts
-/// once; a name exported as two different adapters is a clash (D107).
+/// once; a name exported as two different adapters is a clash.
 pub fn adapters(comptime sources: []const Target.AdapterSource) Adapters {
     @setEvalBranchQuota(branch_quota);
     comptime var list: []const kosm.Adapter = &.{};

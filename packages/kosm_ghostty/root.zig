@@ -4,7 +4,7 @@ const std = @import("std");
 
 /// ghostty's settings; build one with `from`.
 pub const App = @import("App.zig");
-/// Colors from the theme, everything else left to ghostty (D27).
+/// Colors from the theme, everything else left to ghostty.
 pub const from = App.from;
 /// Reads and writes ghostty config files.
 pub const adapter = @import("adapter.zig").adapter;

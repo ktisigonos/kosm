@@ -1,12 +1,12 @@
-//! A transform applied to any color: OKLCH deltas, deltas in another color space (D68), a mix,
-//! a contrast pick, alpha, or a chain of these (D15).
+//! A transform applied to any color: OKLCH deltas, deltas in another color space, a mix,
+//! a contrast pick, alpha, or a chain of these.
 
 const Modifier = @This();
 
 const std = @import("std");
 const Color = @import("Color.zig");
 
-/// Added to OKLCH lightness. Positive lightens. The result is not clamped (D48).
+/// Added to OKLCH lightness. Positive lightens. The result is not clamped.
 lightness: f64 = 0,
 /// Added to OKLCH chroma. Positive saturates. The result never drops below 0.
 chroma: f64 = 0,
@@ -29,21 +29,21 @@ contrast: ?Contrast = null,
 /// Steps run after this one, filled by `then`. Not meant to be set by hand.
 chain: Chain = .{},
 
-/// Deltas in HSV (= HSB) (D68).
+/// Deltas in HSV (= HSB).
 pub const Hsv = @import("Modifier/Hsv.zig");
-/// Deltas in HSL (D68).
+/// Deltas in HSL.
 pub const Hsl = @import("Modifier/Hsl.zig");
-/// Deltas to sRGB channels (D68).
+/// Deltas to sRGB channels.
 pub const Rgb = @import("Modifier/Rgb.zig");
-/// Deltas in naive CMYK (D68).
+/// Deltas in naive CMYK.
 pub const Cmyk = @import("Modifier/Cmyk.zig");
-/// Mixing toward a color in OKLCH (D15).
+/// Mixing toward a color in OKLCH.
 pub const Mix = @import("Modifier/Mix.zig");
-/// Picks whichever of two colors reads better on top of the color, by WCAG 2 contrast ratio (D15).
+/// Picks whichever of two colors reads better on top of the color, by WCAG 2 contrast ratio.
 pub const Contrast = @import("Modifier/Contrast.zig");
 /// One link of a composed modifier: the same fields as `Modifier`, minus the chain.
 pub const Step = @import("Modifier/Step.zig");
-/// Extra steps of a composed modifier, stored inline so composing needs no memory (D16).
+/// Extra steps of a composed modifier, stored inline so composing needs no memory.
 pub const Chain = @import("Modifier/Chain.zig");
 
 /// The most steps one modifier can hold, counting its own.
@@ -59,7 +59,7 @@ pub fn apply(modifier: Modifier, color: Color) Color {
     return result;
 }
 
-/// A modifier applying this one, then `next` (D16). The result is a copy: changing
+/// A modifier applying this one, then `next`. The result is a copy: changing
 /// either input later does not change it. At most `max_steps` steps in total.
 pub fn then(modifier: Modifier, next: Modifier) Modifier {
     const total = 1 + modifier.chain.length + 1 + next.chain.length;

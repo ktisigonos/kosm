@@ -1,4 +1,4 @@
-//! `kosm list` (D85): every kosmos in a config with its variants and where it comes from, and
+//! `kosm list`: every kosmos in a config with its variants and where it comes from, and
 //! every installed package with what it provides, all found by reflection at compile time.
 
 const std = @import("std");
@@ -16,7 +16,7 @@ pub const Source = struct {
     kind: Kind,
     module: type,
 
-    /// A local kosmos, app or adapter (D87), or an installed package.
+    /// A local kosmos, app or adapter, or an installed package.
     pub const Kind = enum { local, package };
 };
 
@@ -192,7 +192,7 @@ pub fn collect(comptime sources: []const Source) Table {
 }
 
 /// The apps in a tree of type `T`, looking through structs and optionals like the walk does
-/// (D18); `path` is where `T` sits.
+///; `path` is where `T` sits.
 fn appsIn(comptime sources: []const Source, comptime T: type, comptime path: []const u8) []const App {
     @setEvalBranchQuota(discovery.branch_quota);
     const optional = @typeInfo(T) == .optional;

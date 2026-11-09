@@ -1,4 +1,4 @@
-//! The shared color transforms every module builds from, grouped in families (D12-D16).
+//! The shared color transforms every module builds from, grouped in families.
 
 const Variations = @This();
 
@@ -26,7 +26,7 @@ alpha: Alpha,
 pub const Lightness = @import("Variations/Lightness.zig");
 /// Mode-aware: more or less contrast against the background.
 pub const Emphasis = @import("Variations/Emphasis.zig");
-/// Mode-aware: interaction and window focus, including `selectedInactive()` (D16).
+/// Mode-aware: interaction and window focus, including `selectedInactive()`.
 pub const State = @import("Variations/State.zig");
 /// Mode-aware elevation. GTK shade/card/popover, Material surface containers, Qt Shadow.
 pub const Surface = @import("Variations/Surface.zig");
@@ -42,7 +42,7 @@ const on_muted_toward_original = 0.3;
 /// Pure black, the shadow target until `Theme.from` swaps in the palette's black.
 const default_shadow_color: Color = .{ .lightness = 0, .chroma = 0, .hue = 0 };
 
-/// Every default (D12). In light mode the mode-aware families (emphasis, state, surface,
+/// Every default. In light mode the mode-aware families (emphasis, state, surface,
 /// line) move the other way: "away from the background" darkens instead of lightening.
 pub fn from(mode: Mode) Variations {
     const away: f64 = switch (mode) {

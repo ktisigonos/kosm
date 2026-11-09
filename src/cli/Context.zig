@@ -12,7 +12,7 @@ arena: std.mem.Allocator,
 config: []const u8,
 /// The environment for `zig` and the programs it builds; null passes on kosm's own.
 environ_map: ?*const std.process.Environ.Map = null,
-/// The kosm sources `zig build` uses in place of the config's pinned kosm (D98); null for the pinned one.
+/// The kosm sources `zig build` uses in place of the config's pinned kosm; null for the pinned one.
 sources: ?Sources = null,
 /// What a command did, and what packages provide.
 stdout: *std.Io.Writer,
@@ -31,7 +31,7 @@ pub fn fail(context: Context, comptime format: []const u8, arguments: anytype) (
 pub const RunError = Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
 
 /// Runs `zig` with `arguments` in the config directory; see `run`. A `zig build` gets
-/// `--fork` for `sources` when the project depends on kosm by hash (D98).
+/// `--fork` for `sources` when the project depends on kosm by hash.
 pub fn runZig(context: Context, arguments: []const []const u8) RunError!std.process.RunResult {
     return context.run(try context.zigArguments(arguments));
 }

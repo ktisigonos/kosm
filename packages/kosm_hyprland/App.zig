@@ -1,6 +1,6 @@
-//! Hyprland's settings (D22, D27): every `hl.config` option of upstream Hyprland, grouped
+//! Hyprland's settings: every `hl.config` option of upstream Hyprland, grouped
 //! and named like Hyprland's own options (`general.col.active_border`). Null options are not
-//! written, so Hyprland's defaults apply. `target` picks who owns the values (D91).
+//! written, so Hyprland's defaults apply. `target` picks who owns the values.
 
 const App = @This();
 
@@ -9,22 +9,22 @@ const kosm = @import("kosm");
 const values = @import("values.zig");
 const settings = @import("settings.zig");
 
-/// Where the options go: a Lua module kosm writes whole, or the user's own Lua files (D91).
+/// Where the options go: a Lua module kosm writes whole, or the user's own Lua files.
 /// Default: `default_target`.
 target: Target = default_target,
 /// The file that gets a block reading the generated module, `hl.config(require("kosm"))`,
-/// appended at its end so kosm's values win (D97). Only with the `.generate` target, which
+/// appended at its end so kosm's values win. Only with the `.generate` target, which
 /// must then write `~/.config/hypr/kosm.lua`. A missing file is left for Hyprland to create,
 /// with a warning. Null: no block. Default: `~/.config/hypr/hyprland.lua`.
 include: ?[]const u8 = "~/.config/hypr/hyprland.lua",
-/// How values are spelled (D70), e.g. `.color = .hex_upper`. Default: `#rrggbbaa` colors, so
+/// How values are spelled, e.g. `.color = .hex_upper`. Default: `#rrggbbaa` colors, so
 /// alpha is kept; null fields take the Lua adapter's, then kosm's.
 format: kosm.Format = .{ .color = .hex8 },
 /// Derives each inactive color from its active one when it is null and the active one is set
-/// (D23), e.g. `general.col.inactive_border` from `general.col.active_border`. null: nothing
+///, e.g. `general.col.inactive_border` from `general.col.active_border`. null: nothing
 /// is derived. `from`: the theme's `state.inactive`.
 inactive: ?kosm.Modifier = null,
-/// Settings the app doesn't cover, such as a plugin's (D99), written after its own:
+/// Settings the app doesn't cover, such as a plugin's, written after its own:
 /// `.{ .path = "plugin.dynamic_cursors.length", .value = .{ .integer = 24 } }`. One that
 /// overlaps a set option or another extra fails the apply. Default: none.
 extra: []const kosm.Setting = &.{},
@@ -52,20 +52,20 @@ experimental: Experimental = .{},
 input_capture: InputCapture = .{},
 quirks: Quirks = .{},
 
-/// Who owns Hyprland's values (D91).
+/// Who owns Hyprland's values.
 pub const Target = union(enum) {
     /// Writes every set option to this Lua module, `return { general = { ... } }`, so kosm is
-    /// the source of truth. `hyprland.lua` reads it with `hl.config(require("kosm"))` (D57).
+    /// the source of truth. `hyprland.lua` reads it with `hl.config(require("kosm"))`.
     generate: []const u8,
-    /// Sets each set option where the user's Lua files already hold it (D25, D30), so they stay
-    /// the source of truth. An option they lack must be left null: kosm never inserts keys (D28).
+    /// Sets each set option where the user's Lua files already hold it, so they stay
+    /// the source of truth. An option they lack must be left null: kosm never inserts keys.
     edit: Files,
 };
 
-/// The user's Lua files an `edit` target changes (D79).
+/// The user's Lua files an `edit` target changes.
 pub const Files = @import("Files.zig");
 
-/// The target every app starts with: kosm owns `~/.config/hypr/kosm.lua` (D91). Change it here
+/// The target every app starts with: kosm owns `~/.config/hypr/kosm.lua`. Change it here
 /// to make editing the user's files the default.
 pub const default_target: Target = .{ .generate = default_module };
 
@@ -120,7 +120,7 @@ pub const Quirks = @import("sections/Quirks.zig");
 /// App fields that are kosm's, not Hyprland options.
 const own_fields = [_][]const u8{ "target", "include", "format", "inactive", "extra" };
 
-/// Colors from the theme (D27): the active border, glow and groupbar text from the accent
+/// Colors from the theme: the active border, glow and groupbar text from the accent
 /// (cyan) and the foreground, groups in yellow (locked: orange), windows that can't be grouped in
 /// magenta, the shadow from `surface.shadow`, the background behind windows. Inactive colors
 /// derive through `inactive`; every other option is left to Hyprland.
@@ -146,14 +146,14 @@ pub fn from(theme: kosm.Theme) App {
     return app;
 }
 
-/// Makes Hyprland re-read its config (D74). Without a running Hyprland, kosm only warns.
+/// Makes Hyprland re-read its config. Without a running Hyprland, kosm only warns.
 pub fn reload(self: App, reloader: *kosm.Reloader) !void {
     _ = self;
     try reloader.run(&.{ "hyprctl", "reload" });
 }
 
 /// Writes every set option to the target. An option Hyprland can't read (an empty gradient)
-/// fails the apply, naming it (D93).
+/// fails the apply, naming it.
 pub fn apply(self: App, output: *kosm.Output) !void {
     const file = switch (self.target) {
         .generate => |path| path,
@@ -180,7 +180,7 @@ pub fn apply(self: App, output: *kosm.Output) !void {
     }
 }
 
-/// The app with every null inactive color derived from its set active one (D23).
+/// The app with every null inactive color derived from its set active one.
 fn withDerived(self: App) App {
     var app = self;
     const inactive = self.inactive orelse return app;
@@ -296,7 +296,7 @@ test "from writes Hyprland's own shape to the generated module, inactive colors 
     try testing.expect(std.mem.indexOf(u8, written, "input") == null);
 }
 
-test "hyprland.lua gets a block reading the generated module at its end, once (D97)" {
+test "hyprland.lua gets a block reading the generated module at its end, once" {
     const user_config = "hl.config({ general = { gaps_in = 5 } })\n";
     var fixture: Fixture = undefined;
     try fixture.init(&.{
@@ -318,7 +318,7 @@ test "hyprland.lua gets a block reading the generated module at its end, once (D
     try testing.expect(!second.plan.files.items[1].changed());
 }
 
-test "a missing hyprland.lua is left for Hyprland to create, with a warning (D97)" {
+test "a missing hyprland.lua is left for Hyprland to create, with a warning" {
     var fixture: Fixture = undefined;
     try fixture.init(&.{});
     defer fixture.deinit();
@@ -346,7 +346,7 @@ test "the include block refuses a module require(\"kosm\") would not find" {
     try app.apply(&fixture.output);
 }
 
-test "an inactive color follows its active one unless set, and a changed active one flows (D23)" {
+test "an inactive color follows its active one unless set, and a changed active one flows" {
     var app = bareApp();
     app.general.col.active_border = .solid(kosm.hex("#808080"));
     app.group.groupbar.text_color = kosm.hex("#808080");
@@ -564,7 +564,7 @@ test "the edit target refuses an option the user's files lack, or hold twice" {
         try fixture.init(&files);
         defer fixture.deinit();
         try testing.expectError(error.NoMatch, app.apply(&fixture.output));
-        try testing.expectEqualStrings("path 'decoration.rounding' matches nothing; kosm never inserts keys (D28)", fixture.diagnostics.message());
+        try testing.expectEqualStrings("path 'decoration.rounding' matches nothing; kosm never inserts keys", fixture.diagnostics.message());
     }
     app.decoration.rounding = null;
     app.general.border_size = 2;
@@ -625,7 +625,7 @@ test "choices Hyprland reads as numbers are enums, written as their number" {
     try testing.expectEqualStrings("return {\n    general = {\n        layout = \"scrolling\",\n    },\n    input = {\n        accel_profile = \"flat\",\n    },\n}\n", second.planned("~/kosm.lua"));
 }
 
-test "a gradient Hyprland can't draw fails the apply, naming the option (D93)" {
+test "a gradient Hyprland can't draw fails the apply, naming the option" {
     const colors: [12]kosm.Color = @splat(kosm.hex("#2e8799"));
     var too_many = bareApp();
     too_many.general.col.active_border = .from(&colors);
@@ -646,7 +646,7 @@ test "a gradient Hyprland can't draw fails the apply, naming the option (D93)" {
     try testing.expectEqual(0, fixture.plan.files.items.len);
 }
 
-test "extras land in the generated module's tables beside the options, quoted keys too (D99)" {
+test "extras land in the generated module's tables beside the options, quoted keys too" {
     var fixture: Fixture = undefined;
     try fixture.init(&.{});
     defer fixture.deinit();
@@ -682,7 +682,7 @@ test "extras land in the generated module's tables beside the options, quoted ke
     , fixture.planned("~/kosm.lua"));
 }
 
-test "the edit target sets extras by path in the user's files (D99)" {
+test "the edit target sets extras by path in the user's files" {
     var fixture: Fixture = undefined;
     try fixture.init(&.{.{ ".config/hypr/plugins.lua", "hl.config({ plugin = { dynamic_cursors = { length = 10 } } })\n" }});
     defer fixture.deinit();
@@ -693,9 +693,9 @@ test "the edit target sets extras by path in the user's files (D99)" {
     try testing.expectEqualStrings("hl.config({ plugin = { dynamic_cursors = { length = 24 } } })\n", fixture.planned("~/.config/hypr/plugins.lua"));
 }
 
-test "an extra overlapping an option fails naming both, and '*' only edits (D99)" {
+test "an extra overlapping an option fails naming both, and '*' only edits" {
     const cases = [_]struct { extra: []const kosm.Setting, message: []const u8 }{
-        .{ .extra = &.{.{ .path = "general.border_size", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size' and setting 'general.border_size' write the same key, or one inside the other; keep one (D99)" },
+        .{ .extra = &.{.{ .path = "general.border_size", .value = .{ .integer = 3 } }}, .message = "extra 'general.border_size' and setting 'general.border_size' write the same key, or one inside the other; keep one" },
         .{ .extra = &.{.{ .path = "plugin.*.length", .value = .{ .integer = 1 } }}, .message = "extra 'plugin.*.length': '*' matches keys only in files kosm edits, not in one it generates" },
     };
     for (cases) |case| {

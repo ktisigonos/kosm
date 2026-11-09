@@ -2,20 +2,20 @@ const std = @import("std");
 
 /// Wires up a config project: `@import("kosm").addConfigProject(b, @import("build.zig.zon"))`.
 pub const addConfigProject = @import("build/config_project.zig").addConfigProject;
-/// The whole build of a directory package (D62): `@import("kosm").package(b)`.
+/// The whole build of a directory package: `@import("kosm").package(b)`.
 pub const package = package_build.package;
 
 const package_build = @import("build/package.zig");
 const built_in = @import("build/built_in.zig");
 
-/// Where `kosm init` fetches kosm from (D98).
+/// Where `kosm init` fetches kosm from.
 const kosm_url = "git+https://git.nnstdios.com/nnra6864/kosm";
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Core imports only the tree-sitter runtime: it knows no apps, packages or command line (D1).
+    // Core imports only the tree-sitter runtime: it knows no apps, packages or command line.
     const kosm_module = b.addModule("kosm", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -23,19 +23,19 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     addTreeSitter(b, kosm_module, target, optimize);
-    // The number the command line and the runner check against each other (D98).
+    // The number the command line and the runner check against each other.
     const interface_module = b.createModule(.{
         .root_source_file = b.path("src/interface.zig"),
         .target = target,
         .optimize = optimize,
     });
-    // The record of the last apply: the runner writes it, the command line reads it (D75).
+    // The record of the last apply: the runner writes it, the command line reads it.
     const current_module = b.createModule(.{
         .root_source_file = b.path("src/current/Record.zig"),
         .target = target,
         .optimize = optimize,
     });
-    // The runner only sees core's public API, like any package (D2).
+    // The runner only sees core's public API, like any package.
     const runner_module = b.addModule("kosm_runner", .{
         .root_source_file = b.path("src/runner/root.zig"),
         .target = target,
@@ -47,7 +47,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     // The command line only drives zig build and the runner; it imports nothing but kosm_current,
-    // kosm_interface and what kosm init writes (D83, D98).
+    // kosm_interface and what kosm init writes.
     const cli_module = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
@@ -85,8 +85,8 @@ pub fn build(b: *std.Build) void {
     addPackageTests(b, test_step, kosm_module, target, optimize);
 }
 
-/// What the command line knows about kosm as a package: what `kosm init` writes (D83, D98), the
-/// built-in names `kosm new` refuses (D86), and the fingerprint tests give a stub kosm.
+/// What the command line knows about kosm as a package: what `kosm init` writes, the
+/// built-in names `kosm new` refuses, and the fingerprint tests give a stub kosm.
 fn packageOptions(b: *std.Build) *std.Build.Step.Options {
     const options = b.addOptions();
     var names: [built_in.packages.len][]const u8 = undefined;
@@ -99,7 +99,7 @@ fn packageOptions(b: *std.Build) *std.Build.Step.Options {
 }
 
 /// Installs kosm's sources in `<prefix>/share/kosm`, where the installed binary finds them and
-/// builds every config with them (D98). Only what a fetch of kosm would hold: the `.paths` of
+/// builds every config with them. Only what a fetch of kosm would hold: the `.paths` of
 /// kosm's manifest, with each built-in package's own `.paths`, so no `.zig-cache` comes along.
 fn installSources(b: *std.Build) void {
     const share = "share/kosm";
@@ -142,7 +142,7 @@ fn manifestPaths(b: *std.Build, directory: []const u8) []const []const u8 {
     return manifest.paths;
 }
 
-/// Compiles the tree-sitter runtime into core and imports its C API as `tree_sitter_api` (D41).
+/// Compiles the tree-sitter runtime into core and imports its C API as `tree_sitter_api`.
 fn addTreeSitter(b: *std.Build, module: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const runtime = b.dependency("tree_sitter", .{});
     const header = b.addWriteFiles().add("tree_sitter_api.h", "#include <tree_sitter/api.h>\n");
@@ -157,7 +157,7 @@ fn addTreeSitter(b: *std.Build, module: *std.Build.Module, target: std.Build.Res
     });
 }
 
-/// Tests each built-in package with every other one importable by name, as a config sees them (D98).
+/// Tests each built-in package with every other one importable by name, as a config sees them.
 fn addPackageTests(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const modules = built_in.addModules(b, kosm_module, target, optimize);
     for (built_in.packages, modules) |built_in_package, module| {
@@ -166,7 +166,7 @@ fn addPackageTests(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.
     addStartingKosmosTest(b, test_step, kosm_module, &modules, target, optimize);
 }
 
-/// Builds the kosmos `kosm init` writes (D84) against the built-in packages, so it can't go stale.
+/// Builds the kosmos `kosm init` writes against the built-in packages, so it can't go stale.
 fn addStartingKosmosTest(b: *std.Build, test_step: *std.Build.Step, kosm_module: *std.Build.Module, packages: []const *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const kyanos = b.createModule(.{
         .root_source_file = b.path("src/cli/kosmoi/kyanos.zig"),

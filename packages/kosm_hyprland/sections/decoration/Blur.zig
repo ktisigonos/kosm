@@ -1,4 +1,4 @@
-//! Hyprland's `decoration.blur` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `decoration.blur` options. Field names are Hyprland's option names.
 
 /// Enable window background blur. null: Hyprland's default, `true`.
 enabled: ?bool = null,

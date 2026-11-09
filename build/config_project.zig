@@ -1,10 +1,10 @@
 //! The build of a config project (section 9): every installed package, every built-in package
-//! kosm provides (D98) and every local kosmos, app and adapter becomes a module importable by
-//! name (D43, D50, D62), and `-Dkosmos=frost.iced`
-//! builds `zig-out/bin/kosmos`, the runner for that one kosmos (D45). `-Dinspect=kosm_kitty` builds
-//! `zig-out/bin/inspect`, which reports what that installed package provides (D46). `-Dlist` builds
-//! `zig-out/bin/list`, which lists every kosmos and installed package (D85). `check` compiles
-//! every local one, so editors see the config's imports (D104).
+//! kosm provides and every local kosmos, app and adapter becomes a module importable by
+//! name, and `-Dkosmos=frost.iced`
+//! builds `zig-out/bin/kosmos`, the runner for that one kosmos. `-Dinspect=kosm_kitty` builds
+//! `zig-out/bin/inspect`, which reports what that installed package provides. `-Dlist` builds
+//! `zig-out/bin/list`, which lists every kosmos and installed package. `check` compiles
+//! every local one, so editors see the config's imports.
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -28,16 +28,16 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     inline for (@typeInfo(@TypeOf(manifest.dependencies)).@"struct".field_names) |name| {
         const dependency = b.dependency(name, .{ .target = target, .optimize = optimize });
         const module = dependency.builder.modules.get(name) orelse
-            return fail(b, "package '{s}' has no module named '{s}'; its manifest name and module name must match (D51)", .{ name, name });
+            return fail(b, "package '{s}' has no module named '{s}'; its manifest name and module name must match", .{ name, name });
         if (!names.add(.{ .name = name, .module = module, .origin = b.fmt("package '{s}'", .{name}), .kind = .package })) return;
     }
     const kosm_dependency = for (names.modules.items) |entry| {
         if (std.mem.eql(u8, entry.name, "kosm")) break b.dependency("kosm", .{ .target = target, .optimize = optimize });
     } else return fail(b, "build.zig.zon has no 'kosm' dependency", .{});
-    // Kosm provides the built-in packages while they live in its repo (D98).
+    // Kosm provides the built-in packages while they live in its repo.
     for (built_in.packages, built_in.modulesOf(kosm_dependency)) |package, found| {
         const module = found orelse continue;
-        if (!names.add(.{ .name = package.name, .module = module, .origin = b.fmt("built-in package '{s}' (kosm provides it, so build.zig.zon need not list it, D98)", .{package.name}), .kind = .package })) return;
+        if (!names.add(.{ .name = package.name, .module = module, .origin = b.fmt("built-in package '{s}' (kosm provides it, so build.zig.zon need not list it)", .{package.name}), .kind = .package })) return;
     }
     unifyPackages(b, names.modules.items);
 
@@ -45,13 +45,13 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     for (local_directories) |directory| {
         const found = listLocal(b, directory) catch |err| return fail(b, "cannot read {s}/: {s}", .{ directory, @errorName(err) });
         for (found) |local| {
-            if (local.missing_root) return fail(b, "{s} is a directory package but has no root.zig (D62)", .{local.origin});
+            if (local.missing_root) return fail(b, "{s} is a directory package but has no root.zig", .{local.origin});
             const module = b.createModule(.{ .root_source_file = b.path(local.root), .target = target, .optimize = optimize });
             const kind: Kind = if (std.mem.eql(u8, directory, "kosmoi")) .kosmos else if (std.mem.eql(u8, directory, "adapters")) .adapter else .app;
             if (!names.add(.{ .name = local.name, .module = module, .origin = local.origin, .kind = kind, .local = local })) return;
         }
     }
-    // Every local module sees every package and every other local module by name (D50).
+    // Every local module sees every package and every other local module by name.
     for (names.modules.items) |entry| {
         if (entry.kind == .package) continue;
         for (names.modules.items) |other| {
@@ -68,7 +68,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
 
 /// A `check` step compiling every local kosmos, app and adapter, which `zig build` and kosm never
 /// run. Editors read the module graph from the build's steps, so it is what gives ZLS every
-/// import of the config (D104).
+/// import of the config.
 fn addEditorCheck(b: *std.Build, entries: []const Entry) void {
     const check = b.step("check", "Compile every local kosmos, app and adapter; editors read their imports from it");
     for (entries) |entry| {
@@ -89,7 +89,7 @@ const Entry = struct {
     local: ?Local = null,
 };
 
-/// Every module name in the config, refusing a name used twice (D50).
+/// Every module name in the config, refusing a name used twice.
 const Names = struct {
     b: *std.Build,
     modules: std.ArrayList(Entry) = .empty,
@@ -98,7 +98,7 @@ const Names = struct {
     fn add(names: *Names, entry: Entry) bool {
         for (names.modules.items) |existing| {
             if (std.mem.eql(u8, existing.name, entry.name)) {
-                fail(names.b, "'{s}' names both {s} and {s}; kosmoi, apps, adapters and packages need unique names (D50)", .{ entry.name, existing.origin, entry.origin });
+                fail(names.b, "'{s}' names both {s} and {s}; kosmoi, apps, adapters and packages need unique names", .{ entry.name, existing.origin, entry.origin });
                 return false;
             }
         }
@@ -109,7 +109,7 @@ const Names = struct {
 
 /// Each package pins its own copies of kosm and other packages, and two copies of kosm are two
 /// different `Theme` types. Re-point every import of a package the config has to the config's
-/// copy, through the whole module graph (D52).
+/// copy, through the whole module graph.
 fn unifyPackages(b: *std.Build, packages: []const Entry) void {
     var visited: std.AutoArrayHashMapUnmanaged(*std.Build.Module, void) = .empty;
     var pending: std.ArrayList(*std.Build.Module) = .empty;
@@ -135,7 +135,7 @@ const Local = struct {
     root: []const u8,
     /// For messages: "kosmoi/frost.zig" or "kosmoi/nord/".
     origin: []const u8,
-    /// A directory package (D62), rather than a single file.
+    /// A directory package, rather than a single file.
     is_directory: bool,
     /// A directory without a root.zig.
     missing_root: bool,
@@ -248,7 +248,7 @@ fn addInspector(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     b.installArtifact(b.addExecutable(.{ .name = "inspect", .root_module = root_module }));
 }
 
-/// Generates a main listing every kosmos and installed package (D85) and installs it as `list`.
+/// Generates a main listing every kosmos and installed package and installs it as `list`.
 fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry) void {
     var source: std.Io.Writer.Allocating = .init(b.allocator);
     const writer = &source.writer;
@@ -281,14 +281,14 @@ fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
 }
 
 /// Every local kosmos, app and adapter, and every installed package but kosm itself: each may
-/// declare kosmoi wherever it lives (D2, D87).
+/// declare kosmoi wherever it lives.
 fn canHoldKosmoi(entry: Entry) bool {
     return !std.mem.eql(u8, entry.name, "kosm");
 }
 
 /// Whether the runner collects the adapters `entry` declares: every installed package but kosm,
-/// everything in adapters/, and every local the applied kosmos reaches (D87). Leaving out the
-/// rest keeps a broken kosmos the applied one never imports from blocking it (D45).
+/// everything in adapters/, and every local the applied kosmos reaches. Leaving out the
+/// rest keeps a broken kosmos the applied one never imports from blocking it.
 fn providesAdapters(entry: Entry, reached: []const Entry) bool {
     if (std.mem.eql(u8, entry.name, "kosm")) return false;
     if (entry.kind == .package or entry.kind == .adapter) return true;
@@ -299,7 +299,7 @@ fn providesAdapters(entry: Entry, reached: []const Entry) bool {
 }
 
 /// The locals `start` reaches through `@import`, itself first, transitively: the walk that keeps
-/// manifests up to date (D76). An installed package reaches none, since it cannot import locals.
+/// manifests up to date. An installed package reaches none, since it cannot import locals.
 fn reachedLocals(b: *std.Build, entries: []const Entry, start: Entry) ![]const Entry {
     if (start.local == null) return &.{};
     var reached: std.ArrayList(Entry) = .empty;
@@ -319,7 +319,7 @@ fn reachedLocals(b: *std.Build, entries: []const Entry, start: Entry) ![]const E
 }
 
 /// Every `@import` in the Zig files of `local`; a directory package leaves out `zig-out/` and
-/// hidden entries, like its manifest (D76).
+/// hidden entries, like its manifest.
 fn localImports(b: *std.Build, local: Local) ![]const []const u8 {
     const io = b.graph.io;
     var imports: std.ArrayList([]const u8) = .empty;

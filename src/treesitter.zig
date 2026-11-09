@@ -1,5 +1,5 @@
-//! The tree-sitter runtime kosm owns (D41), for adapters whose parser is declared by node names
-//! (D39, D40). An adapter package fetches only its grammar (D78) and declares its entry point:
+//! The tree-sitter runtime kosm owns, for adapters whose parser is declared by node names
+//!. An adapter package fetches only its grammar and declares its entry point:
 //! `extern fn tree_sitter_json() callconv(.c) *const kosm.treesitter.Language;`.
 
 const std = @import("std");
@@ -16,7 +16,7 @@ pub const LanguageFunction = *const fn () callconv(.c) *const Language;
 const Builder = @import("treesitter/Builder.zig");
 
 /// An adapter `parser` reading files with `language` and finding keys by `spec`'s node names.
-/// A file with a syntax error is refused, naming its line and column (G6).
+/// A file with a syntax error is refused, naming its line and column.
 pub fn parser(comptime language: LanguageFunction, comptime spec: Spec) *const fn (std.mem.Allocator, []const u8, *Adapter.Context) Adapter.ParseError!Adapter.Node {
     return struct {
         fn parse(allocator: std.mem.Allocator, source: []const u8, context: *Adapter.Context) Adapter.ParseError!Adapter.Node {

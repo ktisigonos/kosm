@@ -5,9 +5,9 @@ const std = @import("std");
 
 /// Zen's theme colors and prefs; build one with `from`.
 pub const App = @import("App.zig");
-/// Colors and prefs from the theme (D27).
+/// Colors and prefs from the theme.
 pub const from = App.from;
-/// Prefs for a set of profiles, an app of its own (D94); build one with `Profile.from`.
+/// Prefs for a set of profiles, an app of its own; build one with `Profile.from`.
 pub const Profile = App.Profile;
 
 test {

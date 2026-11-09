@@ -1,5 +1,5 @@
 //! One file an apply will write: where, its contents before, the edits apps planned in it
-//! (D73), and its contents after.
+//!, and its contents after.
 
 const File = @This();
 
@@ -22,13 +22,13 @@ pub fn current(file: File) []const u8 {
     return file.old orelse "";
 }
 
-/// Whether committing would change the file on disk (D35).
+/// Whether committing would change the file on disk.
 pub fn changed(file: File) bool {
     const old = file.old orelse return true;
     return !std.mem.eql(u8, old, file.new);
 }
 
-/// The first planned edit that `edit` clashes with (D38), if any.
+/// The first planned edit that `edit` clashes with, if any.
 pub fn clash(file: *const File, edit: Edit) ?*const Edit {
     for (file.edits.items) |*planned| {
         if (planned.clashes(edit)) return planned;

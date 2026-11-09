@@ -1,4 +1,4 @@
-//! Keeps the manifests of local directory packages up to date (D62, D76): each `build.zig.zon`
+//! Keeps the manifests of local directory packages up to date: each `build.zig.zon`
 //! depends on kosm and exactly the packages its directory imports, and lists every file it
 //! holds. An apply refreshes the applied kosmos and every directory package it reaches.
 
@@ -11,10 +11,10 @@ const manifest = @import("manifest.zig");
 
 pub const Error = Context.Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
 
-/// `write` brings the files up to date; `report` (for `--diff`, D37) only prints what it would change.
+/// `write` brings the files up to date; `report` (for `--diff`) only prints what it would change.
 pub const Mode = enum { write, report };
 
-/// The one-line build every directory package has (D62), written once.
+/// The one-line build every directory package has, written once.
 const build_file =
     \\const std = @import("std");
     \\
@@ -33,7 +33,7 @@ const max_file_size = 16 * 1024 * 1024;
 
 /// Before kosmos `name` ("nord" or "nord.iced") is applied, brings up to date the build files
 /// of every local directory package it reaches through imports, itself included when it is a
-/// directory, in any of the local folders (D76, D87). With `.report` it only prints which files would change. Every
+/// directory, in any of the local folders. With `.report` it only prints which files would change. Every
 /// manifest is checked before any is written, so a failure writes nothing.
 pub fn refreshApplied(context: Context, name: []const u8, mode: Mode) Error!void {
     const kosmos_name = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len];
@@ -138,7 +138,7 @@ fn planPackage(context: Context, package: Reached, refreshed: []const Reached, c
     const contents = package.contents;
     const package_name = std.Io.Dir.path.basename(directory);
     if (!std.zig.isValidId(package_name)) {
-        return context.fail("{s}/ cannot be a package: its name must be a Zig identifier (D51)", .{directory});
+        return context.fail("{s}/ cannot be a package: its name must be a Zig identifier", .{directory});
     }
 
     const config_manifest = try read(context, manifest_name) orelse return context.fail("{s} has no {s}", .{ context.config, manifest_name });
@@ -190,7 +190,7 @@ fn writePaths(writer: *std.Io.Writer, paths: []const []const u8) std.Io.Writer.E
     try writer.writeAll("    }");
 }
 
-/// The fields kosm writes once (D62): name, a fingerprint made the way Zig makes one, version
+/// The fields kosm writes once: name, a fingerprint made the way Zig makes one, version
 /// and the config's own `minimum_zig_version`.
 fn newManifest(context: Context, name: []const u8, config_manifest: [:0]const u8) Error![:0]const u8 {
     const configured = manifest.stringField(context.arena, config_manifest, "minimum_zig_version") catch |err|
@@ -280,12 +280,12 @@ fn packageDependencies(context: Context, package_name: []const u8, directory: []
 /// The dependency on local directory package `name` (`apps/my_bar/`), with its path relative
 /// to the config, or null when `name` is not local. A single file, or a directory that has no
 /// manifest and gets none in this run, cannot be a dependency, so either is an error naming
-/// the import (D62).
+/// the import.
 fn localDependency(context: Context, directory: []const u8, name: []const u8, refreshed: []const Reached) Error!?manifest.Dependency {
     for (local_directories) |local_directory| {
         const file = try context.arena.print("{s}/{s}.zig", .{ local_directory, name });
         if (try kindOf(context, file) == .file) {
-            return context.fail("{s}/ imports '{s}', which is the single file {s}; a published package could not resolve it, so make it a directory package (D62)", .{ directory, name, file });
+            return context.fail("{s}/ imports '{s}', which is the single file {s}; a published package could not resolve it, so make it a directory package", .{ directory, name, file });
         }
         const package = try std.Io.Dir.path.join(context.arena, &.{ local_directory, name });
         if (try kindOf(context, package) != .directory) continue;
@@ -554,12 +554,12 @@ test "importing a single-file local package is an error and writes nothing" {
 
     try test_config.write("kosmoi/nord/colors.zig", "const base = @import(\"base\");\n");
     try testing.expectError(error.Failed, refreshApplied(test_config.context(), "nord", .write));
-    try testing.expectEqualStrings("error: kosmoi/nord/ imports 'base', which is the single file kosmoi/base.zig; a published package could not resolve it, so make it a directory package (D62)\n", test_config.stderr.written());
+    try testing.expectEqualStrings("error: kosmoi/nord/ imports 'base', which is the single file kosmoi/base.zig; a published package could not resolve it, so make it a directory package\n", test_config.stderr.written());
 
     try test_config.write("kosmoi/nord/colors.zig", "const bar = @import(\"bar\");\n");
     try test_config.write("apps/bar/root.zig", "const base = @import(\"base\");\n");
     try testing.expectError(error.Failed, refreshApplied(test_config.context(), "nord", .write));
-    try testing.expect(std.mem.endsWith(u8, test_config.stderr.written(), "error: apps/bar/ imports 'base', which is the single file kosmoi/base.zig; a published package could not resolve it, so make it a directory package (D62)\n"));
+    try testing.expect(std.mem.endsWith(u8, test_config.stderr.written(), "error: apps/bar/ imports 'base', which is the single file kosmoi/base.zig; a published package could not resolve it, so make it a directory package\n"));
     try testing.expectEqual(null, try test_config.read("kosmoi/nord/build.zig"));
     try testing.expectEqual(null, try test_config.read("kosmoi/nord/build.zig.zon"));
     try testing.expectEqualStrings("", test_config.stdout.written());
@@ -603,7 +603,7 @@ test "single-file and installed kosmoi have no manifest to refresh" {
     try testing.expectEqualStrings("", test_config.stdout.written());
 }
 
-test "applying a kosmos that lives in apps/ refreshes its own build files (D87)" {
+test "applying a kosmos that lives in apps/ refreshes its own build files" {
     var test_config: TestConfig = undefined;
     try test_config.init();
     defer test_config.deinit();

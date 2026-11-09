@@ -1,4 +1,4 @@
-//! `kosm source [<dir> | --default]` (D98): which kosm sources builds use on this machine. With
+//! `kosm source [<dir> | --default]`: which kosm sources builds use on this machine. With
 //! a directory it records it as the override, with `--default` it removes the override, and with
 //! nothing it prints which sources builds use and why.
 

@@ -1,8 +1,8 @@
-//! The `kosm` command (section 10). For now `kosm init` (D83, D84), `kosm apply`, which builds
-//! the one kosmos in the config project with `zig build` and runs it (D45, D66), `kosm list`
-//! (D85), `kosm new` (D63), `kosm current` (D75), and the package commands `kosm add`, `kosm remove` and
-//! `kosm update` (D46), and `kosm source` (D98). Applying a directory kosmos also refreshes its own
-//! manifest (D62, D76). Every build runs with the kosm sources `Sources` finds (D98).
+//! The `kosm` command (section 10). For now `kosm init`, `kosm apply`, which builds
+//! the one kosmos in the config project with `zig build` and runs it, `kosm list`
+//!, `kosm new`, `kosm current`, and the package commands `kosm add`, `kosm remove` and
+//! `kosm update`, and `kosm source`. Applying a directory kosmos also refreshes its own
+//! manifest. Every build runs with the kosm sources `Sources` finds.
 
 const std = @import("std");
 const Record = @import("kosm_current");
@@ -30,7 +30,7 @@ const usage =
     \\
 ;
 
-/// Where the config project lives unless `--config` says otherwise (D66), under $HOME.
+/// Where the config project lives unless `--config` says otherwise, under $HOME.
 const default_config = ".config/kosm";
 /// What `addConfigProject` installs for `-Dkosmos=...`.
 const runner_path = "zig-out/bin/kosmos";
@@ -51,7 +51,7 @@ pub fn main(init: std.process.Init) !u8 {
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
             error.MissingArgument, error.UnexpectedArgument => try stderr.interface.print("error: kosm {s} takes {s}\n", .{ arguments[1], expectedArguments(arguments[1]) }),
             error.UnknownKind => try stderr.interface.writeAll("error: kosm new makes a kosmos, an app or an adapter, e.g. kosm new app my_bar\n"),
-            error.ConfigNotRead => try stderr.interface.print("error: kosm {s} reads no config project, so it takes no --config (D66)\n", .{arguments[1]}),
+            error.ConfigNotRead => try stderr.interface.print("error: kosm {s} reads no config project, so it takes no --config\n", .{arguments[1]}),
             error.OutOfMemory => return error.OutOfMemory,
         }
         try stderr.interface.writeAll(usage);
@@ -72,7 +72,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
 }
 
-/// What every `zig build` kosm runs, and every program it builds, runs with (D98).
+/// What every `zig build` kosm runs, and every program it builds, runs with.
 const Builds = struct {
     /// Kosm's environment plus the interface number the runner checks.
     environ: *const std.process.Environ.Map,
@@ -113,7 +113,7 @@ fn expectedArguments(command: []const u8) []const u8 {
     return "no arguments";
 }
 
-/// The config project's absolute path: `--config` or the default (D66). Null after printing
+/// The config project's absolute path: `--config` or the default. Null after printing
 /// why there is none.
 fn configPath(init: std.process.Init, given: ?[]const u8, stderr: *std.Io.Writer) !?[]const u8 {
     const arena = init.arena.allocator();
@@ -130,7 +130,7 @@ fn configPath(init: std.process.Init, given: ?[]const u8, stderr: *std.Io.Writer
     };
 }
 
-/// Creates the config directory when it is missing, then whatever the project lacks in it (D83).
+/// Creates the config directory when it is missing, then whatever the project lacks in it.
 fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stderr: *std.Io.Writer) !u8 {
     const arena = init.arena.allocator();
     const given = command.config orelse blk: {
@@ -156,7 +156,7 @@ fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stder
     return 0;
 }
 
-/// Scaffolds a directory package in the config project (D63).
+/// Scaffolds a directory package in the config project.
 fn runNew(init: std.process.Init, builds: Builds, command: New, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
@@ -173,7 +173,7 @@ fn runNew(init: std.process.Init, builds: Builds, command: New, stderr: *std.Io.
 /// Builds and runs the kosmos; only returns when it could not be run.
 fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std.Io.Writer) !u8 {
     const arena = init.arena.allocator();
-    // The runner records this path for `kosm current`, which may run from anywhere (D75).
+    // The runner records this path for `kosm current`, which may run from anywhere.
     const config = try configPath(init, command.config, stderr) orelse return 1;
     try stderr.flush();
 
@@ -186,8 +186,8 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
     return 1;
 }
 
-/// Brings a directory kosmos' manifest up to date (D62), or on `--diff` only says what would
-/// change (D37). Returns whether the apply can go on.
+/// Brings a directory kosmos' manifest up to date, or on `--diff` only says what would
+/// change. Returns whether the apply can go on.
 fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, command: Apply, stderr: *std.Io.Writer) !bool {
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
@@ -223,7 +223,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
     return 0;
 }
 
-/// Prints the last successful apply as the command that repeats it (D75).
+/// Prints the last successful apply as the command that repeats it.
 fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
     const arena = init.arena.allocator();
     const path = try Record.path(arena, init.environ_map) orelse {
@@ -250,7 +250,7 @@ fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
 }
 
 /// Runs `zig build -Dkosmos=<kosmos>` in the config project; compile errors go straight to
-/// stderr, so they point at the user's files (D45). Returns whether it succeeded.
+/// stderr, so they point at the user's files. Returns whether it succeeded.
 fn build(context: Context, kosmos: []const u8) !bool {
     const kosmos_option = try std.fmt.allocPrint(context.arena, "-Dkosmos={s}", .{kosmos});
     const argv = try context.zigArguments(&.{ "build", kosmos_option });
@@ -381,7 +381,7 @@ const Apply = struct {
     config: ?[]const u8,
     /// Parameters, `--set`s and `--diff`, in order, for the kosmos runner.
     runner_arguments: []const []const u8,
-    /// Whether `--diff` is among them, read like the runner reads it (D37).
+    /// Whether `--diff` is among them, read like the runner reads it.
     diff: bool,
 
     const ParseError = error{ NoCommand, UnknownCommand, MissingKosmos, MissingConfigDirectory, OutOfMemory };
@@ -569,7 +569,7 @@ const test_nord_parts =
     \\pub const Bar = @import("my_bar").Writer;
     \\
 ;
-/// A directory app with its own adapter and its own kosmos (D87).
+/// A directory app with its own adapter and its own kosmos.
 const test_my_bar_root = test_header ++ testAdapter("bar") ++
     \\pub fn kosmos() struct { bar: Writer } {
     \\    return .{ .bar = .{} };

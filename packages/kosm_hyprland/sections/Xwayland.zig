@@ -1,4 +1,4 @@
-//! Hyprland's `xwayland` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `xwayland` options. Field names are Hyprland's option names.
 
 /// Allow running applications using X11. null: Hyprland's default, `true`.
 enabled: ?bool = null,

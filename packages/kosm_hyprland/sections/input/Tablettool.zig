@@ -1,4 +1,4 @@
-//! Hyprland's `input.tablettool` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `input.tablettool` options. Field names are Hyprland's option names.
 
 /// The eraser button on the tool: the hardware's own behavior, or a button event (see `eraser_button_override`). null: Hyprland's default, `default`.
 eraser_button_mode: ?enum(i64) {

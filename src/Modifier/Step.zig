@@ -21,8 +21,8 @@ alpha: ?f64 = null,
 mix: ?Mix = null,
 contrast: ?Contrast = null,
 
-/// Applies the OKLCH deltas, then HSV, HSL, RGB and CMYK (D68), then the mix, then the
-/// contrast pick, then the alpha (D15).
+/// Applies the OKLCH deltas, then HSV, HSL, RGB and CMYK, then the mix, then the
+/// contrast pick, then the alpha.
 pub fn apply(step: Step, color: Color) Color {
     var result: Color = .{
         .lightness = color.lightness + step.lightness,

@@ -1,4 +1,4 @@
-//! Walks the directories a selector glob reaches (D79), collecting the files it matches.
+//! Walks the directories a selector glob reaches, collecting the files it matches.
 //! Everything lives in `allocator`, an arena.
 
 const Walker = @This();

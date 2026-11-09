@@ -1,4 +1,4 @@
-//! Hyprland's `general.snap` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `general.snap` options. Field names are Hyprland's option names.
 
 /// Enable snapping for floating windows. null: Hyprland's default, `false`.
 enabled: ?bool = null,

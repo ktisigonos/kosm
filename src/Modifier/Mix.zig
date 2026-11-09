@@ -1,4 +1,4 @@
-//! Mixing toward a color in OKLCH (D15).
+//! Mixing toward a color in OKLCH.
 
 const Mix = @This();
 

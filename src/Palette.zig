@@ -1,40 +1,40 @@
-//! The palette a kosmos defines: black, white and any of the 12 wheel hues (D6).
+//! The palette a kosmos defines: black, white and any of the 12 wheel hues.
 
 const Palette = @This();
 
 const std = @import("std");
 const Color = @import("Color.zig");
 
-/// Background in dark mode, foreground in light mode (by convention, D27).
+/// Background in dark mode, foreground in light mode (by convention).
 black: Color,
-/// Foreground in dark mode, background in light mode (by convention, D27).
+/// Foreground in dark mode, background in light mode (by convention).
 white: Color,
-/// Wheel position 0 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 0 deg. Null: mixed from the nearest set hues.
 red: ?Color = null,
-/// Wheel position 30 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 30 deg. Null: mixed from the nearest set hues.
 orange: ?Color = null,
-/// Wheel position 60 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 60 deg. Null: mixed from the nearest set hues.
 yellow: ?Color = null,
-/// Wheel position 90 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 90 deg. Null: mixed from the nearest set hues.
 lime: ?Color = null,
-/// Wheel position 120 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 120 deg. Null: mixed from the nearest set hues.
 green: ?Color = null,
-/// Wheel position 150 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 150 deg. Null: mixed from the nearest set hues.
 teal: ?Color = null,
-/// Wheel position 180 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 180 deg. Null: mixed from the nearest set hues.
 cyan: ?Color = null,
-/// Wheel position 210 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 210 deg. Null: mixed from the nearest set hues.
 sky: ?Color = null,
-/// Wheel position 240 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 240 deg. Null: mixed from the nearest set hues.
 blue: ?Color = null,
-/// Wheel position 270 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 270 deg. Null: mixed from the nearest set hues.
 purple: ?Color = null,
-/// Wheel position 300 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 300 deg. Null: mixed from the nearest set hues.
 magenta: ?Color = null,
-/// Wheel position 330 deg. Null: mixed from the nearest set hues (D7).
+/// Wheel position 330 deg. Null: mixed from the nearest set hues.
 pink: ?Color = null,
 
-/// The palette modules see, every hue filled in (D9).
+/// The palette modules see, every hue filled in.
 pub const Resolved = @import("Palette/Resolved.zig");
 
 /// The 12 wheel positions in order, 30 deg apart starting at red.
@@ -43,7 +43,7 @@ pub const Hue = enum { red, orange, yellow, lime, green, teal, cyan, sky, blue, 
 const hue_count = @typeInfo(Hue).@"enum".field_names.len;
 
 /// Fills every missing hue by mixing the nearest set hues on either side, by wheel
-/// position (D7). No set hues gives gray everywhere; gray is mix(black, white) (D8).
+/// position. No set hues gives gray everywhere; gray is mix(black, white).
 pub fn resolve(palette: Palette) Resolved {
     const gray = palette.black.mix(palette.white, 0.5);
     var wheel: [hue_count]?Color = undefined;

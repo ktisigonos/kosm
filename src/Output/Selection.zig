@@ -1,6 +1,6 @@
-//! The files `output.edit` picked (D79), and the calls that set values in them by path (D31).
-//! Paths are text (`general."col.active_border"`, D32) or a tuple of keys. Every call only
-//! plans; nothing is written until kosm commits (D36). Kosm sets the fields.
+//! The files `output.edit` picked, and the calls that set values in them by path.
+//! Paths are text (`general."col.active_border"`) or a tuple of keys. Every call only
+//! plans; nothing is written until kosm commits. Kosm sets the fields.
 
 const Selection = @This();
 
@@ -19,7 +19,7 @@ output: *Output,
 /// The `files` glob as the app wrote it, for messages.
 selector: []const u8,
 adapter: Adapter,
-/// How values are spelled in these files, every layer applied (D70).
+/// How values are spelled in these files, every layer applied.
 format: Format.Resolved,
 /// The picked files, sorted by path.
 files: []const File,
@@ -35,7 +35,7 @@ pub const SetOptions = struct {
 
 const Error = Output.Error;
 
-/// Sets the one value at `path`; zero or several matches is an error (D31).
+/// Sets the one value at `path`; zero or several matches is an error.
 pub fn set(selection: *Selection, path: anytype, value: anytype) Error!void {
     return selection.setOptions(path, value, .{});
 }
@@ -66,19 +66,19 @@ pub fn setRange(selection: *Selection, path: anytype, start: usize, end: usize, 
 }
 
 /// Sets the matches of `path` that `options.match` picks to `value`, formatted by the adapter
-/// (D42) in the files' format. Only the value's bytes change (D35); a key is never inserted (D28).
+/// in the files' format. Only the value's bytes change; a key is never inserted.
 pub fn setOptions(selection: *Selection, path: anytype, value: anytype, options: SetOptions) Error!void {
     const parsed = try selection.parsePath(path);
     const matches = try selection.find(parsed);
     if (matches.len == 0)
-        return selection.fail(error.NoMatch, "path '{f}' matches nothing; kosm never inserts keys (D28)", .{parsed});
+        return selection.fail(error.NoMatch, "path '{f}' matches nothing; kosm never inserts keys", .{parsed});
     const chosen = try selection.choose(parsed, matches, options.match);
     const text = try selection.formatValue(try selection.output.allocator.print("path '{f}'", .{parsed}), value);
     for (chosen) |match| try selection.write(match, text);
 }
 
-/// Every value at `path`, in match order; empty when there is none (D34). For reading, for
-/// `elements`, and for `replace`. The empty path `""` is each file's top-level value (D80).
+/// Every value at `path`, in match order; empty when there is none. For reading, for
+/// `elements`, and for `replace`. The empty path `""` is each file's top-level value.
 pub fn nodes(selection: *Selection, path: anytype) Error![]const Match {
     if (comptime Path.isText(@TypeOf(path))) {
         if (path.len == 0) return selection.roots();
@@ -92,8 +92,8 @@ fn roots(selection: *Selection) Error![]const Match {
     return result;
 }
 
-/// The elements of list `match`, in file order (D80): a list's values, or a table's entries
-/// without a key (`{ "a", key = 1 }`, D90). Paths never step into lists (D77).
+/// The elements of list `match`, in file order: a list's values, or a table's entries
+/// without a key (`{ "a", key = 1 }`). Paths never step into lists.
 pub fn elements(selection: *Selection, match: Match) Error![]const Match {
     const file = selection.files[match.file_index];
     var result: std.ArrayList(Match) = .empty;
@@ -107,7 +107,7 @@ pub fn elements(selection: *Selection, match: Match) Error![]const Match {
     return result.items;
 }
 
-/// Sets `match`, from `nodes` or `elements`, to `value`, formatted like `set` does (D80).
+/// Sets `match`, from `nodes` or `elements`, to `value`, formatted like `set` does.
 pub fn replace(selection: *Selection, match: Match, value: anytype) Error!void {
     const about = try selection.output.allocator.print("the value on line {d} of {s}", .{ match.line, match.file });
     try selection.write(match, try selection.formatValue(about, value));
@@ -157,7 +157,7 @@ fn choose(selection: *Selection, path: Path, matches: []const Match, cardinality
     switch (cardinality) {
         .one => {
             if (count == 1) return matches;
-            return selection.fail(error.TooManyMatches, "path '{f}' matches {d} values ({f}); narrow .files, or pick with setFirst, setAll or setNth (D31)", .{ path, count, Locations{ .matches = matches } });
+            return selection.fail(error.TooManyMatches, "path '{f}' matches {d} values ({f}); narrow .files, or pick with setFirst, setAll or setNth", .{ path, count, Locations{ .matches = matches } });
         },
         .first => return matches[0..1],
         .all => return matches,
@@ -190,7 +190,7 @@ fn checkIndex(selection: *Selection, path: Path, count: usize, index: usize) Err
     return selection.fail(error.IndexOutOfRange, "path '{f}' matches {d} values, so index {d} does not exist (indices start at 0)", .{ path, count, index });
 }
 
-/// `value` as source text, through the adapter's `format` (D42). `about` names what is set.
+/// `value` as source text, through the adapter's `format`. `about` names what is set.
 fn formatValue(selection: *Selection, about: []const u8, value: anytype) Error![]const u8 {
     const allocator = selection.output.allocator;
     var context: Adapter.Context = .{ .format = selection.format };

@@ -1,6 +1,6 @@
-//! Writes a plan to disk (D36): every changed file goes to a temp file next to it first, and
+//! Writes a plan to disk: every changed file goes to a temp file next to it first, and
 //! only once all of them are written are they renamed into place. Unchanged files are not
-//! touched (D35).
+//! touched.
 
 const std = @import("std");
 const Plan = @import("Plan.zig");

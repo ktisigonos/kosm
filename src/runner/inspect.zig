@@ -1,5 +1,5 @@
 //! What an installed package provides: its apps, adapters and kosmoi, found by reflection.
-//! `kosm add` and `kosm update` refuse a package that provides none of them (D46).
+//! `kosm add` and `kosm update` refuse a package that provides none of them.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -17,7 +17,7 @@ pub fn inspect(init: std.process.Init, comptime name: []const u8, comptime Packa
         return 1;
     }
     if (report.isEmpty()) {
-        try stderr.interface.print("error: package '{s}' provides no app, adapter or kosmos, so it is not a kosm package (D46)\n", .{name});
+        try stderr.interface.print("error: package '{s}' provides no app, adapter or kosmos, so it is not a kosm package\n", .{name});
         try stderr.interface.flush();
         return 1;
     }

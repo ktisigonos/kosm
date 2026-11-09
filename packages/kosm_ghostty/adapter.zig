@@ -1,12 +1,12 @@
 //! ghostty config files: one `key = value` line per option, a repeated key adding one more
-//! (`font-family`, `palette`, `keybind`), `#` comments on lines of their own (D40). A table is a
+//! (`font-family`, `palette`, `keybind`), `#` comments on lines of their own. A table is a
 //! section, written as a `# name` comment above its options, since ghostty has no nesting.
 
 const std = @import("std");
 const kosm = @import("kosm");
 const parser = @import("parser.zig");
 
-/// The adapter for ghostty config files; enables `generate`, `block` (D71) and `edit`. It claims
+/// The adapter for ghostty config files; enables `generate`, `block` and `edit`. It claims
 /// `.ghostty`, ghostty's own extension; the plain `config` file needs `.lang = "ghostty"`.
 pub const adapter: kosm.Adapter = .{
     .name = "ghostty",
@@ -50,7 +50,7 @@ fn writeLine(writer: *std.Io.Writer, key: []const u8, value: kosm.Value, context
     try writer.writeByte('\n');
 }
 
-/// Writes one value; with `parser`, enables `edit` (D42).
+/// Writes one value; with `parser`, enables `edit`.
 fn format(writer: *std.Io.Writer, value: kosm.Value, context: *kosm.Adapter.Context) kosm.Adapter.Error!void {
     if (value == .list or value == .table) return context.unsupported("a ghostty option holds one plain value, not a {s}", .{@tagName(value)});
     try writeValue(writer, "value", value, context);

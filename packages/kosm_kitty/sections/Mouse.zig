@@ -1,4 +1,4 @@
-//! kitty's "Mouse" options. Field names are kitty's option names (D27).
+//! kitty's "Mouse" options. Field names are kitty's option names.
 
 const kosm = @import("kosm");
 const values = @import("../values.zig");

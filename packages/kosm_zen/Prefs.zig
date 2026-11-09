@@ -1,6 +1,6 @@
-//! Zen's about:config prefs kosm writes to a profile's `user.js` (D94, D96), nested by the pref's
+//! Zen's about:config prefs kosm writes to a profile's `user.js`, nested by the pref's
 //! own name: `zen.theme.accent-color` is `prefs.zen.theme.accent_color`. A null pref is not
-//! written, so Zen's own value stays (D27).
+//! written, so Zen's own value stays.
 
 /// `zen.*`: Zen's own prefs.
 zen: Zen = .{},

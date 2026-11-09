@@ -1,5 +1,5 @@
 //! Why an apply failed, with everything needed to find the cause: kosmos, app, file and a
-//! message (G6). Filled by whoever fails first and printed by the runner.
+//! message. Filled by whoever fails first and printed by the runner.
 
 const Diagnostics = @This();
 
@@ -38,7 +38,7 @@ pub fn write(diagnostics: *const Diagnostics, writer: *std.Io.Writer) std.Io.Wri
 }
 
 /// Prints `<severity>: kosmos '<kosmos>', app '<app>', file <file>: <message>`, leaving out the
-/// parts that are empty. Errors and warnings (D88) share this shape.
+/// parts that are empty. Errors and warnings share this shape.
 pub fn writeReport(writer: *std.Io.Writer, severity: []const u8, kosmos: []const u8, app: []const u8, file: []const u8, text: []const u8) std.Io.Writer.Error!void {
     try writer.print("{s}: ", .{severity});
     var separator: []const u8 = "";

@@ -1,4 +1,4 @@
-//! Hyprland's `animations` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `animations` options. Field names are Hyprland's option names.
 
 /// Enable animations. null: Hyprland's default, `true`.
 enabled: ?bool = null,

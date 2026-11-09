@@ -1,5 +1,5 @@
 //! One key, list element or value of a parsed file, as an adapter's `parser` reports it.
-//! Kosm matches paths against this tree (D30-D32), so an adapter only says what the file holds.
+//! Kosm matches paths against this tree, so an adapter only says what the file holds.
 
 const Node = @This();
 
@@ -16,14 +16,14 @@ position: usize,
 /// (`M.blur.enabled = true` has no bytes for `M.blur`, nor `[colors]` for `colors`).
 value: ?Range,
 /// A table's entries or a list's elements, in file order. A table's entries without a key are
-/// its elements, for languages whose tables are lists too (Lua, D90); paths skip them.
+/// its elements, for languages whose tables are lists too (Lua); paths skip them.
 children: []const Node = &.{},
 
 /// The shape of a node's value.
 pub const Kind = enum {
     /// Keyed entries a path can step into.
     table,
-    /// Elements reached only through `Selection.elements` (D77, D80).
+    /// Elements reached only through `Selection.elements`.
     list,
     /// A single value.
     scalar,

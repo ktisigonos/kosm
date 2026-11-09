@@ -1,4 +1,4 @@
-//! The build of a directory package (D62): its one-line `build.zig` calls `package`, so the
+//! The build of a directory package: its one-line `build.zig` calls `package`, so the
 //! same directory works inside a config, when fetched by others, and when developed on its own.
 
 const std = @import("std");
@@ -7,8 +7,8 @@ const built_in = @import("built_in.zig");
 /// A manifest is a few hundred bytes; this only guards against reading something huge.
 const max_manifest_size = 1024 * 1024;
 
-/// Exposes `root.zig` as a module named like the package's manifest `.name` (D51), importing
-/// every dependency by its name and the built-in packages `kosm` provides (D98), and adds a
+/// Exposes `root.zig` as a module named like the package's manifest `.name`, importing
+/// every dependency by its name and the built-in packages `kosm` provides, and adds a
 /// `test` step running its tests.
 pub fn package(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -61,7 +61,7 @@ fn addBuiltIns(b: *std.Build, name: []const u8, imports: *std.ArrayList(std.Buil
     }
 }
 
-/// Whether `dependency` is a tree-sitter grammar: it holds a generated `src/parser.c` (D78).
+/// Whether `dependency` is a tree-sitter grammar: it holds a generated `src/parser.c`.
 pub fn isGrammar(b: *std.Build, dependency: *std.Build.Dependency) bool {
     const parser = dependency.builder.root.joinString(b.allocator, "src/parser.c") catch @panic("OOM");
     std.Io.Dir.cwd().access(b.graph.io, parser, .{}) catch return false;
@@ -69,7 +69,7 @@ pub fn isGrammar(b: *std.Build, dependency: *std.Build.Dependency) bool {
 }
 
 /// Compiles grammar `dependency`'s `src/parser.c`, and `src/scanner.c` when it has one, into
-/// `module` (D78). Nobody writes C: the grammar's generator did.
+/// `module`. Nobody writes C: the grammar's generator did.
 pub fn addGrammar(b: *std.Build, module: *std.Build.Module, dependency: *std.Build.Dependency) void {
     module.link_libc = true;
     module.addIncludePath(dependency.path("src"));

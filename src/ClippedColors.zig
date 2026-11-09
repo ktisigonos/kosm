@@ -1,5 +1,5 @@
-//! The distinct colors that printing one file or value clipped to the gamut (D48), so kosm
-//! can warn about each once (D88). Fixed capacity, so adapters' `Context` holds it without an
+//! The distinct colors that printing one file or value clipped to the gamut, so kosm
+//! can warn about each once. Fixed capacity, so adapters' `Context` holds it without an
 //! allocator; colors past the capacity are only counted.
 
 const ClippedColors = @This();

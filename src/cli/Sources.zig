@@ -1,4 +1,4 @@
-//! The kosm sources the builds kosm runs use in place of the kosm a config pins (D98): the
+//! The kosm sources the builds kosm runs use in place of the kosm a config pins: the
 //! per-machine override `kosm source` records, else the sources installed beside the binary.
 
 const Sources = @This();
@@ -18,7 +18,7 @@ pub const Origin = enum {
     installed,
 };
 
-/// The override's file name in kosm's state directory (D75).
+/// The override's file name in kosm's state directory.
 const override_file = "source.zon";
 /// Where `zig build install` puts the sources, relative to the binary's directory.
 const installed_relative = "../share/kosm";

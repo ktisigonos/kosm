@@ -1,4 +1,4 @@
-//! Hyprland's `decoration.blur.ripple` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `decoration.blur.ripple` options. Field names are Hyprland's option names.
 
 /// Maximum refraction displacement of click ripples in pixels. null: Hyprland's default, `30`.
 strength: ?f64 = null,

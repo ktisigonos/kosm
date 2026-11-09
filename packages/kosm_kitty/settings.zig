@@ -1,6 +1,6 @@
-//! Turns the app's sections into the `kosm.Value` tree the kitty adapter writes (D64): one
+//! Turns the app's sections into the `kosm.Value` tree the kitty adapter writes: one
 //! table per section, keyed by kitty's option names. Null options are left out, so the
-//! file only holds what the kosmos set (D27).
+//! file only holds what the kosmos set.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -41,8 +41,8 @@ fn section(allocator: Allocator, options: anytype) Allocator.Error!kosm.Value {
     return .{ .table = entries.items };
 }
 
-/// One option's value: scalars stay scalars and compound values are joined (D89), so numbers,
-/// booleans and colors follow the file's format (D70).
+/// One option's value: scalars stay scalars and compound values are joined, so numbers,
+/// booleans and colors follow the file's format.
 fn value(allocator: Allocator, option: anytype) Allocator.Error!kosm.Value {
     const T = @TypeOf(option);
     if (T == kosm.Color) return .{ .color = option };

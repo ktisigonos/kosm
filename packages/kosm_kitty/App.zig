@@ -1,6 +1,6 @@
-//! kitty's settings (D22, D27): every option of kitty.conf, grouped like kitty's docs and
+//! kitty's settings: every option of kitty.conf, grouped like kitty's docs and
 //! named like kitty's options. `generate` writes the set ones to `file`, which kitty.conf
-//! includes (`include kosm.conf`, D57); null options are left to kitty's defaults.
+//! includes (`include kosm.conf`); null options are left to kitty's defaults.
 
 const App = @This();
 
@@ -10,13 +10,13 @@ const settings = @import("settings.zig");
 
 /// The file kosm owns; kitty.conf includes it. Default: `~/.config/kitty/kosm.conf`.
 file: []const u8 = "~/.config/kitty/kosm.conf",
-/// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the kitty
+/// How values are spelled, e.g. `.color = .hex_upper`. Null fields take the kitty
 /// adapter's: `#rrggbb`, `yes`/`no`, then kosm's 6 float decimals.
 format: kosm.Format = .{},
-/// Derives `color8`..`color15` from `color0`..`color7` when they are null (D23). null: they
+/// Derives `color8`..`color15` from `color0`..`color7` when they are null. null: they
 /// are not derived. `from`: the theme's `lightness.bright`.
 bright: ?kosm.Modifier = null,
-/// Options the app doesn't cover, such as `map` (D99), written after its own under `# extra`:
+/// Options the app doesn't cover, such as `map`, written after its own under `# extra`:
 /// `.{ .path = "map", .value = .{ .string = "ctrl+t new_tab" } }`. A path is one kitty option
 /// name. One that repeats a set option or another extra fails the apply, unless kitty reads
 /// that option more than once (`repeatable`). Default: none.
@@ -49,7 +49,7 @@ pub const Os = @import("sections/Os.zig");
 pub const Shortcuts = @import("sections/Shortcuts.zig");
 
 /// Options kitty reads more than once, each line adding another, so extras may repeat them
-/// (D99): the sections' `repeated` options, and those the app doesn't cover.
+///: the sections' `repeated` options, and those the app doesn't cover.
 pub const repeatable = blk: {
     var keys: []const []const u8 = &.{ "map", "mouse_map", "include", "globinclude", "envinclude", "geninclude" };
     for (@typeInfo(App).@"struct".field_types) |Field| {
@@ -59,7 +59,7 @@ pub const repeatable = blk: {
     break :blk final;
 };
 
-/// Colors from the theme (D27): foreground and background from white and black (swapped in
+/// Colors from the theme: foreground and background from white and black (swapped in
 /// light mode), the 8 terminal colors from the wheel, cyan for URLs and the active border.
 /// Every other option is left to kitty.
 pub fn from(theme: kosm.Theme) App {
@@ -94,7 +94,7 @@ pub fn from(theme: kosm.Theme) App {
     return app;
 }
 
-/// Makes every running kitty re-read its config by sending it SIGUSR1 (D74). With no kitty
+/// Makes every running kitty re-read its config by sending it SIGUSR1. With no kitty
 /// running, kosm only warns.
 pub fn reload(self: App, reloader: *kosm.Reloader) !void {
     _ = self;
@@ -148,7 +148,7 @@ fn roundedAlpha(alpha: f64) f64 {
     return @round(alpha * opacity_steps) / opacity_steps;
 }
 
-/// Fills the options that derive from others when left null (D23).
+/// Fills the options that derive from others when left null.
 fn withDerived(self: App) App {
     var app = self;
     const colors = &app.colors;
@@ -255,7 +255,7 @@ test "App{} writes an empty file, and without bright no bright color is derived"
     try testing.expectEqual(null, app.withDerived().colors.color9);
 }
 
-test "extras follow the options under # extra, repeatable ones as often as given (D99)" {
+test "extras follow the options under # extra, repeatable ones as often as given" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
@@ -303,5 +303,5 @@ test "extras follow the options under # extra, repeatable ones as often as given
 
     app.extra = &.{.{ .path = "font_size", .value = .{ .integer = 12 } }};
     try testing.expectError(error.AppFailed, app.apply(&output));
-    try testing.expectEqualStrings("extra 'font_size' and setting 'font_size' write the same key, or one inside the other; keep one (D99)", diagnostics.message());
+    try testing.expectEqualStrings("extra 'font_size' and setting 'font_size' write the same key, or one inside the other; keep one", diagnostics.message());
 }

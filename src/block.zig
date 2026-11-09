@@ -1,5 +1,5 @@
 //! Kosm-owned blocks inside hand-written files: finding them between their
-//! `kosm:begin <id>` and `kosm:end` comment lines, and writing new ones (D72).
+//! `kosm:begin <id>` and `kosm:end` comment lines, and writing new ones.
 
 const std = @import("std");
 const Comment = @import("Adapter.zig").Comment;

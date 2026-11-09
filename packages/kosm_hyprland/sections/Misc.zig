@@ -1,4 +1,4 @@
-//! Hyprland's `misc` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `misc` options. Field names are Hyprland's option names.
 
 const kosm = @import("kosm");
 

@@ -1,4 +1,4 @@
-//! The interface number shared by the `kosm` command line and the runner it builds (D98). The
+//! The interface number shared by the `kosm` command line and the runner it builds. The
 //! runner comes from the config's kosm, which may be another version than the command line.
 
 const std = @import("std");
@@ -19,7 +19,7 @@ pub fn check(environ: *const std.process.Environ.Map, stderr: *std.Io.Writer) st
     if (given_version == version) return true;
     try stderr.print(
         "error: the kosm command speaks interface {s}, but the kosm this config builds with speaks interface {d}; " ++
-            "run `kosm update kosm`, or install the kosm the config uses (D98)\n",
+            "run `kosm update kosm`, or install the kosm the config uses\n",
         .{ given, version },
     );
     return false;

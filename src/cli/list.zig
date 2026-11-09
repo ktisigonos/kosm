@@ -1,4 +1,4 @@
-//! `kosm list [kosmos]` (D85): builds the config's listing program and passes on what it prints.
+//! `kosm list [kosmos]`: builds the config's listing program and passes on what it prints.
 
 const std = @import("std");
 const Context = @import("Context.zig");

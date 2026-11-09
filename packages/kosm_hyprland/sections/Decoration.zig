@@ -1,4 +1,4 @@
-//! Hyprland's `decoration` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `decoration` options. Field names are Hyprland's option names.
 
 /// Rounded corners' radius (in layout px). 0..100. null: Hyprland's default, `0`.
 rounding: ?i64 = null,

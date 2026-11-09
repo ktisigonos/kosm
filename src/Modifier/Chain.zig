@@ -1,4 +1,4 @@
-//! Extra steps of a composed modifier, stored inline so composing needs no memory (D16).
+//! Extra steps of a composed modifier, stored inline so composing needs no memory.
 
 const Chain = @This();
 

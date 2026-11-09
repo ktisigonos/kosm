@@ -1,4 +1,4 @@
-//! `kosm init` (D83, D84): creates whatever a config project is missing and never touches what
+//! `kosm init`: creates whatever a config project is missing and never touches what
 //! it already has, so it sets up a new project and fills in a partial one alike.
 
 const std = @import("std");
@@ -8,11 +8,11 @@ const manifest = @import("manifest.zig");
 
 pub const Error = Context.Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
 
-/// What a new config's manifest says about kosm (D98).
+/// What a new config's manifest says about kosm.
 pub const Kosm = struct {
     /// Where `zig fetch` gets kosm: its git URL, or in tests a local directory.
     url: []const u8,
-    /// Copied into a new config's manifest (D44).
+    /// Copied into a new config's manifest.
     minimum_zig_version: []const u8,
 };
 
@@ -27,7 +27,7 @@ const build_file =
     \\
 ;
 const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
-/// The starting kosmos written into an empty `kosmoi/` (D84).
+/// The starting kosmos written into an empty `kosmoi/`.
 const starting_kosmos = .{ .path = "kosmoi/kyanos.zig", .source = @embedFile("kosmoi/kyanos.zig") };
 
 /// Creates the config project at `context.config` (which must exist) from what is missing in
@@ -46,7 +46,7 @@ pub fn init(context: Context, kosm: Kosm) Error!void {
 }
 
 /// A new `build.zig.zon` depending on kosm as `zig fetch --save` writes it, its url pinned to
-/// the commit it resolved to, with the package hash (D98). The built-in packages need no entry:
+/// the commit it resolved to, with the package hash. The built-in packages need no entry:
 /// kosm provides them.
 fn configManifest(context: Context, kosm: Kosm) Error![]const u8 {
     const resolved = try fetchKosm(context, kosm);
@@ -116,7 +116,7 @@ fn fetchKosm(context: Context, kosm: Kosm) Error!manifest.Dependency {
     return context.fail("zig fetch --save wrote no url and hash for kosm into {s}", .{throwaway_path});
 }
 
-/// A new `packages.zon`, following kosm's default branch when `kosm` was just added (D98).
+/// A new `packages.zon`, following kosm's default branch when `kosm` was just added.
 fn packagesFile(arena: std.mem.Allocator, kosm: ?Kosm) std.mem.Allocator.Error![]const u8 {
     var text: std.Io.Writer.Allocating = .init(arena);
     var packages: Packages = .{};
@@ -353,7 +353,7 @@ test "an initialized config builds with the forked kosm sources, applies its sta
     const arena = test_config.arena.allocator();
     var context = test_config.context();
     try init(context, test_config.kosm);
-    // The starting kosmos writes Zen's prefs into every profile (D94), so the home needs one.
+    // The starting kosmos writes Zen's prefs into every profile, so the home needs one.
     try test_config.tmp.dir.createDirPath(testing.io, "home/.zen/a.default");
     try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.zen/a.default/prefs.js", .data = "" });
 
@@ -362,7 +362,7 @@ test "an initialized config builds with the forked kosm sources, applies its sta
     const build = try context.runZig(&.{ "build", "-Dkosmos=kyanos" });
     if (!build.term.success()) std.debug.print("{s}\n", .{build.stderr});
     try testing.expect(build.term.success());
-    // Editors learn the config's imports from the check step (D104).
+    // Editors learn the config's imports from the check step.
     const check = try context.runZig(&.{ "build", "check" });
     if (!check.term.success()) std.debug.print("{s}\n", .{check.stderr});
     try testing.expect(check.term.success());

@@ -1,6 +1,6 @@
 //! The types ghostty options take. A union writes its tag (`cell_foreground`) or its payload (a
 //! color); a `boolean` payload writes `true` or `false`. A type with a `write` method builds a
-//! joined value whose numbers, booleans and colors follow the file's format (D89), and a type
+//! joined value whose numbers, booleans and colors follow the file's format, and a type
 //! with a `format` method writes plain text. Enum tags are written with dashes
 //! (`linear_corrected` -> `linear-corrected`) unless the enum declares `underscored`.
 

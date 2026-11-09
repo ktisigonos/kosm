@@ -1,4 +1,4 @@
-//! kitty's "OS specific tweaks" options. Field names are kitty's option names (D27).
+//! kitty's "OS specific tweaks" options. Field names are kitty's option names.
 
 const values = @import("../values.zig");
 

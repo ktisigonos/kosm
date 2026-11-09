@@ -1,11 +1,11 @@
-//! The built-in packages in `packages/` (D67). While they live in kosm's repo, kosm's own build
+//! The built-in packages in `packages/`. While they live in kosm's repo, kosm's own build
 //! exposes each one as a module of its own name, so a config or a directory package that
-//! depends on `kosm` can import them without listing them (D98).
+//! depends on `kosm` can import them without listing them.
 
 const std = @import("std");
 const package_build = @import("package.zig");
 
-/// A package in `packages/` and the grammars it compiles (D78), which kosm's build.zig.zon lists too.
+/// A package in `packages/` and the grammars it compiles, which kosm's build.zig.zon lists too.
 pub const Package = struct {
     name: []const u8,
     grammars: []const []const u8 = &.{},

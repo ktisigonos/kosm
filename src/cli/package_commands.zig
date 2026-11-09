@@ -1,4 +1,4 @@
-//! `kosm add`, `kosm remove` and `kosm update` (D46). They wrap `zig fetch`, check every fetched
+//! `kosm add`, `kosm remove` and `kosm update`. They wrap `zig fetch`, check every fetched
 //! package by building it against the config, and keep the user's url and ref in packages.zon.
 //! Any failure puts build.zig.zon back as it was; an interrupt (Ctrl-C) midway is not covered.
 
@@ -55,7 +55,7 @@ pub fn remove(context: Context, name: []const u8) Error!void {
 }
 
 /// `kosm update [name]`: fetches every package in packages.zon again (or only `name`) at its
-/// ref and checks each but kosm itself like `add` (D98). Dependencies missing from packages.zon
+/// ref and checks each but kosm itself like `add`. Dependencies missing from packages.zon
 /// are skipped.
 pub fn update(context: Context, name: ?[]const u8) Error!void {
     const packages = try loadPackages(context);
@@ -88,7 +88,7 @@ fn splitRef(argument: []const u8) Packages.Package {
     return .{ .name = "", .url = argument[0..hash], .ref = argument[hash + 1 ..] };
 }
 
-/// Fetches `package` without saving it and names it after its manifest name (D51), which leads
+/// Fetches `package` without saving it and names it after its manifest name, which leads
 /// its package hash (`kosm_kitty-0.1.0-...`).
 fn fetchName(context: Context, package: Packages.Package) Error!Packages.Package {
     const result = try context.runZig(&.{ "fetch", try package.fetchArgument(context.arena) });
@@ -108,7 +108,7 @@ fn save(context: Context, package: Packages.Package) Error!void {
 }
 
 /// Builds the package against the config and prints what it provides; fails when it does not
-/// compile there or provides no app, adapter or kosmos (D46).
+/// compile there or provides no app, adapter or kosmos.
 fn check(context: Context, name: []const u8) Error!void {
     const build = try context.runZig(&.{ "build", try context.arena.print("-Dinspect={s}", .{name}) });
     if (!build.term.success()) return failRun(context, build, "package '{s}' does not build in this config project", .{name});
@@ -272,7 +272,7 @@ const Fixture = struct {
     }
 
     /// Packs a package `name` whose root.zig is `root` into `<name>.tar` and returns its url.
-    /// The package imports a stub kosm, which the config replaces with its own (D52).
+    /// The package imports a stub kosm, which the config replaces with its own.
     fn writePackage(fixture: *Fixture, name: []const u8, fingerprint: u64, root: []const u8) ![]const u8 {
         const arena = fixture.arena.allocator();
         var archive: std.Io.Writer.Allocating = .init(arena);

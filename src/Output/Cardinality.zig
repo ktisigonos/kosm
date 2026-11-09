@@ -1,5 +1,5 @@
-//! Which of a path's matches a set changes (D31). Indices are 0-based in match order: files
-//! sorted by path, then file order. Zero matches is always an error (D28).
+//! Which of a path's matches a set changes. Indices are 0-based in match order: files
+//! sorted by path, then file order. Zero matches is always an error.
 
 /// Which matches to set.
 pub const Cardinality = union(enum) {

@@ -1,4 +1,4 @@
-//! A kosmos parameter that is either a color or a palette hue (D55).
+//! A kosmos parameter that is either a color or a palette hue.
 
 const std = @import("std");
 const Color = @import("Color.zig");

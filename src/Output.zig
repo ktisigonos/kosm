@@ -1,5 +1,5 @@
-//! What an app's `apply` writes through (D5, D22). Every call only plans; nothing reaches the
-//! disk until kosm commits the whole plan (D36). Kosm sets the fields; apps only call methods.
+//! What an app's `apply` writes through. Every call only plans; nothing reaches the
+//! disk until kosm commits the whole plan. Kosm sets the fields; apps only call methods.
 
 const Output = @This();
 
@@ -20,18 +20,18 @@ const planning = @import("Output/planning.zig");
 allocator: std.mem.Allocator,
 /// Absolute home directory that `~` expands to.
 home: []const u8,
-/// Every adapter the applied kosmos can use: from packages, adapters/ and the locals it reaches (D87).
+/// Every adapter the applied kosmos can use: from packages, adapters/ and the locals it reaches.
 adapters: []const Adapter,
-/// Names in `adapters` that two packages export as different adapters; using one fails (D107).
+/// Names in `adapters` that two packages export as different adapters; using one fails.
 adapter_clashes: []const AdapterClash = &.{},
 plan: *Plan,
 diagnostics: *Diagnostics,
-/// What the apply reports without failing (D88).
+/// What the apply reports without failing.
 warnings: *Warnings,
 /// The app being applied, as its path in the kosmos tree ("terminal.kitty").
 app: []const u8,
 
-/// An adapter name two packages export (D107).
+/// An adapter name two packages export.
 pub const AdapterClash = @import("Output/AdapterClash.zig");
 /// Options for `generate`.
 pub const GenerateOptions = @import("Output/GenerateOptions.zig");
@@ -41,11 +41,11 @@ pub const BlockOptions = @import("Output/BlockOptions.zig");
 pub const EditOptions = @import("Output/EditOptions.zig");
 /// Options for `find`.
 pub const FindOptions = @import("Output/FindOptions.zig");
-/// The files `edit` picked, and the calls setting values in them by path (D31).
+/// The files `edit` picked, and the calls setting values in them by path.
 pub const Selection = @import("Output/Selection.zig");
-/// One value a path matched, from the escape hatch (D34, D80).
+/// One value a path matched, from the escape hatch.
 pub const Match = @import("Output/Match.zig");
-/// Which of a path's matches `Selection.setOptions` sets (D31).
+/// Which of a path's matches `Selection.setOptions` sets.
 pub const Cardinality = @import("Output/Cardinality.zig").Cardinality;
 
 /// Errors from writing; `diagnostics` holds the message.
@@ -75,19 +75,19 @@ pub const Error = error{
 };
 
 /// Reports something that doesn't fail the apply, printed with the kosmos, app and `file` like
-/// an error (D88). `file` is the file it is about, as the app writes it, or empty.
+/// an error. `file` is the file it is about, as the app writes it, or empty.
 pub fn warn(output: *Output, file: []const u8, comptime format: []const u8, arguments: anytype) Error!void {
     try output.warnings.add(output.app, try output.allocator.dupe(u8, file), format, arguments);
 }
 
 /// Fails the apply with a message, printed with the kosmos, app and `file` like kosm's own
-/// errors (D93); nothing is written. `file` is the file it is about, as the app writes it, or
+/// errors; nothing is written. `file` is the file it is about, as the app writes it, or
 /// empty. Use it as `return output.fail(file, "message {s}", .{...});`.
 pub fn fail(output: *Output, file: []const u8, comptime format: []const u8, arguments: anytype) Error {
     return planning.fail(output, error.AppFailed, file, format, arguments);
 }
 
-/// Writes a whole file from `values`, a plain struct the adapter serializes (D64).
+/// Writes a whole file from `values`, a plain struct the adapter serializes.
 pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Error!void {
     const path = try output.resolvePath(options.file);
     const adapter = try output.findAdapter(options.file, options.lang);
@@ -97,8 +97,8 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
     try output.addFile(options.file, path, content);
 }
 
-/// Writes `values`, serialized like `generate`'s (D64), as block `options.id` of a file the user
-/// otherwise writes by hand (D71, D72). The rest of the file is kept byte for byte; a missing
+/// Writes `values`, serialized like `generate`'s, as block `options.id` of a file the user
+/// otherwise writes by hand. The rest of the file is kept byte for byte; a missing
 /// block is appended, a missing file created (or skipped, `options.missing`). Needs an adapter
 /// with `comment` and `serialize`.
 pub fn block(output: *Output, options: BlockOptions, values: anytype) Error!void {
@@ -112,8 +112,8 @@ pub fn block(output: *Output, options: BlockOptions, values: anytype) Error!void
     try output.planBlock(options, path, comment, content);
 }
 
-/// Writes a template, resolved against `app`'s fields like `template`'s (D60, D65), as block
-/// `options.id` of a file the user otherwise writes by hand (D71, D72). `options` is
+/// Writes a template, resolved against `app`'s fields like `template`'s, as block
+/// `options.id` of a file the user otherwise writes by hand. `options` is
 /// `.{ .file, .id, .text }` plus optional `.lang`, `.format` and `.missing`, as in `BlockOptions`;
 /// `.text` must be comptime. Needs an adapter with `comment`.
 pub fn templateBlock(output: *Output, app: anytype, options: anytype) Error!void {
@@ -157,7 +157,7 @@ fn checkBlockId(output: *Output, file: []const u8, id: []const u8) Error!void {
         return planning.fail(output, error.InvalidBlock, file, "block id '{s}' may only hold letters, digits, _, - and .", .{id});
 }
 
-/// Plans `content` as block `options.id` of the file at absolute `path` (D72).
+/// Plans `content` as block `options.id` of the file at absolute `path`.
 fn planBlock(output: *Output, options: BlockOptions, path: []const u8, comment: Adapter.Comment, content: []const u8) Error!void {
     var failure: block_writer.Failure = .{};
     block_writer.checkContent(content, comment, &failure) catch
@@ -191,7 +191,7 @@ fn planBlock(output: *Output, options: BlockOptions, path: []const u8, comment: 
     try output.addEdit(file, .{ .target = .{ .block = options.id }, .start = current.len, .end = current.len, .content = appended.written(), .owner = output.app });
 }
 
-/// Picks the existing files matching `options.files` (D79) to set values in by path (D31).
+/// Picks the existing files matching `options.files` to set values in by path.
 /// Each file is parsed once, now; a file that does not parse is an error naming its line.
 /// Needs an adapter with `parser` and `format`.
 pub fn edit(output: *Output, options: EditOptions) Error!Selection {
@@ -203,7 +203,7 @@ pub fn edit(output: *Output, options: EditOptions) Error!Selection {
     const format = try output.checkFormat(options.files, options.format.orElse(adapter.default_format).resolve());
 
     const found = try output.expand(options.files, options.exclude);
-    if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file; edit only changes files that exist (D28)", .{});
+    if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file; edit only changes files that exist", .{});
 
     const files = try output.allocator.alloc(Selection.File, found.len);
     for (found, files) |file, *selected| {
@@ -220,18 +220,18 @@ pub fn edit(output: *Output, options: EditOptions) Error!Selection {
     return .{ .output = output, .selector = options.files, .adapter = adapter, .format = format, .files = files };
 }
 
-/// The existing files matching `options.files` and none of `options.exclude` (D79), sorted by
+/// The existing files matching `options.files` and none of `options.exclude`, sorted by
 /// path, written as an app writes them (`~/...` under the home directory), so they can be passed
-/// to any other call. Nothing is read. Matching no file is an error naming the glob (D95).
+/// to any other call. Nothing is read. Matching no file is an error naming the glob.
 pub fn find(output: *Output, options: FindOptions) Error![]const []const u8 {
     const found = try output.expand(options.files, options.exclude);
-    if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file (D28)", .{});
+    if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file", .{});
     const paths = try output.allocator.alloc([]const u8, found.len);
     for (found, paths) |file, *path| path.* = try output.displayPath(file.path);
     return paths;
 }
 
-/// The files `files` picks, leaving out `exclude` (D79).
+/// The files `files` picks, leaving out `exclude`.
 fn expand(output: *Output, files: []const u8, exclude: []const []const u8) Error![]const glob.Found {
     const pattern = try output.resolvePath(files);
     const resolved_exclude = try output.allocator.alloc([]const u8, exclude.len);
@@ -270,7 +270,7 @@ fn serialize(output: *Output, file: []const u8, adapter: Adapter, own: Format, v
     return content.toOwnedSlice();
 }
 
-/// Writes a whole file from a template whose placeholders resolve against `app`'s fields (D60, D65).
+/// Writes a whole file from a template whose placeholders resolve against `app`'s fields.
 /// `options` is `.{ .file = "~/...", .text = @embedFile("templates/x"), .format = self.format }`;
 /// `.text` must be comptime, so unknown paths are compile errors. `.format` (a `kosm.Format`)
 /// is optional; fields left null take those of the adapter claiming the file's extension.
@@ -333,7 +333,7 @@ fn isComptimeField(comptime Options: type, comptime name: []const u8) bool {
 }
 
 /// The template's own format, its null fields from the one adapter claiming its extension,
-/// then kosm's (D70).
+/// then kosm's.
 fn templateFormat(output: *Output, options: anytype) Error!Format.Resolved {
     const own: Format = if (@hasField(@TypeOf(options), "format")) options.format else .{};
     if (own.isComplete()) return own.resolve();
@@ -355,7 +355,7 @@ fn resolvePath(output: *Output, file: []const u8) Error![]const u8 {
     return planning.fail(output, error.InvalidPath, file, "file paths start with ~/ or /", .{});
 }
 
-/// The adapter named `lang`, or the one claiming the file's extension (D26).
+/// The adapter named `lang`, or the one claiming the file's extension.
 fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapter {
     if (lang) |name| {
         try output.checkUnclashed(file, name);
@@ -375,14 +375,14 @@ fn findAdapter(output: *Output, file: []const u8, lang: ?[]const u8) Error!Adapt
     return found orelse planning.fail(output, error.UnknownLanguage, file, "no adapter handles '{s}' files; pass .lang", .{extension});
 }
 
-/// Fails when two packages export different adapters named `name`, never picking one (D107).
+/// Fails when two packages export different adapters named `name`, never picking one.
 fn checkUnclashed(output: *Output, file: []const u8, name: []const u8) Error!void {
     for (output.adapter_clashes) |clash| {
         if (!std.mem.eql(u8, clash.name, name)) continue;
         if (std.mem.eql(u8, clash.first_package, clash.second_package)) {
-            return planning.fail(output, error.AmbiguousLanguage, file, "package '{s}' exports two different adapters named '{s}' (D107)", .{ clash.first_package, name });
+            return planning.fail(output, error.AmbiguousLanguage, file, "package '{s}' exports two different adapters named '{s}'", .{ clash.first_package, name });
         }
-        return planning.fail(output, error.AmbiguousLanguage, file, "packages '{s}' and '{s}' both export an adapter named '{s}'; remove one of them (D107)", .{ clash.first_package, clash.second_package, name });
+        return planning.fail(output, error.AmbiguousLanguage, file, "packages '{s}' and '{s}' both export an adapter named '{s}'; remove one of them", .{ clash.first_package, clash.second_package, name });
     }
 }
 
@@ -491,7 +491,7 @@ test "generate serializes through the adapter claiming the extension, under ~" {
     try testing.expectEqualStrings("accent = #bf616a\nblur = yes\nopacity = 0.3\n", fixture.plan.files.items[1].new);
 }
 
-test "an adapter name two packages export fails when used, naming both (D107)" {
+test "an adapter name two packages export fails when used, naming both" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -499,7 +499,7 @@ test "an adapter name two packages export fails when used, naming both (D107)" {
     output.adapter_clashes = &.{.{ .name = "lines", .first_package = "kosm_lines", .second_package = "my_lines" }};
 
     try testing.expectError(error.AmbiguousLanguage, output.generate(.{ .file = "~/a.conf", .lang = "lines" }, .{ .size = 1 }));
-    try testing.expectEqualStrings("packages 'kosm_lines' and 'my_lines' both export an adapter named 'lines'; remove one of them (D107)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("packages 'kosm_lines' and 'my_lines' both export an adapter named 'lines'; remove one of them", fixture.diagnostics.message());
     try testing.expectEqualStrings("~/a.conf", fixture.diagnostics.file);
     try testing.expectEqualStrings("terminal", fixture.diagnostics.app);
 
@@ -509,10 +509,10 @@ test "an adapter name two packages export fails when used, naming both (D107)" {
 
     output.adapter_clashes = &.{.{ .name = "lines", .first_package = "kosm_lines", .second_package = "kosm_lines" }};
     try testing.expectError(error.AmbiguousLanguage, output.generate(.{ .file = "~/a.lines" }, .{ .size = 1 }));
-    try testing.expectEqualStrings("package 'kosm_lines' exports two different adapters named 'lines' (D107)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("package 'kosm_lines' exports two different adapters named 'lines'", fixture.diagnostics.message());
 }
 
-test "an adapter name clash nobody uses is no error (D107)" {
+test "an adapter name clash nobody uses is no error" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -547,7 +547,7 @@ test "generate errors name the problem and the file" {
     try testing.expectEqual(0, fixture.plan.files.items.len);
 }
 
-test "an app's own failure names the app and its file (D93)" {
+test "an app's own failure names the app and its file" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -567,7 +567,7 @@ test "two apps writing one file is an error naming the first" {
     var second = try fixture.output("browser", &.{lines_adapter});
     try testing.expectError(error.EditsOverlap, second.generate(.{ .file = "~/shared.lines" }, .{ .size = 2 }));
     try testing.expectEqualStrings("browser", fixture.diagnostics.app);
-    try testing.expectEqualStrings("app 'terminal' writes this whole file; two apps cannot write the same bytes (D38)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("app 'terminal' writes this whole file; two apps cannot write the same bytes", fixture.diagnostics.message());
 }
 
 test "generate reads the current contents so unchanged files are left alone" {
@@ -623,7 +623,7 @@ test "a clipped color warns naming the app and file, once per color, and is stil
     try testing.expectEqual(1, warnings.len);
     try testing.expectEqualStrings("terminal", warnings[0].app);
     try testing.expectEqualStrings("~/a.lines", warnings[0].file);
-    try testing.expectEqualStrings("color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (3 times) (D48)", warnings[0].message);
+    try testing.expectEqualStrings("color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (3 times)", warnings[0].message);
 }
 
 test "in-gamut colors and unclipped float components do not warn" {
@@ -649,7 +649,7 @@ test "a template warns with the line of a clipped placeholder" {
     const warnings = fixture.warnings.items.items;
     try testing.expectEqual(1, warnings.len);
     try testing.expectEqualStrings("~/theme.lua", warnings[0].file);
-    try testing.expectEqualStrings("template line 3: color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (D48)", warnings[0].message);
+    try testing.expectEqualStrings("template line 3: color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00", warnings[0].message);
 }
 
 test "an app's own warning names it and its file" {
@@ -745,12 +745,12 @@ test "two apps may write different blocks of one file, never the same bytes" {
     try testing.expectEqual(1, fixture.plan.files.items.len);
 
     try testing.expectError(error.EditsOverlap, browser.block(.{ .file = "~/shared.lines", .id = "colors" }, .{ .size = 3 }));
-    try testing.expectEqualStrings("app 'terminal' writes block 'colors' of this file; two apps cannot write the same bytes (D38)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("app 'terminal' writes block 'colors' of this file; two apps cannot write the same bytes", fixture.diagnostics.message());
     try testing.expectError(error.EditsOverlap, browser.generate(.{ .file = "~/shared.lines" }, .{ .size = 3 }));
 
     try terminal.generate(.{ .file = "~/whole.lines" }, .{ .size = 1 });
     try testing.expectError(error.EditsOverlap, browser.block(.{ .file = "~/whole.lines", .id = "colors" }, .{ .size = 3 }));
-    try testing.expectEqualStrings("app 'terminal' writes this whole file; two apps cannot write the same bytes (D38)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("app 'terminal' writes this whole file; two apps cannot write the same bytes", fixture.diagnostics.message());
 }
 
 test "block errors name the line, the id or the missing capability" {

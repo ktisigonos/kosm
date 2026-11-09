@@ -1,5 +1,5 @@
 //! For tests: a stub kosm package that `kosm init` fetches offline in place of kosm's git URL,
-//! and kosm's installed sources that replace it through `--fork` (D98).
+//! and kosm's installed sources that replace it through `--fork`.
 
 const std = @import("std");
 const init_command = @import("init.zig");

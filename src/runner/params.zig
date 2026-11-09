@@ -1,5 +1,5 @@
-//! Turns `--name value` flags into a kosmos' `Params` struct by reflection (D19), with colors
-//! in any common text form (D55) and an opt-in `host` field filled from the hostname (D56).
+//! Turns `--name value` flags into a kosmos' `Params` struct by reflection, with colors
+//! in any common text form and an opt-in `host` field filled from the hostname.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -46,7 +46,7 @@ pub fn parse(comptime Params: type, arguments: []const []const u8, hostname: []c
     return params;
 }
 
-/// Whether `Params` has a `host` field that kosm fills from the hostname (D56).
+/// Whether `Params` has a `host` field that kosm fills from the hostname.
 pub fn hasHost(comptime Params: type) bool {
     if (!@hasField(Params, "host")) return false;
     return @typeInfo(Unwrapped(@FieldType(Params, "host"))) == .@"enum";
@@ -82,7 +82,7 @@ fn hostFrom(comptime Host: type, hostname: []const u8, diagnostics: *kosm.Diagno
         fail(diagnostics, "the hostname '{s}' is not one of {s} ({s})", .{ hostname, @typeName(Enum), comptime enumList(Enum) });
 }
 
-/// Reads one value of `T` from text: what a flag or `--set` value may be (D19, D55).
+/// Reads one value of `T` from text: what a flag or `--set` value may be.
 pub fn parseValue(comptime T: type, text: []const u8) !T {
     if (T == kosm.Color) return kosm.Color.parse(text);
     if (T == kosm.ColorChoice) return kosm.ColorChoice.parse(text);

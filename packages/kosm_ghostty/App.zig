@@ -1,7 +1,7 @@
-//! ghostty's settings (D22, D27): every option of its config, named like ghostty's options
+//! ghostty's settings: every option of its config, named like ghostty's options
 //! (`font-size` is `font_size`). ghostty's docs have no sections, so neither does the app.
 //! `generate` writes the set ones to `file`, which ghostty's config includes
-//! (`config-file = kosm.ghostty`, D57); null options are left to ghostty's defaults.
+//! (`config-file = kosm.ghostty`); null options are left to ghostty's defaults.
 
 const App = @This();
 
@@ -12,16 +12,16 @@ const settings = @import("settings.zig");
 
 /// The file kosm owns; ghostty's config includes it. Default: `~/.config/ghostty/kosm.ghostty`.
 file: []const u8 = "~/.config/ghostty/kosm",
-/// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the ghostty
+/// How values are spelled, e.g. `.color = .hex_upper`. Null fields take the ghostty
 /// adapter's: `#rrggbb`, `true`/`false`, then kosm's 6 float decimals.
 format: kosm.Format = .{},
-/// Derives `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` when they are null (D23).
+/// Derives `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` when they are null.
 /// null: they are not derived. `from`: the theme's `lightness.bright`.
 bright: ?kosm.Modifier = null,
 /// Writes `keybind = clear` before `keybind`, removing every binding made before it, ghostty's
 /// defaults included. kosm's name for that line, since it has no trigger. Default: false.
 keybind_clear: bool = false,
-/// Options the app doesn't cover (D99), written after its own: `.{ .path = "future-option",
+/// Options the app doesn't cover, written after its own: `.{ .path = "future-option",
 /// .value = .{ .boolean = true } }`. A path is one option named as in ghostty's config. One that
 /// repeats a set option or another extra fails the apply, unless ghostty reads that option more
 /// than once (`repeatable`, e.g. `keybind`). Default: none.
@@ -130,7 +130,7 @@ selection_word_chars: ?[]const u8 = null,
 /// The minimum contrast ratio between the foreground and background colors. null: ghostty's default, `1`.
 minimum_contrast: ?f64 = null,
 /// The 256 terminal colors by index; 0..15 are the ANSI colors, 8..15 their bright forms.
-/// `from` sets 0..7 from the wheel and null 8..15 derive through `bright` (D23); the rest
+/// `from` sets 0..7 from the wheel and null 8..15 derive through `bright`; the rest
 /// are ghostty's (see `palette_generate`).
 palette: [256]?kosm.Color = @splat(null),
 /// Whether to generate the extended 256 color palette (16..255) from the base 16 colors. null: ghostty's default, `false`.
@@ -165,7 +165,7 @@ mouse_shift_capture: ?union(enum) { boolean: bool, always, never } = null,
 mouse_reporting: ?bool = null,
 /// Multiplier for scrolling distance with the mouse wheel. null: ghostty's default, `precision:1,discrete:3`.
 mouse_scroll_multiplier: ?values.MouseScrollMultiplier = null,
-/// The opacity level (opposite of transparency) of the background. null: the background's alpha when it is below 1 (D101), else ghostty's default, `1`.
+/// The opacity level (opposite of transparency) of the background. null: the background's alpha when it is below 1, else ghostty's default, `1`.
 background_opacity: ?f64 = null,
 /// Applies background opacity to cells with an explicit background color set. null: ghostty's default, `false`.
 background_opacity_cells: ?bool = null,
@@ -465,7 +465,7 @@ auto_update: ?enum { off, check, download } = null,
 /// The release channel to use for auto-updates. null: ghostty's default.
 auto_update_channel: ?enum { stable, tip } = null,
 
-/// Colors from the theme (D27): foreground and background from white and black (swapped in
+/// Colors from the theme: foreground and background from white and black (swapped in
 /// light mode), the 8 ANSI colors from the wheel, selection from the `emphasis.strong` and
 /// `state.selected` variations. Every other option is left to ghostty.
 pub fn from(theme: kosm.Theme) App {
@@ -485,7 +485,7 @@ pub fn from(theme: kosm.Theme) App {
     return app;
 }
 
-/// Makes every running ghostty re-read its config by sending it SIGUSR2 (D74). With no ghostty
+/// Makes every running ghostty re-read its config by sending it SIGUSR2. With no ghostty
 /// running, kosm only warns.
 pub fn reload(self: App, reloader: *kosm.Reloader) !void {
     _ = self;
@@ -500,7 +500,7 @@ pub fn apply(self: App, output: *kosm.Output) !void {
 }
 
 /// Options ghostty reads more than once, each line adding another, so extras may repeat them
-/// (D99): every option the app holds as a list.
+///: every option the app holds as a list.
 pub const repeatable = blk: {
     @setEvalBranchQuota(20_000);
     var keys: []const []const u8 = &.{};
@@ -523,7 +523,7 @@ fn roundedAlpha(alpha: f64) f64 {
     return @round(alpha * opacity_steps) / opacity_steps;
 }
 
-/// Fills the options that derive from others when left null (D23).
+/// Fills the options that derive from others when left null.
 fn withDerived(self: App) App {
     var app = self;
     if (app.background_opacity == null) if (app.background) |background| {
@@ -592,7 +592,7 @@ fn kyanosTheme() kosm.Theme {
     return theme;
 }
 
-test "Kyanos writes what Ricer's ghostty file holds, plus the selection colors from D27" {
+test "Kyanos writes what Ricer's ghostty file holds, plus the selection colors it derives" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -711,7 +711,7 @@ test "background_opacity follows the background's alpha below 1 and is not writt
     try testing.expectEqual(null, app.withDerived().background_opacity);
 }
 
-test "extras follow the options, repeatable ones as often as given (D99)" {
+test "extras follow the options, repeatable ones as often as given" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -734,7 +734,7 @@ test "extras follow the options, repeatable ones as often as given (D99)" {
     , fixture.written());
 }
 
-test "an extra repeating a set option fails naming both (D99)" {
+test "an extra repeating a set option fails naming both" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -742,5 +742,5 @@ test "an extra repeating a set option fails naming both (D99)" {
     app.font_size = 13;
     app.extra = &.{.{ .path = "font-size", .value = .{ .integer = 12 } }};
     try testing.expectError(error.AppFailed, app.apply(&fixture.output));
-    try testing.expectEqualStrings("extra 'font-size' and setting 'font-size' write the same key, or one inside the other; keep one (D99)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("extra 'font-size' and setting 'font-size' write the same key, or one inside the other; keep one", fixture.diagnostics.message());
 }

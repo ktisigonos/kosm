@@ -25,7 +25,7 @@ pub const Plan = @import("Plan.zig");
 pub const commit = @import("commit.zig");
 pub const diff = @import("diff.zig");
 
-/// Text written into a file verbatim, with no quoting or escaping (D42).
+/// Text written into a file verbatim, with no quoting or escaping.
 pub fn raw(text: []const u8) Raw {
     return .{ .text = text };
 }

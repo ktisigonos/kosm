@@ -1,4 +1,4 @@
-//! Hyprland's `input.touchdevice` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `input.touchdevice` options. Field names are Hyprland's option names.
 
 const values = @import("../../values.zig");
 

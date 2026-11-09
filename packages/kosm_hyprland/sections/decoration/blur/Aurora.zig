@@ -1,4 +1,4 @@
-//! Hyprland's `decoration.blur.aurora` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `decoration.blur.aurora` options. Field names are Hyprland's option names.
 
 const kosm = @import("kosm");
 

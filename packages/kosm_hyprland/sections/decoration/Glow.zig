@@ -1,4 +1,4 @@
-//! Hyprland's `decoration.glow` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `decoration.glow` options. Field names are Hyprland's option names.
 
 const values = @import("../../values.zig");
 
@@ -10,5 +10,5 @@ range: ?i64 = null,
 render_power: ?i64 = null,
 /// Glow's color. Alpha dictates glow's opacity. null: Hyprland's default, `#33ccffee`.
 color: ?values.Gradient = null,
-/// Inactive glow color. null: `color` through the app's `inactive` when that is set, else Hyprland's default (D23).
+/// Inactive glow color. null: `color` through the app's `inactive` when that is set, else Hyprland's default.
 color_inactive: ?values.Gradient = null,

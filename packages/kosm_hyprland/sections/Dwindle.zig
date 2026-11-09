@@ -1,4 +1,4 @@
-//! Hyprland's `dwindle` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `dwindle` options. Field names are Hyprland's option names.
 
 /// Force a split direction for new windows. null: Hyprland's default, `follow_mouse`.
 force_split: ?enum(i64) { follow_mouse = 0, left = 1, right = 2 } = null,

@@ -103,7 +103,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`@typeName` of a file struct is relative to its module, not its package:** `packages/kosm_kitty/App.zig` is just `"App"`. To print it as the user imports it (`kosm_kitty.App`), search the package root's decls for the type.
 - **`decl_names` lists only `pub` declarations:** private functions in a file never show up when walking `@typeInfo(File).@"struct".decl_names`.
 
-- **`zig fetch` takes a branch as `#name`, not `?ref=name`:** `git+https://host/repo?ref=main` ignores the query and pins the default branch with no error. Fetch `git+https://host/repo#main`; `--save` then writes `?ref=main#<commit>`. (Relevant to D46.)
+- **`zig fetch` takes a branch as `#name`, not `?ref=name`:** `git+https://host/repo?ref=main` ignores the query and pins the default branch with no error. Fetch `git+https://host/repo#main`; `--save` then writes `?ref=main#<commit>`. (Matters for `kosm add` and `kosm update`.)
 - **Module names in dependencies:** a package's module is fetched under the name its own `build.zig` passed to `b.addModule`, and the consumer aliases it freely via `mod.addImport("name", dep.module("root"))`.
 - **Dependency scripts run eagerly:** every non-lazy dependency's `build.zig` runs on every `zig build`, even when nothing imports it. `.lazy = true` only defers fetching.
 - **Lazy compilation prunes unused modules:** a module the root never references is dropped entirely, including its link flags. Force it in with `comptime { _ = @import("name"); }`.

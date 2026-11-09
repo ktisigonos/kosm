@@ -1,4 +1,4 @@
-//! Hyprland's `group` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `group` options. Field names are Hyprland's option names.
 
 /// Whether new windows in a group spawn after current or at group tail. null: Hyprland's default, `true`.
 insert_after_current: ?bool = null,

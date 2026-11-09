@@ -3,7 +3,7 @@
 const std = @import("std");
 const kosm = @import("kosm");
 
-/// Writes CSS custom properties; enables `generate` and `block` (D71). Colors default to `#rrggbbaa`.
+/// Writes CSS custom properties; enables `generate` and `block`. Colors default to `#rrggbbaa`.
 pub const adapter: kosm.Adapter = .{
     .name = "css",
     .extensions = &.{".css"},

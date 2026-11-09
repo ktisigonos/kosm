@@ -1,11 +1,11 @@
-//! The value tree `generate` hands to an adapter's `serialize` (D64), built from a plain struct.
+//! The value tree `generate` hands to an adapter's `serialize`, built from a plain struct.
 
 const std = @import("std");
 const Color = @import("Color.zig");
 const Raw = @import("Raw.zig");
 const ClippedColors = @import("ClippedColors.zig");
 
-/// A value an adapter can write. Strings are quoted by the adapter, `raw` text is not (D42).
+/// A value an adapter can write. Strings are quoted by the adapter, `raw` text is not.
 pub const Value = union(enum) {
     /// Named values in declaration order.
     table: []const Entry,
@@ -15,11 +15,11 @@ pub const Value = union(enum) {
     integer: i64,
     float: f64,
     boolean: bool,
-    /// Printed in the file's color format (D61).
+    /// Printed in the file's color format.
     color: Color,
     /// Written verbatim.
     raw: []const u8,
-    /// Parts written back to back with no separator, each the way the adapter writes it (D89):
+    /// Parts written back to back with no separator, each the way the adapter writes it:
     /// text with numbers or colors in it (`2pt`) that still follows the file's format.
     joined: []const Value,
 
@@ -33,8 +33,8 @@ pub const FromError = std.mem.Allocator.Error || error{ IntegerTooLarge, NullInL
 /// Converts a plain struct by reflection: strings, integers, floats, bools, enums (by tag name),
 /// colors, `color.format(...)` text (a string), `kosm.raw` text, nested structs (tables), and arrays, slices or tuples (lists).
 /// A `null` optional field is left out of its table. A `Value`, at any depth, is taken as it
-/// is, for apps that build the tree themselves (D64). Everything lives in `allocator`. Text an app
-/// formatted with a clipped color (D48) is noted in `clipped`, for kosm to warn about (D88).
+/// is, for apps that build the tree themselves. Everything lives in `allocator`. Text an app
+/// formatted with a clipped color is noted in `clipped`, for kosm to warn about.
 pub fn from(allocator: std.mem.Allocator, clipped: *ClippedColors, values: anytype) FromError!Value {
     const T = @TypeOf(values);
     if (T == Value) return values;

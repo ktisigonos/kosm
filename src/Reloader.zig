@@ -1,5 +1,5 @@
-//! What an app's `reload` runs its program's reload through (D74). Kosm hands one to each app
-//! after the commit, so apps run commands without touching io themselves (G7).
+//! What an app's `reload` runs its program's reload through. Kosm hands one to each app
+//! after the commit, so apps run commands without touching io themselves.
 
 const Reloader = @This();
 

@@ -1,6 +1,6 @@
 //! The program `kosm apply` builds for one kosmos: parses its parameters and `--set`s, plans
 //! every app, then prints the plan as a diff or commits it all or nothing, records the apply and
-//! reloads the apps (D19, D20, D36, D37, D74, D75).
+//! reloads the apps.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -15,9 +15,9 @@ const walk = @import("walk.zig");
 
 /// The kosmos a build applies.
 pub const Target = @import("Target.zig");
-/// Reports what an installed package provides, for `kosm add` and `kosm update` (D46).
+/// Reports what an installed package provides, for `kosm add` and `kosm update`.
 pub const inspect = @import("inspect.zig").inspect;
-/// Lists every kosmos and installed package in a config, for `kosm list` (D85).
+/// Lists every kosmos and installed package in a config, for `kosm list`.
 pub const list = list_module.list;
 /// A module `list` looks into.
 pub const ListSource = list_module.Source;
@@ -66,11 +66,11 @@ fn isSet(environ: *const std.process.Environ.Map, name: []const u8) bool {
 const Streams = struct {
     stdout: *std.Io.Writer,
     stderr: *std.Io.Writer,
-    /// Whether stdout takes colors: a terminal, unless `NO_COLOR` is set (D103).
+    /// Whether stdout takes colors: a terminal, unless `NO_COLOR` is set.
     stdout_mode: std.Io.Terminal.Mode,
 };
 
-/// Compile error unless `target.function` is a kosmos, listing the file's kosmoi (D17).
+/// Compile error unless `target.function` is a kosmos, listing the file's kosmoi.
 fn checkTarget(comptime target: Target) void {
     const file_name = target.name[0 .. std.mem.findScalar(u8, target.name, '.') orelse target.name.len];
     if (discovery.notKosmosReason(target.file, target.function)) |reason| {
@@ -113,7 +113,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.A
 }
 
 /// Plans every app in `tree`, then prints the warnings gathered, also when planning failed, so
-/// they come before the error, the diff and the written files (D88).
+/// they come before the error, the diff and the written files.
 fn planWarning(tree: anytype, context: walk.Context, stderr: *std.Io.Writer) !void {
     const planned = walk.planTree(tree, context);
     try context.warnings.write(context.diagnostics.kosmos, stderr);
@@ -129,7 +129,7 @@ fn recording(arena: std.mem.Allocator, environ: *const std.process.Environ.Map, 
     return .{ .record = .{ .kosmos = kosmos, .arguments = arguments.recorded, .config = config }, .path = path };
 }
 
-/// A record of the apply and the file it goes to (D75).
+/// A record of the apply and the file it goes to.
 const Recording = struct {
     record: Record,
     path: []const u8,
@@ -148,8 +148,8 @@ const Delivery = struct {
     streams: Streams,
 };
 
-/// Prints the plan as a diff, or commits it, records the apply (D75) and then reloads every app in
-/// `tree` (D74), also when nothing changed. A failed commit records and reloads nothing.
+/// Prints the plan as a diff, or commits it, records the apply and then reloads every app in
+/// `tree`, also when nothing changed. A failed commit records and reloads nothing.
 fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
     const stdout = delivery.streams.stdout;
     if (delivery.diff) {

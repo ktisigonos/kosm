@@ -1,5 +1,5 @@
-//! A path to values in a file (D32): dot-separated keys, `"quoted.keys"` for keys holding a dot,
-//! and `*` for any one key. Paths name keys only, never list elements (D77).
+//! A path to values in a file: dot-separated keys, `"quoted.keys"` for keys holding a dot,
+//! and `*` for any one key. Paths name keys only, never list elements.
 
 const Path = @This();
 
@@ -54,7 +54,7 @@ fn fail(failure: *Failure, index: usize, problem: Failure.Problem) error{Invalid
 }
 
 /// A path from what an app passes: path text, a tuple of keys taken literally
-/// (`.{ "general", "col.active_border" }`, D32), or a `Path`.
+/// (`.{ "general", "col.active_border" }`), or a `Path`.
 pub fn fromAny(allocator: std.mem.Allocator, path: anytype, failure: *Failure) ParseError!Path {
     const T = @TypeOf(path);
     if (T == Path) return path;
@@ -80,7 +80,7 @@ pub fn isText(comptime T: type) bool {
     return child == .array and child.array.child == u8;
 }
 
-/// Every node under `root` the path leads to, in tree order. Lists are never stepped into (D77).
+/// Every node under `root` the path leads to, in tree order. Lists are never stepped into.
 pub fn find(path: Path, allocator: std.mem.Allocator, root: *const Node) std.mem.Allocator.Error![]const *const Node {
     var found: std.ArrayList(*const Node) = .empty;
     try collect(allocator, root, path.segments, &found);

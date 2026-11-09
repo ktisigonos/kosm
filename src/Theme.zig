@@ -7,14 +7,14 @@ const Color = @import("Color.zig");
 const Palette = @import("Palette.zig");
 const Variations = @import("Variations.zig");
 
-/// Every hue filled in (D9).
+/// Every hue filled in.
 palette: Palette.Resolved,
-/// Dark or light; modules pick their own background and foreground from it (D11).
+/// Dark or light; modules pick their own background and foreground from it.
 mode: Mode,
 /// Shared transforms. Tweak them here once, for every module built from this theme.
 variations: Variations,
 
-/// The single global fact modules use to choose backgrounds and foregrounds (D11).
+/// The single global fact modules use to choose backgrounds and foregrounds.
 pub const Mode = enum { dark, light };
 
 /// Resolves the palette and fills every variation's default for `mode`. Contrast picks

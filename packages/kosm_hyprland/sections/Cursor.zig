@@ -1,4 +1,4 @@
-//! Hyprland's `cursor` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `cursor` options. Field names are Hyprland's option names.
 
 /// Don't render cursors. null: Hyprland's default, `false`.
 invisible: ?bool = null,

@@ -1,4 +1,4 @@
-//! Hyprland's `decoration.wobble` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `decoration.wobble` options. Field names are Hyprland's option names.
 
 /// Enable wobble deformation for moving and resizing windows. null: Hyprland's default, `false`.
 enabled: ?bool = null,

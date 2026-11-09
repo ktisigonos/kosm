@@ -1,4 +1,4 @@
-//! A file's format with every choice made (D70): what adapters and templates write with.
+//! A file's format with every choice made: what adapters and templates write with.
 
 const Resolved = @This();
 
@@ -8,7 +8,7 @@ const ColorFormat = @import("../ColorFormat.zig");
 const Format = @import("../Format.zig");
 const Boolean = Format.Boolean;
 
-/// How colors print when no component is named (D61).
+/// How colors print when no component is named.
 color: ColorFormat,
 /// How booleans print.
 boolean: Boolean,

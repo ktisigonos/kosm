@@ -1,5 +1,5 @@
-//! How a file prints a color when no component is named (D61): a runtime value with the
-//! template-and-components shape of `Color.format` (D47), so it can live in an app field.
+//! How a file prints a color when no component is named: a runtime value with the
+//! template-and-components shape of `Color.format`, so it can live in an app field.
 
 const ColorFormat = @This();
 
@@ -26,7 +26,7 @@ pub fn init(comptime template: []const u8, comptime components: []const Color.Co
     return .{ .template = template, .components = components };
 }
 
-/// Whether printing `color` in this format clips it to the gamut (D48).
+/// Whether printing `color` in this format clips it to the gamut.
 pub fn clips(format: ColorFormat, color: Color) bool {
     for (format.components) |component| {
         if (color.clips(component)) return true;

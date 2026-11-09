@@ -1,5 +1,5 @@
 //! A color in naive CMYK over gamma-encoded sRGB (no print profile), as ricing tools use it.
-//! Channels are not clamped, so colors outside sRGB survive the trip (D48).
+//! Channels are not clamped, so colors outside sRGB survive the trip.
 
 const Cmyk = @This();
 

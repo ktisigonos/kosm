@@ -1,4 +1,4 @@
-//! The Lua files an `edit` target sets Hyprland's options in (D79).
+//! The Lua files an `edit` target sets Hyprland's options in.
 
 /// A glob of the files: `~/...` or absolute, `*` inside a name, `**` for any depth.
 /// Default: every Lua file under `~/.config/hypr`.

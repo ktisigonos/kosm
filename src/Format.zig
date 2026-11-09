@@ -1,5 +1,5 @@
-//! How one file spells its values (D69, D70): colors, booleans and float precision. Every
-//! field is optional and layers like D61: the user's assignment, then the app's default (both
+//! How one file spells its values: colors, booleans and float precision. Every
+//! field is optional and layers like a color format: the user's assignment, then the app's default (both
 //! the app's `format` field), then the adapter's `default_format`, then kosm's.
 
 const Format = @This();
@@ -8,7 +8,7 @@ const std = @import("std");
 const Color = @import("Color.zig");
 const ColorFormat = @import("ColorFormat.zig");
 
-/// How colors print when no component is named (D61). Null: the next layer's.
+/// How colors print when no component is named. Null: the next layer's.
 color: ?ColorFormat = null,
 /// How booleans print. Null: the next layer's.
 boolean: ?Boolean = null,

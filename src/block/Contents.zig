@@ -1,4 +1,4 @@
-//! Where a block's contents lie in its file: the bytes between its two marker lines (D72).
+//! Where a block's contents lie in its file: the bytes between its two marker lines.
 
 /// First byte after the `kosm:begin` line.
 start: usize,

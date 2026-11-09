@@ -1,6 +1,6 @@
-//! Builds a `kosm.Value.joined` (D89) for a value kitty spells as one piece of text: literal text
+//! Builds a `kosm.Value.joined` for a value kitty spells as one piece of text: literal text
 //! goes to `writer`, while floats, booleans and colors become parts the adapter writes in the
-//! file's format (D70), so a clipped color warns (D88).
+//! file's format, so a clipped color warns.
 
 const Joined = @This();
 

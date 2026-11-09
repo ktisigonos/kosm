@@ -1,4 +1,4 @@
-//! Hyprland's `ecosystem` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `ecosystem` options. Field names are Hyprland's option names.
 
 /// Disable the popup that shows up when you update hyprland to a new version. null: Hyprland's default, `false`.
 no_update_news: ?bool = null,

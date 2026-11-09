@@ -1,4 +1,4 @@
-//! Hyprland's `input_capture` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `input_capture` options. Field names are Hyprland's option names.
 
 /// If enabled, modifiers are also captured and sent to the program. null: Hyprland's default, `false`.
 capture_modifiers: ?bool = null,

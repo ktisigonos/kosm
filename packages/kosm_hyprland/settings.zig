@@ -1,6 +1,6 @@
 //! Turns the app's sections into what Hyprland's Lua config reads: nested tables shaped like
 //! `hl.config` (`general.col.active_border`). An option is an optional field, a section a
-//! struct field; null options and sections holding none are left out (D27).
+//! struct field; null options and sections holding none are left out.
 
 const std = @import("std");
 const kosm = @import("kosm");

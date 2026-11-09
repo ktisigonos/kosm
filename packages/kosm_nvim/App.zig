@@ -1,6 +1,6 @@
-//! Neovim's colors (D22, D27): a base16 palette plus the terminal colors, generated into
+//! Neovim's colors: a base16 palette plus the terminal colors, generated into
 //! `file` as a Lua module returning them in one flat table (`base00`, ..., `br_white`), for the
-//! user's own nvim config to load with `require` (D57). Null values are not written.
+//! user's own nvim config to load with `require`. Null values are not written.
 
 const App = @This();
 
@@ -9,7 +9,7 @@ const kosm = @import("kosm");
 
 /// The file kosm owns. Default: `~/.config/nvim/lua/theme.lua`.
 file: []const u8 = "~/.config/nvim/lua/theme.lua",
-/// How values are spelled (D70), e.g. `.color = .hex_upper`. Null fields take the Lua
+/// How values are spelled, e.g. `.color = .hex_upper`. Null fields take the Lua
 /// adapter's `true`/`false`, then kosm's `#rrggbb` and 6 float decimals.
 format: kosm.Format = .{},
 /// Whether the colorscheme leaves the background transparent. null: not written.
@@ -18,7 +18,7 @@ transparent: ?bool = null,
 base16: Base16 = .{},
 /// The 8 terminal colors and their bright variants.
 terminal: Terminal = .{},
-/// Values the app doesn't cover (D99), written into the module after its own, nested by path:
+/// Values the app doesn't cover, written into the module after its own, nested by path:
 /// `.{ .path = "accent.soft", .value = .{ .color = kosm.hex("2d8699") } }` is `theme.accent.soft`.
 /// One whose path equals, contains or lies inside a set value's or another extra's fails the
 /// apply. Default: none.
@@ -27,7 +27,7 @@ extra: []const kosm.Setting = &.{},
 pub const Base16 = @import("Base16.zig");
 pub const Terminal = @import("Terminal.zig");
 
-/// Colors from the theme (D27): base16 backgrounds and foregrounds from black and white
+/// Colors from the theme: base16 backgrounds and foregrounds from black and white
 /// (swapped in light mode), its accents and the terminal colors from the wheel.
 pub fn from(theme: kosm.Theme) App {
     const palette = theme.palette;
@@ -167,7 +167,7 @@ test "App{} writes an empty module, and only set values are written" {
     try testing.expectEqualStrings("cyan", tree_value.table[1].key);
 }
 
-test "extras follow the app's values, nested by path, and a clash fails naming both (D99)" {
+test "extras follow the app's values, nested by path, and a clash fails naming both" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -193,5 +193,5 @@ test "extras follow the app's values, nested by path, and a clash fails naming b
 
     app.extra = &.{.{ .path = "base00.dim", .value = .{ .color = kosm.hex("000000") } }};
     try testing.expectError(error.AppFailed, app.apply(&fixture.output));
-    try testing.expectEqualStrings("extra 'base00.dim' and setting 'base00' write the same key, or one inside the other; keep one (D99)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("extra 'base00.dim' and setting 'base00' write the same key, or one inside the other; keep one", fixture.diagnostics.message());
 }

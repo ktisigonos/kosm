@@ -1,5 +1,5 @@
-//! Zen's about:config prefs for a set of profiles, written to each one's `user.js` (D94), which
-//! Zen reads at startup. An app of its own (D18): put a second one in the tree to give some
+//! Zen's about:config prefs for a set of profiles, written to each one's `user.js`, which
+//! Zen reads at startup. An app of its own: put a second one in the tree to give some
 //! profiles other prefs, and narrow the first one with `exclude`.
 
 const Profile = @This();
@@ -8,19 +8,19 @@ const std = @import("std");
 const kosm = @import("kosm");
 const user_js = @import("user_js.zig");
 
-/// The profile directories to write, a glob (D79). Only directories holding a `prefs.js` count,
+/// The profile directories to write, a glob. Only directories holding a `prefs.js` count,
 /// so `Crash Reports` and the like are skipped. Default: every Zen profile, `~/.zen/*`.
 profiles: []const u8 = "~/.zen/*",
 /// Profile directories to leave out, globs written like `profiles` (`~/.zen/*.work`).
 exclude: []const []const u8 = &.{},
-/// Who owns each `user.js` (D91). Default: `default_target`.
+/// Who owns each `user.js`. Default: `default_target`.
 target: Target = default_target,
-/// How values are spelled (D70). Null fields take the `userjs` adapter's: `#rrggbb`.
+/// How values are spelled. Null fields take the `userjs` adapter's: `#rrggbb`.
 format: kosm.Format = .{},
 /// The prefs to write, named like about:config (`prefs.zen.theme.accent_color`). Null prefs are
-/// not written; with none set, no profile is looked for or written (D100).
+/// not written; with none set, no profile is looked for or written.
 prefs: Prefs = .{},
-/// Prefs the app doesn't cover (D99), written after its own, each named by its whole
+/// Prefs the app doesn't cover, written after its own, each named by its whole
 /// about:config name: `.{ .path = "zen.urlbar.behavior", .value = .{ .string = "float" } }`. A
 /// name a set pref or another extra already has fails the apply. Default: none.
 extra: []const kosm.Setting = &.{},
@@ -28,10 +28,10 @@ extra: []const kosm.Setting = &.{},
 /// Zen's about:config prefs.
 pub const Prefs = @import("Prefs.zig");
 
-/// Who owns a profile's `user.js` (D94).
+/// Who owns a profile's `user.js`.
 pub const Target = enum {
     /// A `// kosm:begin zen` block; the user's own prefs around it are kept. A missing or empty
-    /// `user.js` is created holding only the block (D72).
+    /// `user.js` is created holding only the block.
     block,
     /// The whole file, so kosm is its source of truth.
     generate,
@@ -43,7 +43,7 @@ pub const default_target: Target = .block;
 /// The id of the block kosm owns in `user.js`.
 const block_id = "zen";
 
-/// Prefs from the theme (D27): the accent from cyan, the window scheme from the mode, page
+/// Prefs from the theme: the accent from cyan, the window scheme from the mode, page
 /// colors from black and white (swapped in light mode), and the profile stylesheets kosm's CSS
 /// needs turned on. Every other pref is left to Zen.
 pub fn from(theme: kosm.Theme) Profile {
@@ -73,7 +73,7 @@ pub fn apply(self: Profile, output: *kosm.Output) !void {
     }
 }
 
-/// The set prefs followed by the extras, checked so no name is written twice (D99).
+/// The set prefs followed by the extras, checked so no name is written twice.
 fn withExtras(self: Profile, output: *kosm.Output) !kosm.Value {
     const own = (try user_js.table(output.allocator, self.prefs)).table;
     const prefs = try output.allocator.alloc(kosm.Setting.Keyed, own.len);
@@ -229,7 +229,7 @@ test "Profile{} sets no prefs, so it looks for no profile and plans nothing" {
     try testing.expectEqual(0, fixture.plan.files.items.len);
 }
 
-test "extras follow the prefs under their whole names, and a name set twice fails naming both (D99)" {
+test "extras follow the prefs under their whole names, and a name set twice fails naming both" {
     var fixture: Fixture = undefined;
     try fixture.init(&test_profiles);
     defer fixture.deinit();
@@ -249,6 +249,6 @@ test "extras follow the prefs under their whole names, and a name set twice fail
 
     profile.extra = &.{.{ .path = "zen.theme.gradient", .value = .{ .boolean = true } }};
     try testing.expectError(error.AppFailed, profile.apply(&fixture.output));
-    try testing.expectEqualStrings("extra 'zen.theme.gradient' and setting 'zen.theme.gradient' write the same key, or one inside the other; keep one (D99)", fixture.diagnostics.message());
+    try testing.expectEqualStrings("extra 'zen.theme.gradient' and setting 'zen.theme.gradient' write the same key, or one inside the other; keep one", fixture.diagnostics.message());
     try testing.expectEqualStrings("~/.zen/b.work/user.js", fixture.diagnostics.file);
 }

@@ -1,4 +1,4 @@
-//! Hyprland's `render` options. Field names are Hyprland's option names (D27).
+//! Hyprland's `render` options. Field names are Hyprland's option names.
 
 /// Enables direct scanout. null: Hyprland's default, `disable`.
 direct_scanout: ?enum(i64) { disable = 0, enable = 1, auto = 2 } = null,
