@@ -184,3 +184,7 @@ Markers:
 - [ ] **13h. Hyprland plugins** `PLAN FIRST`
   - Do: `kosm_hyprland` gets a plugins field: each plugin's name and its settings, written only while Hyprland has it loaded (`if hl.plugin.<name> ~= nil`), replacing hand-built `extra` entries with a raw guard.
   - Done when: tests show a plugin's settings guarded in the generated module, set by path on the edit target, and a plugin set twice failing naming it.
+
+- [ ] **13i. Browser extensions and Zen mods** `PLAN FIRST`
+  - Do: apps for Firefox extensions and Zen mods the human uses: Dark Reader (theme colors), Stylus (user styles, mainly the font) and the Zen mod Zen Zero (the browser's background). The plan finds where each keeps its settings (extension storage in the profile, a mod's prefs or CSS) and how kosm can write them, and says if one can't be written safely.
+  - Done when: each app writes its settings in a temp profile, and a profile missing the extension or mod is skipped or fails as the plan decides.
