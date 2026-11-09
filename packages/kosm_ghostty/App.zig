@@ -1,7 +1,7 @@
 //! ghostty's settings: every option of its config, named like ghostty's options
 //! (`font-size` is `font_size`). ghostty's docs have no sections, so neither does the app.
 //! `generate` writes the set ones to `file`, which ghostty's config includes
-//! (`config-file = kosm.ghostty`); null options are left to ghostty's defaults.
+//! (`config-file = kosm`); null options are left to ghostty's defaults.
 
 const App = @This();
 
@@ -10,7 +10,7 @@ const kosm = @import("kosm");
 const values = @import("values.zig");
 const settings = @import("settings.zig");
 
-/// The file kosm owns; ghostty's config includes it. Default: `~/.config/ghostty/kosm.ghostty`.
+/// The file kosm owns; ghostty's config includes it. Default: `~/.config/ghostty/kosm`.
 file: []const u8 = "~/.config/ghostty/kosm",
 /// How values are spelled, e.g. `.color = .hex_upper`. Null fields take the ghostty
 /// adapter's: `#rrggbb`, `true`/`false`, then kosm's 6 float decimals.
@@ -688,7 +688,7 @@ test "light mode swaps background and foreground, and set derived options win" {
     }
     try testing.expect(std.mem.indexOf(u8, written, "palette = 16=") == null);
     try testing.expect(std.mem.indexOf(u8, written, "keybind = clear") == null);
-    try testing.expectEqualStrings("~/.config/ghostty/kosm.ghostty", fixture.plan.files.items[0].display_path);
+    try testing.expectEqualStrings("~/.config/ghostty/kosm", fixture.plan.files.items[0].display_path);
 }
 
 test "App{} writes an empty file, and without bright no bright color is derived" {

@@ -6,11 +6,11 @@ ghostty for kosm: the `ghostty` adapter (reads and writes ghostty config files, 
 The app covers every option of ghostty 1.4's config, named exactly like ghostty's options with
 underscores (`ghostty.font_size = 13`). ghostty's docs have no sections, so neither does the app:
 every option is a field of `App`. It writes only the options that are set to
-`~/.config/ghostty/kosm.ghostty`; everything left `null` (or an empty list) stays ghostty's
+`~/.config/ghostty/kosm`; everything left `null` (or an empty list) stays ghostty's
 default. Make ghostty read it once, at the end of your own config so its values win:
 
 ```
-config-file = kosm.ghostty
+config-file = kosm
 ```
 
 `from(theme)` sets the colors: foreground and background from white and black (swapped in
@@ -19,7 +19,7 @@ and `state.selected` variations. `palette[8]`..`palette[15]` derive from those t
 and `background_opacity` from the background's alpha when it is below 1, unless you set
 them.
 
-A minimal config can skip `from`: `kosm_ghostty.App{}` writes an empty `kosm.ghostty`,
+A minimal config can skip `from`: `kosm_ghostty.App{}` writes an empty `kosm`,
 so assign only what you want (`.{ .font_size = 13 }`) and ghostty keeps its defaults for the
 rest.
 
@@ -85,7 +85,7 @@ line.
 
 | Field | Default |
 |---|---|
-| `file` | `~/.config/ghostty/kosm.ghostty` |
+| `file` | `~/.config/ghostty/kosm` |
 | `format` | `.{}`: the ghostty adapter's `#rrggbb` and `true`/`false`, then 6 float decimals |
 | `bright` | null: nothing derived; `from`: the theme's `lightness.bright`, making `palette[8]`..`palette[15]` from `palette[0]`..`palette[7]` |
 | `keybind_clear` | `false`; `true` writes `keybind = clear` before `keybind` |
