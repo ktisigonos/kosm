@@ -167,3 +167,20 @@ Markers:
 - [ ] **13d. Shell completions** `PLAN FIRST`
   - Do: `kosm` completions for fish, bash and zsh: commands, flags, kosmos and variant names, `--param` names and `--set` paths of the kosmos being applied.
   - Done when: each shell's script is generated and tested for commands, kosmos names and a kosmos' params.
+
+- [ ] **13e. One background opacity for every app** `PLAN FIRST`
+  - Do: the background's alpha is set once for the whole theme and every app follows it (extends D101): terminals' opacity, Zen's background, and transparency switches such as `kosm_nvim.transparent`, which turns on when the alpha is below 1. The plan proposes where it lives (a `kosm.Theme` field, or the palette's black carrying alpha) and which built-in apps gain a derived switch.
+  - Done when: tests show one alpha below 1 makes each built-in app transparent, an alpha of 1 leaves them opaque and writes no switch, and a set field still wins.
+
+- [ ] **13f. Curves, easings and Hyprland animations** `PLAN FIRST`
+  - Do: a core curve type (cubic bezier by two control points, and spring by mass, stiffness and damping) and named standard easings (CSS `ease`, `ease-in-out`, ..., and the `easeOutExpo` family) that translate to bezier points, usable by any app.
+  - Do: `kosm_hyprland` writes curves (`hl.curve`) and animations (`hl.animation`: leaf, enabled, speed, curve, style), so `animations/` in the human's config can go. The generated module then holds calls, not only a table: the plan proposes its shape (D91, D97).
+  - Done when: tests cover each easing's points, a spring, and the generated curves and animations, including an animation naming a curve that isn't defined (fails naming both).
+
+- [ ] **13g. Hyprland environment variables** `PLAN FIRST`
+  - Do: `kosm_hyprland` sets environment variables (`hl.env`) from a plain field, written in order; values the theme knows (cursor theme and size, GTK and Qt theme) can be derived. The plan settles the field's shape and which variables are derived.
+  - Done when: tests show variables written in order, a name set twice failing naming both, and derived ones yielding to set ones.
+
+- [ ] **13h. Hyprland plugins** `PLAN FIRST`
+  - Do: `kosm_hyprland` gets a plugins field: each plugin's name and its settings, written only while Hyprland has it loaded (`if hl.plugin.<name> ~= nil`), replacing hand-built `extra` entries with a raw guard.
+  - Done when: tests show a plugin's settings guarded in the generated module, set by path on the edit target, and a plugin set twice failing naming it.
