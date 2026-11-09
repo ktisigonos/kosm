@@ -9,19 +9,19 @@ Every project following these rules keeps the same files at its root:
 | File | Purpose |
 |------|---------|
 | `AGENTS.md` | Project-specific rules and settings, plus pointers to the files in `.agents/`. |
-| `DESIGN.md` | The design: goals (`G#`), decisions (`D#`), build order, non-goals. Source of truth. |
-| `QUESTIONS.md` | Open questions (`Q#`). An open one blocks the work that depends on it. |
-| `TODO.md` | Steps following the build order. Your task list. |
+| `DESIGN.md` | Goals, architecture, the rules new work follows, non-goals. Short: what is built is documented by its code. |
+| `QUESTIONS.md` | Open questions. An open one blocks the work that depends on it. |
+| `TODO.md` | Open steps only, in order. Your task list. |
 | `UPSTREAM.md` | Bugs found in dependencies, to report to their projects. |
 
-**Anything not in `DESIGN.md` is undecided. Do not invent it; ask.** Non-goals listed in `DESIGN.md` are never implemented unless the human moves them out of that list.
+**Anything neither in `DESIGN.md`, `TODO.md` nor the code is undecided. Do not invent it; ask.** Non-goals listed in `DESIGN.md` are never implemented unless the human moves them out of that list.
 
 ## Hard rules (never break these)
 
 1. **Never push, and never run branch, tag, rebase, amend, or other repo-management commands.** Committing is required: commit each step's work as soon as it is done and verified, so the human always has a clean commit to review; review fixes land as a separate follow-up commit, never amended into the step's own commit. Match the human's commit style from `git log`: `feat:`, `fix:`, `docs:`, `chore:`, `style:`, `refactor:`, `test:` plus a short capitalized description, one line, written as what changed for a user (`feat: Missing hues are mixed from their wheel neighbours`), not as a file list. Split commits sensibly by type. A local commit is reversible, a push is not. Do not touch licenses, CI, or repo metadata. Reading (`git status`, `git diff`, `git log`) is fine.
-2. **One step at a time.** Do exactly one step from `TODO.md`, make it pass its "Done when" checks, then **stop** and report. Do not start the next step. Tick the step's checkbox yourself once it is fully done: every "Done when" check passes, nothing waits on the human (an open `Q#`, a dependency approval), and you are confident it is right. Commit the tick with the step's final work. If anything is still pending, leave it unticked and say what is missing.
-3. **Open questions block their section.** Never start work that depends on a `Q#` still open in `QUESTIONS.md`, and never answer one yourself by picking the recommendation. When the human answers one, move the answer into `DESIGN.md` as a new `D#` (next free number, in the right section) and delete the question, in the same `docs:` commit.
-4. **The design changes only on purpose.** If the code needs something `DESIGN.md` does not say, or contradicts a `D#`, stop and propose the change (which decision, what it would say, why). Once the human agrees, update `DESIGN.md` in the same commit as the code that relies on it. Never renumber decisions; a removed one stays as `D# (removed: reason)` so references do not break.
+2. **One step at a time.** Do exactly one step from `TODO.md`, make it pass its "Done when" checks, then **stop** and report. Do not start the next step. Once it is fully done (every "Done when" check passes, nothing waits on the human such as an open question or a dependency approval, and you are confident it is right), delete the step from `TODO.md` in the step's final commit; `git log` keeps it. If anything is still pending, leave it in and say what is missing.
+3. **Open questions block their section.** Never start work that depends on a question still open in `QUESTIONS.md`, and never answer one yourself by picking the recommendation. When the human answers one, put the answer where it guides the work (`DESIGN.md` if it is a lasting rule, the step in `TODO.md` if it only shapes that step) and delete the question, in the same `docs:` commit.
+4. **The design changes only on purpose.** If the code needs something `DESIGN.md` does not say, or contradicts it, stop and propose the change (what it would say, why). Once the human agrees, update `DESIGN.md` in the same commit as the code that relies on it. `DESIGN.md` holds no implementation detail and no decision numbers; code, docs and messages never cite it.
 5. **Ask before adding any dependency** (library, tool, vendored code, grammar). Stop and propose: what it is, why it is needed, what the alternative is (often "write it ourselves, ~N lines"). Wait for approval. Name the exact change you will make (the command you will run, or the entries you will delete); once approved, make it yourself and wire it into the build. Never touch the dependency manifest without that explicit approval.
 6. **Never write to the human's real files.** Tests and experiments work in a temporary directory or the scratch directory, never in `~/.config`, the human's dotfiles, or any path under `$HOME` outside the repo. Do not run anything that changes the human's real setup unless the human asks for that exact command.
 7. **Respect the architecture's boundaries.** Follow the layers `DESIGN.md` defines. Where the build can enforce a boundary (by limiting what a module may import), it does. Never "fix" a compile error by loosening a boundary; ask instead.
@@ -64,7 +64,7 @@ Dependency sources, C headers, language references, and standard library files a
   - contain commented-out code
   - are TODO or note-to-self comments (follow-ups go in `TODO.md`, hard rule 11)
 
-  Every **public** declaration gets a brief doc comment: one to three lines, written for someone *using* it - what it does, units and ranges, ownership, constraints. Do not repeat the name or narrate the body. Where a declaration implements a decision, cite it (`Missing hues mix from wheel neighbours (D7).`).
+  Every **public** declaration gets a brief doc comment: one to three lines, written for someone *using* it - what it does, units and ranges, ownership, constraints. Do not repeat the name or narrate the body. Never cite design documents or decision numbers; where the reason for a choice is not obvious, say the reason in plain words.
 - **Formatting:** run the language's formatter on everything you touch.
 
 ## Testing
@@ -75,12 +75,12 @@ Do **not** write tests for trivial getters, thin wrappers, or code whose correct
 
 ## Workflow for each step
 
-1. Read the step in `TODO.md`, the `D#`s it touches in `DESIGN.md`, and check `QUESTIONS.md` for anything blocking it.
+1. Read the step in `TODO.md`, `DESIGN.md`, the code it touches, and check `QUESTIONS.md` for anything blocking it.
 2. Read the language notes file. Look up any API you are unsure of: dependency doc comments first, then headers, `doc/` and the standard library source. Never guess.
 3. Implement the step, and only that step.
 4. Run the formatter, the build, and the tests. Fix everything. Check the test summary count: a suite can pass while running none of your tests.
 5. Update docs touched by the change in the same commit: `DESIGN.md` (agreed design changes), the language notes file (gotchas), `UPSTREAM.md` (dependency bugs), and any user-facing docs the change affects.
-6. Tick the step in `TODO.md` if it is fully done (hard rule 2), then commit (hard rule 1).
+6. Delete the step from `TODO.md` if it is fully done (hard rule 2), then commit (hard rule 1).
 7. Write a short final report:
    - what you changed (files)
    - how you verified it
