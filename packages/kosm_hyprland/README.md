@@ -6,7 +6,8 @@ Hyprland's own (`hyprland.general.col.active_border`, `hyprland.decoration.blur.
 `input-capture` and `tap-to-click` are spelled with underscores, as its Lua config spells them.
 Everything left `null` is not written, so Hyprland's own default applies.
 
-The app writes Lua through the `lua` adapter of `kosm_lua`, which the config needs too.
+The app writes Lua through the `lua` adapter of `kosm_lua`, which this package brings along
+(`kosm_hyprland.lua_adapter`), so a config needs only `kosm_hyprland`.
 
 ## Who owns the values
 

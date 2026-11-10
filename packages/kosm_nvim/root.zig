@@ -6,6 +6,8 @@ const std = @import("std");
 pub const App = @import("App.zig");
 /// Colors from the theme.
 pub const from = App.from;
+/// The adapter the app writes with, so a config needs only this package to rice Neovim.
+pub const lua_adapter = @import("kosm_lua").adapter;
 
 test {
     std.testing.refAllDecls(@This());

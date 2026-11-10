@@ -9,6 +9,10 @@ pub const App = @import("App.zig");
 pub const from = App.from;
 /// Prefs for a set of profiles, an app of its own; build one with `Profile.from`.
 pub const Profile = App.Profile;
+/// The adapter the theme colors are written with, so a config needs only this package to rice Zen.
+pub const css_adapter = @import("kosm_css").adapter;
+/// The adapter the prefs are written with.
+pub const userjs_adapter = @import("kosm_userjs").adapter;
 
 test {
     std.testing.refAllDecls(@This());

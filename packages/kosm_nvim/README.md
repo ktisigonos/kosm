@@ -9,7 +9,8 @@ local theme = require('theme')
 ```
 
 The file is a Lua module returning one flat table (`theme.base00`, `theme.br_white`), written
-through the `lua` adapter of `kosm_lua`. Null values are not written.
+through the `lua` adapter of `kosm_lua`, which this package brings along (`kosm_nvim.lua_adapter`).
+Null values are not written.
 
 A minimal config can skip `from`: `kosm_nvim.App{}` writes an empty module
 (`return {}`), so assign only what you want (`.{ .base16 = .{ .base0D = kosm.hex("2d8699") } }`).

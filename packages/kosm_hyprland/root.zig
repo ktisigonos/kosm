@@ -8,6 +8,8 @@ pub const App = @import("App.zig");
 pub const from = App.from;
 /// The types Hyprland options take, for naming them in a kosmos.
 pub const values = @import("values.zig");
+/// The adapter the app writes with, so a config needs only this package to rice Hyprland.
+pub const lua_adapter = @import("kosm_lua").adapter;
 
 test {
     @setEvalBranchQuota(100_000);

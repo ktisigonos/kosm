@@ -1,8 +1,8 @@
 # kosm_zen
 
 Zen Browser for kosm: its theme colors as CSS custom properties, and its about:config prefs in
-every profile's `user.js`. Needs `kosm_css` and `kosm_userjs` installed, which write the
-files.
+every profile's `user.js`. The adapters of `kosm_css` and `kosm_userjs` write the files; this
+package brings them along (`kosm_zen.css_adapter`, `kosm_zen.userjs_adapter`).
 
 The app writes `~/.config/ZenBrowser/kosm.css`. Make your `userChrome.css` and
 `userContent.css` use it once: `@import` it first, then use the properties wherever a
