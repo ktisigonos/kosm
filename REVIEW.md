@@ -181,3 +181,50 @@ this file once everything in it is reviewed.
   the system's `10-hinting-slight.conf` and `10-yes-antialias.conf` already do.
 - Krystallos does not use the app yet; that comes with the base kosmos (13o). Your
   `fonts.conf` can then drop its aliases.
+
+## 13k. Apps for the rest of Ricer's list
+
+Eight new packages, all in `kosm init`'s official list. The rule I followed: a theme file the
+program picks by name is generated whole as `kosm` (Ricer called it `Ricer`); a program that
+includes or drops in extra files gets a file of kosm's own; the program's own config is only
+edited, by path, to select that theme or set the font. Each package has a README with its
+fields.
+
+- `kosm_foot`: generates `~/.config/foot/kosm.ini` (fonts in fallback order, `[colors-dark]`,
+  `[colors-light]`, extras). You add `include=~/.config/foot/kosm.ini` as foot.ini's first line
+  and delete its fonts and colors. Checked with `foot --check-config`. foot has no reload.
+- `kosm_dunst`: generates the drop-in `~/.config/dunst/dunstrc.d/50-kosm.conf` (font, the three
+  urgency sections' colors, extras) and runs `dunstctl reload`. Dunst reads drop-ins with no
+  setup, after dunstrc. Your dunstrc sets colors in `[global]`; delete them there.
+- `kosm_tuios`: generates `~/.config/tuios/themes/kosm.json` and sets `appearance.theme` in
+  `config.toml`. Ricer's `accent_bright` is not a key tuios knows (checked in its binary), so
+  it is not a field. Checked with `tuios --preview-theme` in a temp config.
+- `kosm_vicinae`: generates `~/.local/share/vicinae/themes/kosm.toml` from every section of
+  `vicinae theme template`, writing only set colors, and sets `theme.dark.name` (or light) and
+  the font in `settings.json`. Vicinae's 8-digit colors are Qt's `#AARRGGBB`, so the app writes
+  6 digits only.
+- `kosm_qtct`: one app for qt5ct and qt6ct: generates `colors/kosm.conf` for each (21 roles,
+  plus Qt 6.6's accent for qt6ct) and sets `color_scheme_path` and `custom_palette` in each
+  config. Fonts are left out: qt5ct and qt6ct store serialized QFonts their own window writes.
+- `kosm_ohmyposh`: replaces the `palette` object of a prompt config (JSON or TOML) with named
+  colors, which segments use as `p:<name>` (checked with `oh-my-posh print` in a temp dir).
+  Your prompt layout stays yours. **Krystallos does not use it yet**: your `Ricer.json` has
+  no `palette` and still has Ricer's colors inlined, and the edit fails without one. Converting
+  it (`"palette": {}` and `p:` colors) is yours to do; then add it to Krystallos.
+- `kosm_equibop`: a `/* kosm:begin kosm */` block of `--kosm-*` custom properties at the end
+  of QuickCSS. Your Material Discord CSS then uses `var(--kosm-background)` and so on; until
+  you change it, the block changes nothing visible.
+- `kosm_adwsteamgtk`: a block of `--adw-*-rgb` variables (`r, g, b !important`, as the color
+  themes write them) in `~/.config/AdwSteamGtk/custom.css`; a color's alpha goes to the `-a`
+  variable where Adwaita has one. You re-install from AdwSteamGtk with Custom CSS on. Ricer
+  instead wrote a color theme into AdwSteamGtk's cache, which an update wipes.
+- `kosm_json` now has `serialize` (pretty-printed), for the tuios theme.
+- Found while checking Krystallos: `kosm_hyprland`'s manifest left `adapter.zig` out of
+  `paths`, so the fetched package didn't build. Fixed; every package's `paths` now covers its
+  files.
+- Krystallos (in `~/.config/kosm`, not committed anywhere) has one file per new app, and the
+  config is re-pinned to every package's newest commit; `kosm apply krystallos --diff` runs and
+  shows each new file and the selecting edits. The diff also holds changes from earlier steps
+  you haven't applied (Zen's transparency prefs and `kosm.css`, nvim's `kosm.lua`).
+- A kosm API gotcha I worked around: an `edit` path given as a runtime `[:0]const u8` (what
+  `@tagName` returns) is a compile error; it has to be coerced to `[]const u8` first.
