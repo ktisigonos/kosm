@@ -2,7 +2,8 @@
 //! adapter becomes a module importable by name, and `-Dkosmos=frost.iced` builds
 //! `zig-out/bin/kosmos`, the runner for that one kosmos. `-Dinspect=kosm_kitty` builds
 //! `zig-out/bin/inspect`, which reports what that installed package provides. `-Dlist` builds
-//! `zig-out/bin/list`, which lists every kosmos and installed package. `check` compiles
+//! `zig-out/bin/list`, which lists every kosmos and installed package. `-Dcolors=frost` builds
+//! `zig-out/bin/colors`, which prints the palettes that kosmos' file declares. `check` compiles
 //! every local one, so editors see the config's imports.
 
 const std = @import("std");
@@ -22,6 +23,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const kosmos_name = b.option([]const u8, "kosmos", "The kosmos to build: frost, or a variant like frost.iced");
     const inspected_name = b.option([]const u8, "inspect", "The installed package to report on, for kosm add and kosm update");
     const list = b.option(bool, "list", "Build the listing of every kosmos and package, for kosm list") orelse false;
+    const colors_name = b.option([]const u8, "colors", "The kosmos whose palettes to print, for kosm colors");
 
     var names: Names = .{ .b = b };
     inline for (@typeInfo(@TypeOf(manifest.dependencies)).@"struct".field_names) |name| {
@@ -56,6 +58,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     addEditorCheck(b, names.modules.items);
     if (inspected_name) |name| addInspector(b, target, optimize, kosm_dependency, names.modules.items, name);
     if (list) addLister(b, target, optimize, kosm_dependency, names.modules.items);
+    if (colors_name) |name| addColors(b, target, optimize, kosm_dependency, names.modules.items, name);
     const name = kosmos_name orelse return;
     addRunner(b, target, optimize, kosm_dependency, names.modules.items, name);
 }
@@ -166,13 +169,8 @@ fn localLessThan(_: void, left: Local, right: Local) bool {
 /// as `kosmos`.
 fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry, name: []const u8) void {
     const dot = std.mem.findScalar(u8, name, '.');
-    const file_name = name[0 .. dot orelse name.len];
     const function = if (dot) |index| name[index + 1 ..] else "kosmos";
-    const kosmos = for (entries) |entry| {
-        if (canHoldKosmoi(entry) and std.mem.eql(u8, entry.name, file_name)) break entry;
-    } else return fail(b, "there is no kosmos '{s}' (no local kosmos, app or adapter '{s}' and no installed package '{s}'); in kosmoi/: {s}; in apps/: {s}; in adapters/: {s}; installed packages: {s}", .{
-        name, file_name, file_name, nameList(b, entries, .kosmos), nameList(b, entries, .app), nameList(b, entries, .adapter), nameList(b, entries, .package),
-    });
+    const kosmos = kosmosFile(b, entries, name) orelse return;
     const reached = reachedLocals(b, entries, kosmos) catch |err| return fail(b, "cannot read the imports of {s}: {s}", .{ kosmos.origin, @errorName(err) });
 
     var source: std.Io.Writer.Allocating = .init(b.allocator);
@@ -206,6 +204,39 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
     b.installArtifact(b.addExecutable(.{ .name = "kosmos", .root_module = root_module }));
+}
+
+/// The local kosmos, app or adapter, or the installed package, holding kosmos `name` ("frost" or
+/// "frost.iced"). Fails the build and returns null when there is none.
+fn kosmosFile(b: *std.Build, entries: []const Entry, name: []const u8) ?Entry {
+    const file_name = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len];
+    for (entries) |entry| {
+        if (canHoldKosmoi(entry) and std.mem.eql(u8, entry.name, file_name)) return entry;
+    }
+    fail(b, "there is no kosmos '{s}' (no local kosmos, app or adapter '{s}' and no installed package '{s}'); in kosmoi/: {s}; in apps/: {s}; in adapters/: {s}; installed packages: {s}", .{
+        name, file_name, file_name, nameList(b, entries, .kosmos), nameList(b, entries, .app), nameList(b, entries, .adapter), nameList(b, entries, .package),
+    });
+    return null;
+}
+
+/// Generates a main printing the palettes the file of kosmos `name` declares and installs it
+/// as `colors`.
+fn addColors(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry, name: []const u8) void {
+    const kosmos = kosmosFile(b, entries, name) orelse return;
+    const source = b.fmt(
+        \\const std = @import("std");
+        \\const runner = @import("kosm_runner");
+        \\
+        \\pub fn main(init: std.process.Init) !u8 {{
+        \\    return runner.colors(init, "{f}", @import("{f}"));
+        \\}}
+        \\
+    , .{ std.zig.fmtString(kosmos.name), std.zig.fmtString(kosmos.name) });
+    const files = b.addWriteFiles();
+    const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source), .target = target, .optimize = optimize });
+    root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
+    for (entries) |entry| root_module.addImport(entry.name, entry.module);
+    b.installArtifact(b.addExecutable(.{ .name = "colors", .root_module = root_module }));
 }
 
 /// Generates a main reporting what installed package `name` provides and installs it as `inspect`.

@@ -12,10 +12,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
-- **13c. Showing a kosmos' colors** `PLAN FIRST`
-  - Do: a command printing a kosmos' palette (and its resolved hues) as colored blocks with each hex value beside it, in truecolor; the plan settles its name and whether it shows variations too.
-  - Done when: tests show the output for a palette with mixed hues, and plain text without escapes when stdout isn't a terminal.
-
 - **13d. Shell completions** `PLAN FIRST`
   - Do: `kosm` completions for fish, bash and zsh: commands, flags, kosmos and variant names, `--param` names and `--set` paths of the kosmos being applied.
   - Done when: each shell's script is generated and tested for commands, kosmos names and a kosmos' params.

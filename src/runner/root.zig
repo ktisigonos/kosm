@@ -19,6 +19,8 @@ pub const Target = @import("Target.zig");
 pub const inspect = @import("inspect.zig").inspect;
 /// Lists every kosmos and installed package in a config, for `kosm list`.
 pub const list = list_module.list;
+/// Prints the palettes a kosmos' file declares, for `kosm colors`.
+pub const colors = @import("colors.zig").colors;
 /// A module `list` looks into.
 pub const ListSource = list_module.Source;
 
@@ -216,6 +218,7 @@ test {
     std.testing.refAllDecls(discovery);
     std.testing.refAllDecls(@import("inspect.zig"));
     std.testing.refAllDecls(list_module);
+    std.testing.refAllDecls(@import("colors.zig"));
     std.testing.refAllDecls(params);
     std.testing.refAllDecls(walk);
 }

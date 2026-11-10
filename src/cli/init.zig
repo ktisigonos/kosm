@@ -407,8 +407,10 @@ const check_kosmos =
     \\
     \\pub const Check = struct { kitty: kitty.App };
     \\
+    \\pub const palette: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .red = kosm.hex("ff0000") };
+    \\
     \\pub fn kosmos() Check {
-    \\    var check: Check = .{ .kitty = kitty.from(kosm.Theme.from(.{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff") }, .dark)) };
+    \\    var check: Check = .{ .kitty = kitty.from(kosm.Theme.from(palette, .dark)) };
     \\    check.kitty.fonts.font_size = 13;
     \\    return check;
     \\}
@@ -452,6 +454,17 @@ test "an initialized config builds with the forked kosm sources, applies a kosmo
     test_config.stdout.clearRetainingCapacity();
     try @import("list.zig").list(context, null);
     try testing.expect(std.mem.startsWith(u8, test_config.stdout.written(), "kosmoi:\n  check  kosmoi/check.zig\npackages:\n  kosm_kitty\n    app      kosm_kitty.App\n    adapter  kitty\n"));
+
+    test_config.stdout.clearRetainingCapacity();
+    try @import("colors.zig").colors(context, "check", false);
+    try testing.expectStringStartsWith(test_config.stdout.written(), "palette\n  black    #000000\n  white    #ffffff\n  gray     #");
+    try testing.expect(std.mem.find(u8, test_config.stdout.written(), "  pink     #ff0000  mixed\n") != null);
+    test_config.stdout.clearRetainingCapacity();
+    try @import("colors.zig").colors(context, "check.light", true);
+    try testing.expect(std.mem.find(u8, test_config.stdout.written(), "  red      \x1b[48;2;255;0;0m      \x1b[0m  #ff0000\n") != null);
+    test_config.stderr.clearRetainingCapacity();
+    try testing.expectError(error.Failed, @import("colors.zig").colors(context, "missing", false));
+    try testing.expect(std.mem.find(u8, test_config.stderr.written(), "there is no kosmos 'missing'") != null);
 
     context.sources = null;
     const pinned = try context.runZig(&.{ "build", "-Dkosmos=check" });

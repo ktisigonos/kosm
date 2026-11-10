@@ -1,7 +1,7 @@
-//! The `kosm` command (section 10). For now `kosm init`, `kosm apply`, which builds
-//! the one kosmos in the config project with `zig build` and runs it, `kosm list`
-//!, `kosm new`, `kosm current`, and the package commands `kosm add`, `kosm remove` and
-//! `kosm update`, and `kosm source`. Applying a directory kosmos also refreshes its own
+//! The `kosm` command: `kosm init`, `kosm apply`, which builds the one kosmos in the config
+//! project with `zig build` and runs it, `kosm list`, `kosm colors`, `kosm new`,
+//! `kosm current`, the package commands `kosm add`, `kosm remove` and `kosm update`, and
+//! `kosm source`. Applying a directory kosmos also refreshes its own
 //! manifest. Every build runs with the kosm sources `Sources` finds.
 
 const std = @import("std");
@@ -11,6 +11,7 @@ const directory_package = @import("directory_package.zig");
 const Context = @import("Context.zig");
 const init_command = @import("init.zig");
 const list_command = @import("list.zig");
+const colors_command = @import("colors.zig");
 const new_command = @import("new.zig");
 const source_command = @import("source.zig");
 const Sources = @import("Sources.zig");
@@ -21,6 +22,7 @@ const usage =
     \\       kosm new kosmos|app|adapter <name> [--config dir]
     \\       kosm apply <kosmos>[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
     \\       kosm list [kosmos] [--config dir]
+    \\       kosm colors <kosmos> [--config dir]
     \\       kosm current
     \\       kosm source [<dir> | --default]
     \\       kosm add <url>[#ref] [--config dir]
@@ -66,7 +68,7 @@ pub fn main(init: std.process.Init) !u8 {
         .apply => |apply| return runApply(init, builds, apply, &stderr.interface),
         .init => |init_arguments| return runInit(init, builds, init_arguments, &stderr.interface),
         .new => |new| return runNew(init, builds, new, &stderr.interface),
-        .add, .remove, .update, .list => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
+        .add, .remove, .update, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
         .current, .source => unreachable, // Handled above.
     }
 }
@@ -107,6 +109,7 @@ fn expectedArguments(command: []const u8) []const u8 {
     if (std.mem.eql(u8, command, "remove")) return "one package name, e.g. kosm remove kosm_kitty";
     if (std.mem.eql(u8, command, "update")) return "at most one package name";
     if (std.mem.eql(u8, command, "list")) return "at most one kosmos, e.g. kosm list frost";
+    if (std.mem.eql(u8, command, "colors")) return "one kosmos, e.g. kosm colors frost";
     if (std.mem.eql(u8, command, "new")) return "a kind and a name, e.g. kosm new app my_bar";
     if (std.mem.eql(u8, command, "source")) return "at most one directory, or --default";
     return "no arguments";
@@ -201,7 +204,8 @@ fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, c
     return true;
 }
 
-/// Runs `kosm add`, `kosm remove`, `kosm update` or `kosm list` against the config project.
+/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm list` or `kosm colors` against the
+/// config project.
 fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, config_command: ConfigCommand, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, config_command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
@@ -213,7 +217,9 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .remove => package_commands.remove(context, config_command.argument.?),
         .update => package_commands.update(context, config_command.argument),
         .list => list_command.list(context, config_command.argument),
-        .apply, .current, .init, .new, .source => unreachable, // main passes only these four here.
+        // Blocks only where they can be drawn: a pipe or a file gets plain text.
+        .colors => colors_command.colors(context, config_command.argument.?, try std.Io.File.stdout().isTty(init.io)),
+        .apply, .current, .init, .new, .source => unreachable, // main passes only the five above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -276,6 +282,7 @@ const Command = union(enum) {
     source: ?[]const u8,
     new: New,
     list: ConfigCommand,
+    colors: ConfigCommand,
     add: ConfigCommand,
     remove: ConfigCommand,
     update: ConfigCommand,
@@ -302,6 +309,7 @@ const Command = union(enum) {
         if (std.mem.eql(u8, arguments[0], "init")) return .{ .init = try .parse(arguments[1..], .none) };
         if (std.mem.eql(u8, arguments[0], "new")) return .{ .new = try .parse(arguments[1..]) };
         if (std.mem.eql(u8, arguments[0], "list")) return .{ .list = try .parse(arguments[1..], .optional) };
+        if (std.mem.eql(u8, arguments[0], "colors")) return .{ .colors = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "add")) return .{ .add = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "remove")) return .{ .remove = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "update")) return .{ .update = try .parse(arguments[1..], .optional) };
@@ -313,7 +321,7 @@ const Command = union(enum) {
 /// `init`, `list`, `add`, `remove` or `update`.
 const ConfigCommand = struct {
     /// add: the url and ref; remove: the name; update: the name, or null for every package;
-    /// list: the kosmos, or null for everything; init: always null.
+    /// list: the kosmos, or null for everything; colors: the kosmos; init: always null.
     argument: ?[]const u8,
     /// The `--config` directory, or null for the default.
     config: ?[]const u8,
@@ -420,6 +428,7 @@ test {
     std.testing.refAllDecls(directory_package);
     std.testing.refAllDecls(init_command);
     std.testing.refAllDecls(list_command);
+    std.testing.refAllDecls(colors_command);
     std.testing.refAllDecls(new_command);
     std.testing.refAllDecls(Sources);
 }
@@ -483,6 +492,8 @@ test "init takes only --config, and list at most one kosmos" {
     try testing.expectEqualStrings("frost.iced", (try Command.parse(arena.allocator(), &.{ "list", "frost.iced" })).list.argument.?);
     try testing.expectEqual(null, (try Command.parse(arena.allocator(), &.{"list"})).list.argument);
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "list", "a", "b" }));
+    try testing.expectEqualStrings("frost", (try Command.parse(arena.allocator(), &.{ "colors", "frost" })).colors.argument.?);
+    try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{"colors"}));
 }
 
 test "new takes a kind, a name and --config anywhere" {

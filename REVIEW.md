@@ -48,3 +48,13 @@ this file once everything in it is reviewed.
 - Found on the way: a package built on its own ended up with two copies of kosm once it pinned a
   newer kosm than its adapter package. The one-copy rule now covers a package's own build too
   (`build/unify.zig`), so bumping one pin never forces bumping every package.
+
+## 13c. Showing a kosmos' colors
+
+- The command is `kosm colors <kosmos>`. It prints every public `kosm.Palette` constant at the
+  top of the kosmos' file (root.zig for a directory kosmos), the way adapters are found; a kosmos
+  declaring none gets an error saying so. Krystallos keeps its palette in `values.zig`, so its
+  root.zig needs `pub const palette = values.palette;` to be shown.
+- It shows black, white, gray and the 12 hues, with `mixed` after each one the palette does not
+  set. Variations are not shown: they need a theme, which a kosmos builds inside its functions.
+- Blocks are background-colored spaces (truecolor), drawn only when kosm's stdout is a terminal.
