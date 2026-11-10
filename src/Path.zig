@@ -72,10 +72,12 @@ pub fn fromAny(allocator: std.mem.Allocator, path: anytype, failure: *Failure) P
 }
 
 /// Whether `T` is path text rather than a tuple of keys.
+/// Sentinel-terminated slices count, so `@tagName` and comptime field names work as they are.
 pub fn isText(comptime T: type) bool {
-    if (T == []const u8 or T == []u8) return true;
     const info = @typeInfo(T);
-    if (info != .pointer or info.pointer.size != .one) return false;
+    if (info != .pointer) return false;
+    if (info.pointer.size == .slice) return info.pointer.child == u8;
+    if (info.pointer.size != .one) return false;
     const child = @typeInfo(info.pointer.child);
     return child == .array and child.array.child == u8;
 }
@@ -163,6 +165,20 @@ test "a tuple path takes every key literally" {
     var writer: std.Io.Writer = .fixed(&buffer);
     try writer.print("{f}", .{path});
     try testing.expectEqualStrings("general.\"col.active_border\".\"*\"", writer.buffered());
+}
+
+test "sentinel-terminated text is path text, at runtime and inside a tuple" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var failure: Failure = .{};
+    var mode: enum { dark, light } = .dark;
+    _ = &mode;
+    const name: [:0]const u8 = @tagName(mode);
+    const path = try fromAny(arena.allocator(), name, &failure);
+    try testing.expectEqualStrings("dark", path.segments[0].key);
+    const tuple = try fromAny(arena.allocator(), .{ "theme", name, "name" }, &failure);
+    try testing.expectEqual(3, tuple.segments.len);
+    try testing.expect(!isText([]const u16));
 }
 
 fn scalar(key: []const u8, position: usize) Node {
