@@ -109,3 +109,15 @@ this file once everything in it is reviewed.
 - Hyprland reads a spring's `damping` and also the misspelling `dampening` your curves.lua
   uses; kosm writes `damping`.
 - With the `.edit` target, set curves or animations fail the apply: kosm never adds calls.
+
+## 13g. Hyprland environment variables
+
+- The field is `env`: a list of `.{ .name, .value }`, both text, written as `hl.env` calls in
+  the order given, at the top of the generated module.
+- The theme does not know cursor or toolkit themes, so the derived ones come from four new
+  fields of the app: `cursor_theme` (`HYPRCURSOR_THEME`, `XCURSOR_THEME`), `cursor_size`
+  (`HYPRCURSOR_SIZE`, `XCURSOR_SIZE`), `gtk_theme` (`GTK_THEME`) and `qt_platform_theme`
+  (`QT_QPA_PLATFORMTHEME`). They are written before `env`, and not at all when `env` sets the
+  same name.
+- A name given twice in `env` fails naming it and both values; so do an empty name and one
+  holding `=`. With the `.edit` target any variable fails the apply.

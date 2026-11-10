@@ -12,10 +12,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
-- **13g. Hyprland environment variables** `PLAN FIRST`
-  - Do: `kosm_hyprland` sets environment variables (`hl.env`) from a plain field, written in order; values the theme knows (cursor theme and size, GTK and Qt theme) can be derived. The plan settles the field's shape and which variables are derived.
-  - Done when: tests show variables written in order, a name set twice failing naming both, and derived ones yielding to set ones.
-
 - **13h. Hyprland plugins** `PLAN FIRST`
   - Do: `kosm_hyprland` gets a plugins field: each plugin's name and its settings, written only while Hyprland has it loaded (`if hl.plugin.<name> ~= nil`), replacing hand-built `extra` entries with a raw guard.
   - Done when: tests show a plugin's settings guarded in the generated module, set by path on the edit target, and a plugin set twice failing naming it.
