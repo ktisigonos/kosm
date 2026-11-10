@@ -121,3 +121,17 @@ this file once everything in it is reviewed.
   same name.
 - A name given twice in `env` fails naming it and both values; so do an empty name and one
   holding `=`. With the `.edit` target any variable fails the apply.
+
+## 13h. Hyprland plugins
+
+- The field is `plugin`: a list of `.{ .name, .settings }`, the settings by path below the
+  plugin, like `extra`'s. The generated module wraps each plugin in
+  `if hl.plugin.<name> ~= nil then hl.config({ plugin = { <name> = { ... } } }) end`, before
+  the returned table. `extra`'s docs no longer use a plugin as their example.
+- With the `.edit` target they are set at `plugin.<name>.<path>`. For that, `kosm_lua` paths
+  now see into `if` and `do` blocks (they run as the file loads); a value set in several
+  branches matches several times and needs `setAll` or `setNth`. Function bodies stay hidden.
+- A plugin given twice, a name `hl.plugin` can't spell, and an `extra` reaching into a plugin
+  that `plugin` holds all fail the apply.
+- hyprglass is configured through `hl.plugin.hyprglass.config(...)` and `.layer(...)` calls of
+  its own, not through `hl.config`, so this field does not cover it.
