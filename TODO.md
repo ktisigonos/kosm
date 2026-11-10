@@ -8,10 +8,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **13a. Built-in packages in their own repositories** `PLAN FIRST` `ASK`
-  - Do: each package under `packages/` becomes a standalone package with its own `build.zig`, `build.zig.zon` and tests, depending on `kosm` and on other packages by URL (Zig can't fetch a subdirectory of a repository). kosm drops `packages/`, `build/built_in.zig` and the code that provides the built-ins from kosm's own tree.
-  - Do: the plan settles where the packages live, whether their git history is kept (`git subtree split`, run by the human), and what `kosm init` adds once there are no built-ins (the app packages by URL with the starting kosmos, or no starting kosmos).
-  - Done when: a config listing only `kosm` and the packages it `kosm add`s applies a kosmos using kitty, ghostty, Hyprland, Zen and nvim, and each package's tests pass in its own repository.
+- **13a. Kosm's packages in their own repositories**
+  - Do: the code is done and each package is a branch of this repository, named like the package, pinning kosm and its adapter packages by url. What is left is the human's: push kosm, create a repository per package (`kosm_css` ... `kosm_zen`) and push each branch to it as `master`.
+  - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
 - **13a2. Directory packages leave `zig-pkg/` out of their manifest**
   - Do: the `.paths` a directory package's manifest gets skip `zig-pkg/` like `zig-out/`: Zig 0.17 keeps fetched dependencies there, and a manifest then lists every file of them.
