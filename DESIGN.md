@@ -44,10 +44,11 @@ there is undecided, so ask.
 
 ## Theme
 
-`kosm.Theme` is the only thing every app receives: a palette, a mode and variations.
+`kosm.Theme` is the only thing every app receives: a palette, a mode, a background alpha and variations.
 
 - **Palette:** black and white are required; the 12 hues of the wheel (red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink, 30 deg apart) are optional, and a missing one is mixed from its nearest set neighbours by wheel position. Colors beyond the wheel belong to apps or to the kosmos' own constants.
 - **Mode:** dark or light, the one global fact apps use to pick their own background and foreground. There are no global roles (`bg`, `accent`, `button`); those belong to each app.
+- **Background alpha:** one alpha every app gives its own background, so a single value makes terminals, browser and editors translucent together.
 - **Variations:** named color transforms in families (lightness, emphasis, state, surface, line, contrast, alpha), tweaked once on the theme for every app.
 - Colors are OKLCH in f64. Modifiers also work in HSV, HSL, RGB and CMYK. A color outside sRGB is clipped when printed, with a warning.
 

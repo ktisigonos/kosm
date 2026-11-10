@@ -1,4 +1,5 @@
-//! What every module's `from` receives: the resolved palette, the mode and the variations (section 4).
+//! What every app's `from` receives: the resolved palette, the mode, the variations and the
+//! alpha of backgrounds.
 
 const Theme = @This();
 
@@ -13,6 +14,9 @@ palette: Palette.Resolved,
 mode: Mode,
 /// Shared transforms. Tweak them here once, for every module built from this theme.
 variations: Variations,
+/// Alpha of every app's background, 0 (clear) to 1 (opaque): terminals, the browser and
+/// editors follow it, so one value makes the whole desktop translucent. Default: 1.
+background_alpha: f64 = 1,
 
 /// The single global fact modules use to choose backgrounds and foregrounds.
 pub const Mode = enum { dark, light };
@@ -28,6 +32,14 @@ pub fn from(palette: Palette, mode: Mode) Theme {
     variations.contrast.on_muted.contrast.?.light = resolved.white;
     variations.surface.shadow.mix.?.toward = resolved.black;
     return .{ .palette = resolved, .mode = mode, .variations = variations };
+}
+
+/// `color` at `background_alpha`: what an app's `from` gives the color it uses as its
+/// background. Colors an app derives from that one keep the alpha.
+pub fn asBackground(theme: Theme, color: Color) Color {
+    var background = color;
+    background.alpha = theme.background_alpha;
+    return background;
 }
 
 const testing = std.testing;
@@ -57,4 +69,14 @@ test "a tweak on the theme reaches the composed variations read from it" {
     theme.variations.state.inactive = .{ .chroma = -1 };
     const result = theme.variations.state.selectedInactive().apply(theme.palette.cyan);
     try testing.expectEqual(0.0, result.chroma);
+}
+
+test "backgrounds are opaque unless the theme's alpha is lowered, and only alpha changes" {
+    var theme = from(test_palette, .dark);
+    try testing.expectEqual(theme.palette.black, theme.asBackground(theme.palette.black));
+    theme.background_alpha = 0.5;
+    const background = theme.asBackground(theme.palette.black);
+    try testing.expectEqual(0.5, background.alpha);
+    try testing.expectEqual(theme.palette.black.lightness, background.lightness);
+    try testing.expectEqual(1, theme.palette.black.alpha);
 }
