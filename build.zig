@@ -13,6 +13,8 @@ const repositories = "git+https://git.nnstdios.com/nnra6864/";
 /// The official packages `kosm init` adds to a new config, sorted by name.
 const official_packages = [_][]const u8{
     "kosm_adwsteamgtk",
+    "kosm_cs16",
+    "kosm_cs2",
     "kosm_css",
     "kosm_darkreader",
     "kosm_dunst",
@@ -21,8 +23,11 @@ const official_packages = [_][]const u8{
     "kosm_foot",
     "kosm_ghostty",
     "kosm_hyprland",
+    "kosm_hyprmouse",
+    "kosm_hyprtoolkit",
     "kosm_ini",
     "kosm_json",
+    "kosm_keyvalues",
     "kosm_kitty",
     "kosm_lua",
     "kosm_nvim",
