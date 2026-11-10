@@ -84,8 +84,9 @@ this file once everything in it is reviewed.
   background's alpha. Zen's `background` (and the `button` raised from it) carries the alpha.
   `kosm_nvim.transparent` is the one new derived switch: null turns into `true` when `base00`
   is not opaque.
-- Hyprland gets nothing: its `misc.background_color` is the color behind every window. Zen's
-  page background pref (`browser.display.background_color`) also stays opaque.
+- Hyprland gets nothing: its `misc.background_color` is the color behind every window.
+- Changed in 13i: Zen's page background pref (`browser.display.background_color`) takes the
+  alpha too, as Krystallos already set it by hand.
 - Kyanos still sets its alpha by hand; the starting kosmos is replaced in 13o.
 
 ## 13f. Curves, easings and Hyprland animations
@@ -135,3 +136,24 @@ this file once everything in it is reviewed.
   that `plugin` holds all fail the apply.
 - hyprglass is configured through `hl.plugin.hyprglass.config(...)` and `.layer(...)` calls of
   its own, not through `hl.config`, so this field does not cover it.
+
+## 13i. Browser extensions and Zen mods
+
+- Where the settings live: Dark Reader and Stylus keep theirs in the profile's extension
+  storage (`storage-sync-v2.sqlite` and IndexedDB), which only the running browser can write
+  safely. Zen mods keep theirs as ordinary about:config prefs.
+- Dark Reader: a new package, `kosm_darkreader`. It edits a settings file Dark Reader exported
+  (as Ricer did with `DarkReaderSettings.json`), changing only the set values, and you import
+  the file by hand after an apply. A missing export fails the apply, saying how to make one. It
+  is in `kosm init`'s list of official packages.
+- Stylus: no app. Its styles can't be written safely, and its export holds CSS inside JSON
+  strings, so a font can't be set by path. The goal of your global `Font` style is met without
+  the extension: `prefs.browser.display.use_document_fonts = .never` in `kosm_zen` shows every
+  page in your fontconfig fonts (step 13j sets those).
+- "Zen Zero": your profile has no mod of that name. I took it to be the installed Transparent
+  Zen mod (`mod.sameerasw.*` prefs: `zen_bg_color_enabled`, `zen_transparency_color`), now
+  typed prefs of `kosm_zen`. Tell me if Zen Zero is something else.
+- A page background that is not opaque (the theme's `background_alpha` below 1) now derives,
+  wherever they are null: `browser.tabs.allow_transparent_browser`,
+  `zen.widget.linux.transparency`, the mod's two prefs, and `#rrggbbaa` as the profile's color
+  format. A profile without the mod simply ignores the mod's prefs, so nothing is skipped.

@@ -12,10 +12,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
-- **13i. Browser extensions and Zen mods** `PLAN FIRST`
-  - Do: apps for Firefox extensions and Zen mods the human uses: Dark Reader (theme colors), Stylus (user styles, mainly the font) and the Zen mod Zen Zero (the browser's background). The plan finds where each keeps its settings (extension storage in the profile, a mod's prefs or CSS) and how kosm can write them, and says if one can't be written safely.
-  - Done when: each app writes its settings in a temp profile, and a profile missing the extension or mod is skipped or fails as the plan decides.
-
 - **13j. `kosm_fontconfig`** `PLAN FIRST`
   - Do: a fontconfig app setting the families `sans-serif`, `serif` and `monospace` prefer, each a list of fonts in fallback order (so a kosmos' fallback fonts reach every program using fontconfig, kitty included). It writes its own file the user's config reads (`~/.config/fontconfig/conf.d/`) rather than `fonts.conf`. The plan settles `generate` with an XML adapter (hand-written or a grammar, hard rule 5) against a `template`, and whether more fontconfig settings (hinting, antialiasing) are fields now.
   - Done when: tests show the generated file in fontconfig's format with each family's fallbacks in order, and a family left null not written.
