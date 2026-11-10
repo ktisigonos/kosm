@@ -12,9 +12,13 @@ const package_build = @import("build/package.zig");
 const repositories = "git+https://git.nnstdios.com/nnra6864/";
 /// The official packages `kosm init` adds to a new config, sorted by name.
 const official_packages = [_][]const u8{
+    "kosm_adwsteamgtk",
     "kosm_css",
     "kosm_darkreader",
+    "kosm_dunst",
+    "kosm_equibop",
     "kosm_fontconfig",
+    "kosm_foot",
     "kosm_ghostty",
     "kosm_hyprland",
     "kosm_ini",
@@ -22,8 +26,12 @@ const official_packages = [_][]const u8{
     "kosm_kitty",
     "kosm_lua",
     "kosm_nvim",
+    "kosm_ohmyposh",
+    "kosm_qtct",
     "kosm_toml",
+    "kosm_tuios",
     "kosm_userjs",
+    "kosm_vicinae",
     "kosm_xml",
     "kosm_zen",
 };
