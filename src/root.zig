@@ -9,6 +9,7 @@ pub const Variations = @import("Variations.zig");
 pub const Theme = @import("Theme.zig");
 pub const Mode = Theme.Mode;
 pub const Keyboard = @import("Keyboard.zig");
+pub const Curve = @import("curve.zig").Curve;
 pub const ColorFormat = @import("ColorFormat.zig");
 pub const Format = @import("Format.zig");
 pub const ColorChoice = @import("color_choice.zig").ColorChoice;
@@ -54,6 +55,7 @@ test {
     std.testing.refAllDecls(Modifier.Step);
     std.testing.refAllDecls(Variations);
     std.testing.refAllDecls(Keyboard);
+    std.testing.refAllDecls(@import("curve.zig"));
     std.testing.refAllDecls(ColorFormat);
     std.testing.refAllDecls(Format);
     std.testing.refAllDecls(Format.Resolved);
