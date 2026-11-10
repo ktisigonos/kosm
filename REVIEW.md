@@ -72,3 +72,18 @@ this file once everything in it is reviewed.
   Krystallos. zsh is not installed here, so its script has never run. Tests cover commands,
   packages and a config that does not build; kosmos names and params are covered by the
   runner's unit tests, not yet by an end-to-end test through a built config.
+
+## 13e. One background opacity for every app
+
+- It lives on the theme: `theme.background_alpha` (0..1, default 1), assigned after
+  `kosm.Theme.from`. The palette's black was not used: in light mode the background is white, and
+  a translucent black would also be a translucent foreground.
+- `theme.asBackground(color)` scales a color's alpha by it; each app's `from` calls it on the
+  color it picks as its background, so a palette black that already carries alpha still works.
+- kitty and ghostty needed no new field: their `background_opacity` already follows the
+  background's alpha. Zen's `background` (and the `button` raised from it) carries the alpha.
+  `kosm_nvim.transparent` is the one new derived switch: null turns into `true` when `base00`
+  is not opaque.
+- Hyprland gets nothing: its `misc.background_color` is the color behind every window. Zen's
+  page background pref (`browser.display.background_color`) also stays opaque.
+- Kyanos still sets its alpha by hand; the starting kosmos is replaced in 13o.
