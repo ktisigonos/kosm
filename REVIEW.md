@@ -157,3 +157,27 @@ this file once everything in it is reviewed.
   wherever they are null: `browser.tabs.allow_transparent_browser`,
   `zen.widget.linux.transparency`, the mod's two prefs, and `#rrggbbaa` as the profile's color
   format. A profile without the mod simply ignores the mod's prefs, so nothing is skipped.
+
+## 13j. `kosm_fontconfig`
+
+- Two new packages, both in `kosm init`'s official list: `kosm_xml`, a hand-written `xml`
+  adapter (no grammar) that writes whole files through `generate`, and `kosm_fontconfig`, the
+  app. `generate` with an adapter beat a template: templates can't loop over a list of fonts,
+  and the XML adapter is reused by 13l (CS2's fontconfig files) and 13n (Blender's theme).
+- `kosm_xml` maps a value tree to XML: a table's entries become child elements, a list
+  repeats its element, a key starting with `@` is an attribute, a root key starting with `!`
+  a declaration (`!DOCTYPE`). It cannot edit XML files yet, and an element can't hold both
+  text and children; neither is needed so far.
+- The app writes `~/.config/fontconfig/conf.d/50-kosm.conf` whole (fontconfig only reads
+  `conf.d` files starting with a digit). Fields `sans_serif`, `serif`, `monospace`, each a
+  list in fallback order, null not written; a family with an empty list fails. `from` sets
+  nothing, since `kosm.Theme` holds no fonts.
+- `binding` (default `.strong`) is a field I added: checked with `fc-match` in a temp
+  `XDG_CONFIG_HOME`, fontconfig's default weak binding let this system's Noto rules pass over
+  the listed fonts, while `binding="strong"` made the first installed listed font win. Your
+  current `fonts.conf` (from Ricer) uses weak; with one Maple Mono for every family it never
+  showed.
+- Hinting and antialiasing are not fields: nothing in Ricer or your config sets them, and
+  the system's `10-hinting-slight.conf` and `10-yes-antialias.conf` already do.
+- Krystallos does not use the app yet; that comes with the base kosmos (13o). Your
+  `fonts.conf` can then drop its aliases.

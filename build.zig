@@ -14,6 +14,7 @@ const repositories = "git+https://git.nnstdios.com/nnra6864/";
 const official_packages = [_][]const u8{
     "kosm_css",
     "kosm_darkreader",
+    "kosm_fontconfig",
     "kosm_ghostty",
     "kosm_hyprland",
     "kosm_ini",
@@ -23,6 +24,7 @@ const official_packages = [_][]const u8{
     "kosm_nvim",
     "kosm_toml",
     "kosm_userjs",
+    "kosm_xml",
     "kosm_zen",
 };
 
