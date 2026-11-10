@@ -215,8 +215,11 @@ const Contents = struct {
     imports: []const []const u8,
 };
 
-/// Walks `directory`, leaving out `zig-out/` and hidden entries (`.git`, `.zig-cache`), which
-/// are never part of a published package.
+/// What Zig itself puts in a package's directory: build output and fetched dependencies.
+const zig_directories = [_][]const u8{ "zig-out", "zig-pkg" };
+
+/// Walks `directory`, leaving out `zig-out/`, `zig-pkg/` and hidden entries (`.git`,
+/// `.zig-cache`), which are never part of a published package.
 fn listContents(context: Context, directory: []const u8) Error!Contents {
     const io = context.io;
     const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, directory });
@@ -230,7 +233,7 @@ fn listContents(context: Context, directory: []const u8) Error!Contents {
     var imports: std.ArrayList([]const u8) = .empty;
     while (walker.next(io) catch |err| return context.fail("cannot read {s}/: {s}", .{ directory, @errorName(err) })) |entry| {
         if (std.mem.startsWith(u8, entry.basename, ".")) continue;
-        if (entry.depth() == 1 and std.mem.eql(u8, entry.basename, "zig-out")) continue;
+        if (entry.depth() == 1 and isZigDirectory(entry.basename)) continue;
         switch (entry.kind) {
             .directory => walker.enter(io, entry) catch |err| return context.fail("cannot read {s}/{s}/: {s}", .{ directory, entry.path, @errorName(err) }),
             .file => {
@@ -246,6 +249,13 @@ fn listContents(context: Context, directory: []const u8) Error!Contents {
         }
     }
     return .{ .files = found.items, .imports = imports.items };
+}
+
+fn isZigDirectory(name: []const u8) bool {
+    for (zig_directories) |zig_directory| {
+        if (std.mem.eql(u8, name, zig_directory)) return true;
+    }
+    return false;
 }
 
 /// kosm first, then every installed or local directory package in `imports`, sorted by name.
@@ -415,6 +425,7 @@ const TestConfig = struct {
             .{ "kosmoi/nord/templates/theme.lua", "return {}\n" },
             .{ "kosmoi/nord/.zig-cache/h/x", "" },
             .{ "kosmoi/nord/zig-out/bin/x", "" },
+            .{ "kosmoi/nord/zig-pkg/fetched/root.zig", "const css = @import(\"kosm_css\");\n" },
             .{ "kosmoi/other/build.zig.zon", other_manifest },
             .{ "kosmoi/other/root.zig", "const kitty = @import(\"kosm_kitty\");\n" },
             .{ "kosmoi/base.zig", "" },

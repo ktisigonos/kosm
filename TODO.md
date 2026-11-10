@@ -12,10 +12,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
-- **13a2. Directory packages leave `zig-pkg/` out of their manifest**
-  - Do: the `.paths` a directory package's manifest gets skip `zig-pkg/` like `zig-out/`: Zig 0.17 keeps fetched dependencies there, and a manifest then lists every file of them.
-  - Done when: a test shows a directory package holding `zig-pkg/` keeps it out of `.paths`.
-
 - **13b. Keyboard layouts** `PLAN FIRST`
   - Do: a core type for keyboard layouts as XKB defines them (layout, variant, model, options, rules), so a kosmos lists `.{ .layout = "rs", .variant = "latin" }` entries instead of hand-aligned comma strings; apps write it the way their program spells it (Hyprland's `kb_layout`/`kb_variant`, and the other standard forms the plan lists).
   - Done when: tests show one list written as Hyprland's comma strings, empty variants kept in position, and a bad entry (a comma inside a name) failing naming the app.

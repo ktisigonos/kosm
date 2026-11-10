@@ -346,8 +346,8 @@ fn reachedLocals(b: *std.Build, entries: []const Entry, start: Entry) ![]const E
     return reached.items;
 }
 
-/// Every `@import` in the Zig files of `local`; a directory package leaves out `zig-out/` and
-/// hidden entries, like its manifest.
+/// Every `@import` in the Zig files of `local`; a directory package leaves out `zig-out/`,
+/// `zig-pkg/` and hidden entries, like its manifest.
 fn localImports(b: *std.Build, local: Local) ![]const []const u8 {
     const io = b.graph.io;
     var imports: std.ArrayList([]const u8) = .empty;
@@ -363,7 +363,7 @@ fn localImports(b: *std.Build, local: Local) ![]const []const u8 {
     defer walker.deinit();
     while (try walker.next(io)) |entry| {
         if (std.mem.startsWith(u8, entry.basename, ".")) continue;
-        if (entry.depth() == 1 and std.mem.eql(u8, entry.basename, "zig-out")) continue;
+        if (entry.depth() == 1 and (std.mem.eql(u8, entry.basename, "zig-out") or std.mem.eql(u8, entry.basename, "zig-pkg"))) continue;
         switch (entry.kind) {
             .directory => try walker.enter(io, entry),
             .file => if (std.mem.endsWith(u8, entry.basename, ".zig")) {
