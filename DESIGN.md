@@ -74,7 +74,7 @@ there is undecided, so ask.
 - A config project (`~/.config/kosm`, made by `kosm init`) is a Zig project depending on `kosm` by URL; `kosmoi/`, `apps/` and `adapters/` hold the user's own. A file there is private to its directory; a directory with `root.zig` is a package.
 - Package commands (`kosm add`, `remove`, `update`) wrap `zig fetch`; `packages.zon` remembers the ref to follow.
 - Kosm's own packages live in repositories of their own, like anyone's. `kosm init` adds every official package to a new config, with a starting kosmos that uses them.
-- A config holds one copy of each package: its own entry wins over the copy a package pins, and packages pinning different copies of a package the config doesn't list fail the build naming them.
+- A build holds one copy of each package: what a config (or a package built on its own) lists itself wins over the copy a package pins, and packages pinning different copies of a package it doesn't list fail the build naming them.
 - Zig is pinned to a tagged release, never master.
 
 ## Non-goals

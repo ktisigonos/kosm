@@ -493,3 +493,48 @@ test "packages pinning different copies of a package fail the build naming them,
     try add(context, two_url);
     try testing.expectEqualStrings("test_two provides:\n  adapter  probe\nadded test_two\n", fixture.stdout.written());
 }
+
+const other_kosm_fingerprint = 0xb9f914d328404232;
+const uses_kosm_fingerprint = 0x8ab91c7528404232;
+const probe_fingerprint = 0xdc80c92128404232;
+
+test "a package built on its own gives its dependencies its own copy of kosm" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const arena = fixture.arena.allocator();
+    // The kosm a dependency pins is another copy, here one without `Color`.
+    const other_kosm = try fixture.pin("kosm", try fixture.writeArchive("other_kosm", "kosm", other_kosm_fingerprint, "pub const other = true;\n", null));
+    const uses_kosm = try fixture.pin("test_uses_kosm", try fixture.writeArchive("test_uses_kosm", "test_uses_kosm", uses_kosm_fingerprint, "pub const Color = @import(\"kosm\").Color;\n", other_kosm));
+
+    const probe = try std.Io.Dir.path.join(arena, &.{ fixture.root, "probe" });
+    const repository = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, ".", arena);
+    try fixture.tmp.dir.createDirPath(testing.io, "probe");
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "probe/build.zig.zon", .data = try arena.print(
+        \\.{{
+        \\    .name = .test_probe,
+        \\    .version = "0.0.0",
+        \\    .fingerprint = 0x{x},
+        \\    .minimum_zig_version = "0.17.0",
+        \\    .dependencies = .{{
+        \\        .kosm = .{{ .path = "{f}" }},
+        \\        .test_uses_kosm = .{{ .url = "{s}", .hash = "{s}" }},
+        \\    }},
+        \\    .paths = .{{""}},
+        \\}}
+        \\
+    , .{ probe_fingerprint, std.zig.fmtString(try std.Io.Dir.path.relativeAlloc(arena, repository, null, probe, repository)), uses_kosm.url, uses_kosm.hash }) });
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "probe/build.zig", .data = "pub fn build(b: *@import(\"std\").Build) void {\n    @import(\"kosm\").package(b);\n}\n" });
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "probe/root.zig", .data =
+        \\test "the dependency sees this package's kosm" {
+        \\    try @import("std").testing.expect(@import("test_uses_kosm").Color == @import("kosm").Color);
+        \\}
+        \\
+    });
+
+    var context = fixture.context();
+    context.config = probe;
+    const built = try context.runZig(&.{ "build", "test" });
+    if (!built.term.success()) std.debug.print("{s}\n", .{built.stderr});
+    try testing.expect(built.term.success());
+}

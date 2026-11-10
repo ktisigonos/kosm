@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
+const unify = @import("unify.zig").unify;
 
 /// The directories holding local kosmoi, apps and adapters, in the config's root.
 const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
@@ -100,61 +101,14 @@ const Names = struct {
     }
 };
 
-/// Each package pins its own copies of kosm and other packages, and two copies of one package
-/// are two sets of different types (`Theme` and `Theme`), or one grammar's C symbols twice.
-/// Re-points every import of a package the config lists to the config's copy, through the whole
-/// module graph. Packages pinning different copies of a package the config does not list fail
-/// the build, returning false: only the config can say which copy they all use.
+/// Makes every package use the config's copy of each package the config lists. Packages pinning
+/// different copies of a package it does not list fail the build, returning false.
 fn unifyPackages(b: *std.Build, packages: []const Entry) bool {
-    var visited: std.AutoArrayHashMapUnmanaged(*std.Build.Module, void) = .empty;
-    var pinned: std.array_hash_map.String(Pin) = .empty;
-    var pending: std.ArrayList(Reached) = .empty;
-    for (packages) |package| pending.append(b.allocator, .{ .module = package.module, .name = package.name }) catch @panic("OOM");
-    while (pending.pop()) |importer| {
-        const seen = visited.getOrPut(b.allocator, importer.module) catch @panic("OOM");
-        if (seen.found_existing) continue;
-        // By index: `addImport` may grow the table even when it only replaces a value, which
-        // frees the slices `keys()` and `values()` return.
-        for (0..importer.module.import_table.count()) |index| {
-            const import_name = importer.module.import_table.keys()[index];
-            const imported = importer.module.import_table.values()[index];
-            if (listedPackage(packages, import_name)) |listed| {
-                importer.module.addImport(import_name, listed);
-                continue;
-            }
-            pending.append(b.allocator, .{ .module = imported, .name = import_name }) catch @panic("OOM");
-            if (!isPackageModule(imported, import_name)) continue;
-            const first = pinned.getOrPut(b.allocator, import_name) catch @panic("OOM");
-            if (!first.found_existing) {
-                first.value_ptr.* = .{ .module = imported, .importer = importer.name };
-            } else if (first.value_ptr.module != imported) {
-                fail(b, "packages '{s}' and '{s}' pin different copies of package '{s}'; add '{s}' to this config with kosm add, and both use that one", .{ first.value_ptr.importer, importer.name, import_name, import_name });
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-/// A module in the graph, under the name it was imported by.
-const Reached = struct { module: *std.Build.Module, name: []const u8 };
-
-/// The copy of an unlisted package met first, and the package importing it.
-const Pin = struct { module: *std.Build.Module, importer: []const u8 };
-
-/// The config's own copy of package `name`, or null when its manifest does not list it.
-fn listedPackage(packages: []const Entry, name: []const u8) ?*std.Build.Module {
-    for (packages) |package| {
-        if (std.mem.eql(u8, package.name, name)) return package.module;
-    }
-    return null;
-}
-
-/// Whether `module` is what a package exposes as `name`, rather than a private module of one:
-/// a package's module is named like the package in its own build.
-fn isPackageModule(module: *std.Build.Module, name: []const u8) bool {
-    const exposed = module.owner.modules.get(name) orelse return false;
-    return exposed == module;
+    const listed = b.allocator.alloc(std.Build.Module.Import, packages.len) catch @panic("OOM");
+    for (packages, listed) |package, *own| own.* = .{ .name = package.name, .module = package.module };
+    const conflict = unify(b, listed) orelse return true;
+    fail(b, "packages '{s}' and '{s}' pin different copies of package '{s}'; add '{s}' to this config with kosm add, and both use that one", .{ conflict.first_importer, conflict.second_importer, conflict.package, conflict.package });
+    return false;
 }
 
 const Local = struct {

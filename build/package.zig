@@ -2,12 +2,14 @@
 //! same directory works inside a config, when fetched by others, and when developed on its own.
 
 const std = @import("std");
+const unify = @import("unify.zig").unify;
 
 /// A manifest is a few hundred bytes; this only guards against reading something huge.
 const max_manifest_size = 1024 * 1024;
 
 /// Exposes `root.zig` as a module named like the package's manifest `.name`, importing
-/// every dependency by its name, and adds a `test` step running its tests.
+/// every dependency by its name, and adds a `test` step running its tests. The package's own
+/// copy of kosm and of every package it lists is the one its dependencies use too.
 pub fn package(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -28,6 +30,10 @@ pub fn package(b: *std.Build) void {
         // A dependency without a module of its own name (say, C sources) is wired up by hand.
         const module = dependency.builder.modules.get(dependency_name) orelse continue;
         imports.append(b.allocator, .{ .name = dependency_name, .module = module }) catch @panic("OOM");
+    }
+    if (unify(b, imports.items)) |conflict| {
+        b.getInstallStep().dependOn(&b.addFail(b.fmt("dependencies '{s}' and '{s}' pin different copies of package '{s}'; add '{s}' to build.zig.zon, and both use that one", .{ conflict.first_importer, conflict.second_importer, conflict.package, conflict.package })).step);
+        return;
     }
     const module = b.addModule(name, .{
         .root_source_file = b.path("root.zig"),

@@ -35,3 +35,16 @@ this file once everything in it is reviewed.
   not kept; `git diff` in your dotfiles shows the change.
 - Zig's own cache (`~/.cache/zig`) was given each pinned package, so the config builds before
   anything is pushed.
+
+## 13b. Keyboard layouts
+
+- The core type is `kosm.Keyboard`: `layouts` (each `.layout` and an optional `.variant`), `model`,
+  `options`, `rules`. It builds XKB's comma lists, the one form Hyprland, sway, `setxkbmap`, the
+  `XKB_DEFAULT_*` variables and KDE's `kxkbrc` all take. GNOME's `layout+variant` spelling is left
+  until an app needs it.
+- `kosm_hyprland` gets one field, `keyboard`, filling `input.kb_*` where they are null. No
+  variant at all writes no `kb_variant`.
+- A name with a comma or a space, or an empty layout or option, fails the apply.
+- Found on the way: a package built on its own ended up with two copies of kosm once it pinned a
+  newer kosm than its adapter package. The one-copy rule now covers a package's own build too
+  (`build/unify.zig`), so bumping one pin never forces bumping every package.
