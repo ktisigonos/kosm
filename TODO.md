@@ -12,10 +12,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
-- **13l. Apps needing new formats** `PLAN FIRST` `ASK`
-  - Do: hyprtoolkit and hyprmouse (hyprlang), the Zen logo (SVG), Counter-Strike 1.6's `TrackerScheme.res` (Valve KeyValues) and CS2's panorama `fonts.conf` and `42-repl-global.conf` (fontconfig XML, shared with 13j). The plan proposes an adapter, a template or a `block` for each (a grammar is a dependency).
-  - Do: CS2's fonts also need the cleanup Ricer's setup did by hand (removing the game's other font fields); the human describes the exact commands, and the plan says whether they run as the app's `reload` or as edits kosm makes itself.
-  - Done when: each app writes its file in a temp directory, and the CS2 cleanup is tested without touching the game's real files.
+- **13l. CS2's fonts.conf** `ASK`
+  - Do: CS2's panorama `fonts.conf` keeps the "Custom fonts" section Ricer's template added; the human describes the exact cleanup (which of the game's font fields to remove, or none now that `kosm_cs2` writes `42-repl-global.conf`), and the plan says whether it runs as the app's `reload` or as edits kosm makes itself (which needs an XML parser for `kosm_xml`).
+  - Done when: the cleanup is tested without touching the game's real files.
 
 - **13m. Kosm's own GTK and KDE themes** `PLAN FIRST` `ASK`
   - Do: generate a GTK theme (GTK 3 and 4 CSS, replacing Oomox) and KDE colors (`kdeglobals` and a `.colors` scheme) from the theme, so no outside theme tool is needed. The plan scopes what a minimal theme must cover and where it is installed.

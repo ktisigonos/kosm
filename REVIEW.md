@@ -226,5 +226,39 @@ fields.
   config is re-pinned to every package's newest commit; `kosm apply krystallos --diff` runs and
   shows each new file and the selecting edits. The diff also holds changes from earlier steps
   you haven't applied (Zen's transparency prefs and `kosm.css`, nvim's `kosm.lua`).
-- A kosm API gotcha I worked around: an `edit` path given as a runtime `[:0]const u8` (what
-  `@tagName` returns) is a compile error; it has to be coerced to `[]const u8` first.
+- A kosm API gotcha found here: an `edit` path given as a runtime `[:0]const u8` (what
+  `@tagName` returns) was a compile error. Fixed in kosm itself afterwards: sentinel-terminated
+  text is path text now, alone or inside a tuple.
+
+## 13l. Apps needing new formats (all but CS2's fonts.conf)
+
+- hyprtoolkit and hyprmouse: no hyprlang adapter. Both files are flat `key = value` lines, so
+  each package exports a `kosm_ini` dialect (`rgba(rrggbbaa)` for hyprtoolkit, `#rrggbb` for
+  hyprmouse). `kosm_hyprtoolkit` generates `~/.config/hypr/hyprtoolkit.conf`, the file
+  hyprtoolkit apps read; `kosm_hyprmouse` edits the keys already in `hyprmouse.conf` (it is
+  hyprmouse's file, and hyprmouse is not installed here, so it was only tested on its shipped
+  config).
+- The Zen logo (SVG): a `template` in `kosm_zen` (`Logo.zig`, `logo.svg`), written to
+  `~/.config/ZenBrowser/ZenLogo.svg`. No SVG adapter.
+- Counter-Strike 1.6: a new adapter package, `kosm_keyvalues`, hand-written (~140 lines), no
+  grammar. It edits `.res` and `.vdf` (quoted or bare tokens, blocks, `//` comments, `[$...]`
+  conditionals, `#base` / `#include`), writes every value quoted, colors `r g b a`. It has no
+  `serialize`: Valve's files are edited in place. `kosm_cs16` sets the 25 `Scheme.Colors`
+  (snake_case fields, `control_bg` for `ControlBG`) and every font's `name`. Steam's default
+  library is the default `file`; Krystallos points it at `~/Data/SteamLibrary`.
+- Counter-Strike 2: `kosm_cs2` generates `42-repl-global.conf` (the game's global replacements,
+  in `core/panorama/fonts/conf.d`) with `kosm_xml`: per replaced family a `font` rule
+  (`assign`) and a `pattern` rule (`prepend`, strong), as Ricer's file had. Checked with
+  `fc-match` in a temp config: Arial resolved to Maple Mono. **Not done: `fonts.conf`.** Your
+  current one has the guide's "Custom fonts" section at the end (Ricer's template). Kosm can't
+  edit XML in place yet (`kosm_xml` only writes whole files), and the cleanup is yours to
+  describe, so 13l stays in TODO for that part. Since fonts.conf's own comment says the
+  42-repl-global replacements still apply, the generated file alone may be enough; worth
+  trying in game before deciding.
+- `kosm init` lists the five new packages (`kosm_cs16`, `kosm_cs2`, `kosm_hyprmouse`,
+  `kosm_hyprtoolkit`, `kosm_keyvalues`).
+- Krystallos has `hyprtoolkit.zig`, `hyprmouse.zig`, `cs16.zig`, `cs2.zig` and a
+  `steam_library` value; `--diff` exits 0. Differences from Ricer's output you will see:
+  hyprtoolkit's accents are now cyan instead of bright white, `icon_theme = Ricer` is written
+  bare (hyprlang has no quoted strings, so the quotes were part of the name before), CS 1.6's
+  `ListBG` is opaque (it was alpha 0) and its dim text is grayer (the theme's emphasis steps).
