@@ -34,11 +34,11 @@ pub fn from(palette: Palette, mode: Mode) Theme {
     return .{ .palette = resolved, .mode = mode, .variations = variations };
 }
 
-/// `color` at `background_alpha`: what an app's `from` gives the color it uses as its
-/// background. Colors an app derives from that one keep the alpha.
+/// `color` with its alpha scaled by `background_alpha`: what an app's `from` gives the color it
+/// uses as its background. Colors an app derives from that one keep the alpha.
 pub fn asBackground(theme: Theme, color: Color) Color {
     var background = color;
-    background.alpha = theme.background_alpha;
+    background.alpha *= theme.background_alpha;
     return background;
 }
 
@@ -79,4 +79,8 @@ test "backgrounds are opaque unless the theme's alpha is lowered, and only alpha
     try testing.expectEqual(0.5, background.alpha);
     try testing.expectEqual(theme.palette.black.lightness, background.lightness);
     try testing.expectEqual(1, theme.palette.black.alpha);
+    // A palette color that already carries alpha keeps it, scaled.
+    var glass = theme.palette.black;
+    glass.alpha = 0.5;
+    try testing.expectEqual(0.25, theme.asBackground(glass).alpha);
 }
