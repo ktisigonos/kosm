@@ -4,9 +4,18 @@
     .fingerprint = 0x1c1b2d4e491943c, // Changing this has security and trust implications.
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
-        .kosm = .{ .path = "../.." },
-        .kosm_css = .{ .path = "../kosm_css" },
-        .kosm_userjs = .{ .path = "../kosm_userjs" },
+        .kosm = .{
+            .url = "git+https://git.nnstdios.com/nnra6864/kosm?ref=master#643fd4d1d5dc0b6ff4031807e49899b599b6b32f",
+            .hash = "kosm-0.0.0-YCShsnG0CQCP-gZBfKb_GOU17QDk8456-_sN89apPd2J",
+        },
+        .kosm_css = .{
+            .url = "git+https://git.nnstdios.com/nnra6864/kosm_css?ref=master#335d227fb63f784fde2bc375d973875532e42617",
+            .hash = "kosm_css-0.0.0-oGvx3AMZAACJot4e1UTaqndgNcmyAvLijBa2vuecpogE",
+        },
+        .kosm_userjs = .{
+            .url = "git+https://git.nnstdios.com/nnra6864/kosm_userjs?ref=master#a768c058a0a01eca29f80d7cfa46dbf355823700",
+            .hash = "kosm_userjs-0.0.0-f1tp765ZAAD8-PktbF1XA8474cOhFpmSQoKhGpMgSMBH",
+        },
     },
     .paths = .{
         "build.zig",
