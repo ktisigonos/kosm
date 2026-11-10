@@ -12,6 +12,8 @@ const Context = @import("Context.zig");
 const init_command = @import("init.zig");
 const list_command = @import("list.zig");
 const colors_command = @import("colors.zig");
+const complete_command = @import("complete.zig");
+const completions = @import("completions.zig");
 const new_command = @import("new.zig");
 const source_command = @import("source.zig");
 const Sources = @import("Sources.zig");
@@ -28,6 +30,7 @@ const usage =
     \\       kosm add <url>[#ref] [--config dir]
     \\       kosm remove <name> [--config dir]
     \\       kosm update [name] [--config dir]
+    \\       kosm completions fish|bash|zsh
     \\
 ;
 
@@ -61,6 +64,7 @@ pub fn main(init: std.process.Init) !u8 {
     switch (command) {
         .current => return printCurrent(init, &stderr.interface),
         .source => |directory| return source_command.source(init, directory, &stderr.interface),
+        .completions => |shell| return printCompletions(init, shell),
         else => {},
     }
     const builds = try Builds.prepare(init, &stderr.interface) orelse return 1;
@@ -69,7 +73,8 @@ pub fn main(init: std.process.Init) !u8 {
         .init => |init_arguments| return runInit(init, builds, init_arguments, &stderr.interface),
         .new => |new| return runNew(init, builds, new, &stderr.interface),
         .add, .remove, .update, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
-        .current, .source => unreachable, // Handled above.
+        .complete => |words| return runComplete(init, builds, words),
+        .current, .source, .completions => unreachable, // Handled above.
     }
 }
 
@@ -110,6 +115,7 @@ fn expectedArguments(command: []const u8) []const u8 {
     if (std.mem.eql(u8, command, "update")) return "at most one package name";
     if (std.mem.eql(u8, command, "list")) return "at most one kosmos, e.g. kosm list frost";
     if (std.mem.eql(u8, command, "colors")) return "one kosmos, e.g. kosm colors frost";
+    if (std.mem.eql(u8, command, "completions")) return "one shell: fish, bash or zsh";
     if (std.mem.eql(u8, command, "new")) return "a kind and a name, e.g. kosm new app my_bar";
     if (std.mem.eql(u8, command, "source")) return "at most one directory, or --default";
     return "no arguments";
@@ -219,12 +225,37 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .list => list_command.list(context, config_command.argument),
         // Blocks only where they can be drawn: a pipe or a file gets plain text.
         .colors => colors_command.colors(context, config_command.argument.?, try std.Io.File.stdout().isTty(init.io)),
-        .apply, .current, .init, .new, .source => unreachable, // main passes only the five above.
+        .apply, .current, .init, .new, .source, .completions, .complete => unreachable, // main passes only the five above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
         else => |other| return other,
     };
+    return 0;
+}
+
+/// Prints the completion script of `shell`.
+fn printCompletions(init: std.process.Init, shell: completions.Shell) !u8 {
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    try stdout.interface.writeAll(shell.script());
+    try stdout.interface.flush();
+    return 0;
+}
+
+/// Prints what completes the last of `words`, the words typed after `kosm`. Whatever goes
+/// wrong, a shell asking for completions gets no error, only fewer candidates.
+fn runComplete(init: std.process.Init, builds: Builds, words: []const []const u8) !u8 {
+    var given: ?[]const u8 = null;
+    for (words, 0..) |word, index| {
+        if (std.mem.eql(u8, word, "--config") and index + 2 < words.len) given = words[index + 1];
+    }
+    var discarded: std.Io.Writer.Discarding = .init(&.{});
+    const config = try configPath(init, given, &discarded.writer) orelse "";
+    var stdout_buffer: [4096]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    try complete_command.complete(builds.context(init, config, &stdout.interface, &discarded.writer), words);
+    try stdout.interface.flush();
     return 0;
 }
 
@@ -283,6 +314,10 @@ const Command = union(enum) {
     new: New,
     list: ConfigCommand,
     colors: ConfigCommand,
+    /// The shell whose completion script to print.
+    completions: completions.Shell,
+    /// The words typed after `kosm`, for the completion scripts; not in the usage.
+    complete: []const []const u8,
     add: ConfigCommand,
     remove: ConfigCommand,
     update: ConfigCommand,
@@ -305,6 +340,15 @@ const Command = union(enum) {
             }
             if (arguments.len > 2) return error.UnexpectedArgument;
             return .{ .source = if (arguments.len == 2) arguments[1] else null };
+        }
+        if (std.mem.eql(u8, arguments[0], "completions")) {
+            if (arguments.len < 2) return error.MissingArgument;
+            if (arguments.len > 2) return error.UnexpectedArgument;
+            return .{ .completions = std.meta.stringToEnum(completions.Shell, arguments[1]) orelse return error.UnexpectedArgument };
+        }
+        if (std.mem.eql(u8, arguments[0], "complete")) {
+            const separated = arguments.len > 1 and std.mem.eql(u8, arguments[1], "--");
+            return .{ .complete = arguments[if (separated) 2 else 1..] };
         }
         if (std.mem.eql(u8, arguments[0], "init")) return .{ .init = try .parse(arguments[1..], .none) };
         if (std.mem.eql(u8, arguments[0], "new")) return .{ .new = try .parse(arguments[1..]) };
@@ -429,6 +473,8 @@ test {
     std.testing.refAllDecls(init_command);
     std.testing.refAllDecls(list_command);
     std.testing.refAllDecls(colors_command);
+    std.testing.refAllDecls(complete_command);
+    std.testing.refAllDecls(completions);
     std.testing.refAllDecls(new_command);
     std.testing.refAllDecls(Sources);
 }
@@ -494,6 +540,9 @@ test "init takes only --config, and list at most one kosmos" {
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "list", "a", "b" }));
     try testing.expectEqualStrings("frost", (try Command.parse(arena.allocator(), &.{ "colors", "frost" })).colors.argument.?);
     try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{"colors"}));
+    try testing.expectEqual(completions.Shell.fish, (try Command.parse(arena.allocator(), &.{ "completions", "fish" })).completions);
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "completions", "csh" }));
+    try testing.expectEqual(2, (try Command.parse(arena.allocator(), &.{ "complete", "--", "apply", "" })).complete.len);
 }
 
 test "new takes a kind, a name and --config anywhere" {

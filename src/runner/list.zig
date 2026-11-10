@@ -35,6 +35,12 @@ pub fn list(init: std.process.Init, comptime sources: []const Source) !u8 {
         return 1;
     }
 
+    if (init.environ_map.get(interface.completions_variable) != null) {
+        try table.writeCompletions(&stdout.interface);
+        try stdout.interface.flush();
+        return 0;
+    }
+
     const status: u8 = if (filterArgument(arguments[1..])) |filter| status: {
         if (filter) |name| {
             table.writeKosmos(name, &stdout.interface) catch |err| switch (err) {
@@ -130,6 +136,11 @@ pub const Table = struct {
                 if (app.path.len == 0) try writer.print("  {s}\n", .{app.type_name}) else try writer.print("  {s}: {s}\n", .{ app.path, app.type_name });
             }
         }
+    }
+
+    /// One line per kosmos for the shell to offer: `frost.iced<TAB>kosmoi/frost.zig`.
+    pub fn writeCompletions(table: Table, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        for (table.kosmoi) |kosmos| try writer.print("{s}\t{s}\n", .{ kosmos.name, kosmos.origin });
     }
 
     /// Every kosmos name, comma-separated, or "none".

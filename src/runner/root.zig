@@ -7,6 +7,7 @@ const kosm = @import("kosm");
 const Record = @import("kosm_current");
 const interface = @import("kosm_interface");
 const Arguments = @import("Arguments.zig");
+const completions = @import("completions.zig");
 const discovery = @import("discovery.zig");
 const params = @import("params.zig");
 const report = @import("report.zig");
@@ -46,6 +47,12 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     if (!try interface.check(init.environ_map, &stderr.interface)) {
         try stderr.interface.flush();
         return 1;
+    }
+
+    if (init.environ_map.get(interface.completions_variable) != null) {
+        try completions.write(&stdout.interface, kosmos);
+        try stdout.interface.flush();
+        return 0;
     }
 
     const status: u8 = if (apply(init, kosmos, adapters, &diagnostics, streams)) 0 else |err| switch (err) {
@@ -219,6 +226,7 @@ test {
     std.testing.refAllDecls(@import("inspect.zig"));
     std.testing.refAllDecls(list_module);
     std.testing.refAllDecls(@import("colors.zig"));
+    std.testing.refAllDecls(completions);
     std.testing.refAllDecls(params);
     std.testing.refAllDecls(walk);
 }

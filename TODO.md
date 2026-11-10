@@ -12,10 +12,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
-- **13d. Shell completions** `PLAN FIRST`
-  - Do: `kosm` completions for fish, bash and zsh: commands, flags, kosmos and variant names, `--param` names and `--set` paths of the kosmos being applied.
-  - Done when: each shell's script is generated and tested for commands, kosmos names and a kosmos' params.
-
 - **13e. One background opacity for every app** `PLAN FIRST`
   - Do: the background's alpha is set once for the whole theme and every app follows it: terminals' opacity, Zen's background, and transparency switches such as `kosm_nvim.transparent`, which turns on when the alpha is below 1. The plan proposes where it lives (a `kosm.Theme` field, or the palette's black carrying alpha) and which of kosm's own apps gain a derived switch.
   - Done when: tests show one alpha below 1 makes each of kosm's own apps transparent, an alpha of 1 leaves them opaque and writes no switch, and a set field still wins.

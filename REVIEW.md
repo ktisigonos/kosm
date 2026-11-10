@@ -58,3 +58,17 @@ this file once everything in it is reviewed.
 - It shows black, white, gray and the 12 hues, with `mixed` after each one the palette does not
   set. Variations are not shown: they need a theme, which a kosmos builds inside its functions.
 - Blocks are background-colored spaces (truecolor), drawn only when kosm's stdout is a terminal.
+
+## 13d. Shell completions
+
+- `kosm completions fish|bash|zsh` prints a script; its header says where to install it. Each
+  script only calls a hidden `kosm complete -- <words>`, which prints the candidates, so what
+  completes is decided in one place and tested in Zig.
+- Kosmos names come from the config's lister, and a kosmos' `--param` flags and `--set` paths
+  from its runner, asked through the environment variable `KOSM_COMPLETIONS` (the interface
+  number went from 1 to 2). The first Tab on a kosmos builds its runner, so it can take seconds.
+- After `--config` the shell completes directories itself; a parameter's value is not completed.
+- Checked by hand: `bash -n` and `fish -n` accept their scripts, and `kosm complete` answers for
+  Krystallos. zsh is not installed here, so its script has never run. Tests cover commands,
+  packages and a config that does not build; kosmos names and params are covered by the
+  runner's unit tests, not yet by an end-to-end test through a built config.
