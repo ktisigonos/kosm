@@ -15,7 +15,6 @@ const new_command = @import("new.zig");
 const source_command = @import("source.zig");
 const Sources = @import("Sources.zig");
 const interface = @import("kosm_interface");
-const kosm_package = @import("kosm_package");
 
 const usage =
     \\usage: kosm init [--config dir]
@@ -149,7 +148,7 @@ fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stder
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     const context = builds.context(init, config, &stdout.interface, stderr);
-    init_command.init(context, .{ .url = kosm_package.url, .minimum_zig_version = kosm_package.minimum_zig_version }) catch |err| switch (err) {
+    init_command.init(context, init_command.official) catch |err| switch (err) {
         error.Failed => return 1,
         else => |other| return other,
     };
@@ -638,12 +637,13 @@ test "local packages provide their adapters and kosmoi wherever they live, and o
     try testing.expect(std.mem.find(u8, try testApplyDiff(context, "my_bar"), "+bar written\n") != null);
 
     try tmp.dir.deleteFile(testing.io, "project/apps/broken.zig");
+    // The starting kosmos needs the real official packages, so it can't be listed here.
+    try tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
     stdout.clearRetainingCapacity();
     try list_command.list(context, null);
     try testing.expect(std.mem.startsWith(u8, stdout.written(),
         \\kosmoi:
         \\  frost   kosmoi/frost.zig
-        \\  kyanos  kosmoi/kyanos.zig
         \\  nord    kosmoi/nord/
         \\  my_bar  apps/my_bar/
         \\

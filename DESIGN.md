@@ -60,6 +60,7 @@ there is undecided, so ask.
 - An app writes its own file that the program includes, rather than the program's main config. Making the program read it is the user's job, except for an app's own visible include block, which the user can turn off. Kosm never creates backups.
 - Each written file has a `kosm.Format` (color spelling, booleans, float precision) layered from the user's assignment, the app's default, the adapter's and kosm's.
 - An app may reload its program after a successful apply; a failed reload is a warning.
+- An app's package exports the adapters it writes with, so a config needs only that package to rice the program.
 
 ## Rules for adapters and edits
 
@@ -72,7 +73,8 @@ there is undecided, so ask.
 
 - A config project (`~/.config/kosm`, made by `kosm init`) is a Zig project depending on `kosm` by URL; `kosmoi/`, `apps/` and `adapters/` hold the user's own. A file there is private to its directory; a directory with `root.zig` is a package.
 - Package commands (`kosm add`, `remove`, `update`) wrap `zig fetch`; `packages.zon` remembers the ref to follow.
-- The built-in packages live in this repo under `packages/` and kosm provides them to every config from its own sources, until they move to repositories of their own (`TODO.md`).
+- Kosm's own packages live in repositories of their own, like anyone's. `kosm init` adds every official package to a new config, with a starting kosmos that uses them.
+- A config holds one copy of each package: its own entry wins over the copy a package pins, and packages pinning different copies of a package the config doesn't list fail the build naming them.
 - Zig is pinned to a tagged release, never master.
 
 ## Non-goals

@@ -274,13 +274,21 @@ const Fixture = struct {
     /// Packs a package `name` whose root.zig is `root` into `<name>.tar` and returns its url.
     /// The package imports a stub kosm, which the config replaces with its own.
     fn writePackage(fixture: *Fixture, name: []const u8, fingerprint: u64, root: []const u8) ![]const u8 {
+        return fixture.writeArchive(name, name, fingerprint, root, null);
+    }
+
+    /// Like `writePackage`, into `<file_stem>.tar`, so two copies of one package can exist. A
+    /// package given a `dependency` pins it by url and hash and imports it by name.
+    fn writeArchive(fixture: *Fixture, file_stem: []const u8, name: []const u8, fingerprint: u64, root: []const u8, dependency: ?Pin) ![]const u8 {
         const arena = fixture.arena.allocator();
         var archive: std.Io.Writer.Allocating = .init(arena);
         var tar: std.tar.Writer = .{ .underlying_writer = &archive.writer };
+        const dependencies = if (dependency) |pinned| try arena.print(" .dependencies = .{{ .{s} = .{{ .url = \"{s}\", .hash = \"{s}\" }} }},", .{ pinned.name, pinned.url, pinned.hash }) else "";
         try tar.writeFileBytes("build.zig.zon", try arena.print(
-            \\.{{ .name = .{s}, .version = "0.0.0", .fingerprint = 0x{x}, .minimum_zig_version = "0.17.0", .paths = .{{""}} }}
+            \\.{{ .name = .{s}, .version = "0.0.0", .fingerprint = 0x{x}, .minimum_zig_version = "0.17.0",{s} .paths = .{{""}} }}
             \\
-        , .{ name, fingerprint }), .{});
+        , .{ name, fingerprint, dependencies }), .{});
+        const dependency_import = if (dependency) |pinned| try arena.print("    module.addImport(\"{s}\", b.dependency(\"{s}\", .{{}}).module(\"{s}\"));\n", .{ pinned.name, pinned.name, pinned.name }) else "";
         try tar.writeFileBytes("build.zig", try arena.print(
             \\const std = @import("std");
             \\pub fn build(b: *std.Build) void {{
@@ -288,15 +296,22 @@ const Fixture = struct {
             \\    _ = b.standardOptimizeOption(.{{}});
             \\    const module = b.addModule("{s}", .{{ .root_source_file = b.path("root.zig") }});
             \\    module.addImport("kosm", b.createModule(.{{ .root_source_file = b.path("kosm_stub.zig") }}));
-            \\}}
+            \\{s}}}
             \\
-        , .{name}), .{});
+        , .{ name, dependency_import }), .{});
         try tar.writeFileBytes("kosm_stub.zig", "", .{});
         try tar.writeFileBytes("root.zig", root, .{});
         try tar.finishPedantically();
-        const file_name = try arena.print("{s}.tar", .{name});
+        const file_name = try arena.print("{s}.tar", .{file_stem});
         try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = file_name, .data = archive.written() });
         return arena.print("file://{s}/{s}", .{ fixture.root, file_name });
+    }
+
+    /// Fetches package `name` from `url` into the tests' cache and returns how a manifest pins it.
+    fn pin(fixture: *Fixture, name: []const u8, url: []const u8) !Pin {
+        const fetched = try fixture.context().runZig(&.{ "fetch", url });
+        try testing.expect(fetched.term.success());
+        return .{ .name = name, .url = url, .hash = std.mem.trim(u8, fetched.stdout, " \t\r\n") };
     }
 
     /// A config file's contents, or null when it does not exist.
@@ -308,6 +323,9 @@ const Fixture = struct {
         };
     }
 };
+
+/// A dependency as a test package's manifest pins it.
+const Pin = struct { name: []const u8, url: []const u8, hash: []const u8 };
 
 const adapter_fingerprint = 0xc59db0b428404232;
 const empty_fingerprint = 0x63199bcf55242cf4;
@@ -448,4 +466,30 @@ test "a kosmos from an installed package applies by the package's name" {
     const missing = try context.runZig(&.{ "build", "-Dkosmos=test_missing" });
     try testing.expect(!missing.term.success());
     try testing.expect(std.mem.find(u8, missing.stderr, "installed packages: test_kosmoi") != null);
+}
+
+const shared_fingerprint = 0x8455f39528404232;
+const one_fingerprint = 0x03115a3628404232;
+const two_fingerprint = 0x68b756a128404232;
+
+const shared_adapter_root = "pub const adapter = @import(\"test_shared\").adapter;\n";
+
+test "packages pinning different copies of a package fail the build naming them, until the config lists it" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const context = fixture.context();
+    const first_copy = try fixture.pin("test_shared", try fixture.writeArchive("shared_first", "test_shared", shared_fingerprint, adapterRoot("probe"), null));
+    const second_copy = try fixture.pin("test_shared", try fixture.writeArchive("shared_second", "test_shared", shared_fingerprint, adapterRoot("other"), null));
+    const two_url = try fixture.writeArchive("test_two", "test_two", two_fingerprint, shared_adapter_root, second_copy);
+    try add(context, try fixture.writeArchive("test_one", "test_one", one_fingerprint, shared_adapter_root, first_copy));
+
+    try testing.expectError(error.Failed, add(context, two_url));
+    try testing.expect(std.mem.find(u8, fixture.stderr.written(), "packages 'test_two' and 'test_one' pin different copies of package 'test_shared'; add 'test_shared' to this config with kosm add, and both use that one") != null);
+    try testing.expect(std.mem.find(u8, (try fixture.read("build.zig.zon")).?, ".test_two") == null);
+
+    try add(context, first_copy.url);
+    fixture.stdout.clearRetainingCapacity();
+    try add(context, two_url);
+    try testing.expectEqualStrings("test_two provides:\n  adapter  probe\nadded test_two\n", fixture.stdout.written());
 }

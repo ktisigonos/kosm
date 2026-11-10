@@ -83,9 +83,6 @@ fn checkName(context: Context, name: []const u8) Error!void {
     for (installed) |package| {
         if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the installed package '{s}'; kosmoi, apps, adapters and packages need unique names", .{ name, name });
     }
-    for (@import("kosm_package").built_in_packages) |package| {
-        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the built-in package '{s}' kosm provides; kosmoi, apps, adapters and packages need unique names", .{ name, name });
-    }
 }
 
 const testing = std.testing;
@@ -134,7 +131,7 @@ const test_manifest =
     \\    .minimum_zig_version = "0.17.0",
     \\    .dependencies = .{
     \\        .kosm = .{ .path = "../kosm" },
-    \\        .kosm_kitty = .{ .path = "../kosm/packages/kosm_kitty" },
+    \\        .kosm_kitty = .{ .path = "../kosm_kitty" },
     \\    },
     \\    .paths = .{""},
     \\}
@@ -155,7 +152,7 @@ test "new writes the scaffold with its name, and build files depending on what i
     try testing.expect(std.mem.find(u8, root, name_placeholder) == null);
     const written = try test_config.tmp.dir.readFileAlloc(testing.io, "kosmoi/frost/build.zig.zon", arena, .limited(1024 * 1024));
     try testing.expect(std.mem.find(u8, written, ".name = .frost,") != null);
-    try testing.expect(std.mem.find(u8, written, "        .kosm_kitty = .{\n            .path = \"../../../kosm/packages/kosm_kitty\",\n") != null);
+    try testing.expect(std.mem.find(u8, written, "        .kosm_kitty = .{\n            .path = \"../../../kosm_kitty\",\n") != null);
 }
 
 test "new refuses a name that is taken or no identifier, and writes nothing" {
@@ -169,14 +166,12 @@ test "new refuses a name that is taken or no identifier, and writes nothing" {
     try testing.expectError(error.Failed, new(test_config.context(), .app, "frost"));
     try testing.expectError(error.Failed, new(test_config.context(), .kosmos, "lang"));
     try testing.expectError(error.Failed, new(test_config.context(), .adapter, "kosm_kitty"));
-    try testing.expectError(error.Failed, new(test_config.context(), .app, "kosm_lua"));
     try testing.expectError(error.Failed, new(test_config.context(), .app, "my-bar"));
     try testing.expectError(error.Failed, new(test_config.context(), .app, "std"));
     try testing.expectEqualStrings(
         \\error: 'frost' is taken by kosmoi/frost.zig; kosmoi, apps, adapters and packages need unique names
         \\error: 'lang' is taken by adapters/lang; kosmoi, apps, adapters and packages need unique names
         \\error: 'kosm_kitty' is taken by the installed package 'kosm_kitty'; kosmoi, apps, adapters and packages need unique names
-        \\error: 'kosm_lua' is taken by the built-in package 'kosm_lua' kosm provides; kosmoi, apps, adapters and packages need unique names
         \\error: 'my-bar' cannot be a package name: it must be a Zig identifier, like my_bar
         \\error: 'std' cannot be a package name: Zig's own @import("std") already means something
         \\

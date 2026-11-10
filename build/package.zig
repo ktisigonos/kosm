@@ -2,14 +2,12 @@
 //! same directory works inside a config, when fetched by others, and when developed on its own.
 
 const std = @import("std");
-const built_in = @import("built_in.zig");
 
 /// A manifest is a few hundred bytes; this only guards against reading something huge.
 const max_manifest_size = 1024 * 1024;
 
 /// Exposes `root.zig` as a module named like the package's manifest `.name`, importing
-/// every dependency by its name and the built-in packages `kosm` provides, and adds a
-/// `test` step running its tests.
+/// every dependency by its name, and adds a `test` step running its tests.
 pub fn package(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -31,7 +29,6 @@ pub fn package(b: *std.Build) void {
         const module = dependency.builder.modules.get(dependency_name) orelse continue;
         imports.append(b.allocator, .{ .name = dependency_name, .module = module }) catch @panic("OOM");
     }
-    addBuiltIns(b, name, &imports, target, optimize);
     const module = b.addModule(name, .{
         .root_source_file = b.path("root.zig"),
         .target = target,
@@ -41,24 +38,6 @@ pub fn package(b: *std.Build) void {
     for (grammars.items) |grammar| addGrammar(b, module, grammar);
     const tests = b.addTest(.{ .root_module = module });
     b.step("test", "Run the package's tests").dependOn(&b.addRunArtifact(tests).step);
-}
-
-/// Adds the built-in packages the `kosm` dependency provides to `imports`, leaving out the package
-/// itself and any name a dependency already supplies (a built-in developed on its own in this repo).
-fn addBuiltIns(b: *std.Build, name: []const u8, imports: *std.ArrayList(std.Build.Module.Import), target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
-    const has_kosm = for (b.available_deps) |available| {
-        if (std.mem.eql(u8, available[0], "kosm")) break true;
-    } else false;
-    if (!has_kosm) return;
-    const kosm = b.dependency("kosm", .{ .target = target, .optimize = optimize });
-    for (built_in.packages, built_in.modulesOf(kosm)) |built_in_package, found| {
-        const module = found orelse continue;
-        if (std.mem.eql(u8, built_in_package.name, name)) continue;
-        const supplied = for (imports.items) |import| {
-            if (std.mem.eql(u8, import.name, built_in_package.name)) break true;
-        } else false;
-        if (!supplied) imports.append(b.allocator, .{ .name = built_in_package.name, .module = module }) catch @panic("OOM");
-    }
 }
 
 /// Whether `dependency` is a tree-sitter grammar: it holds a generated `src/parser.c`.

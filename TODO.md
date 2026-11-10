@@ -13,6 +13,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the plan settles where the packages live, whether their git history is kept (`git subtree split`, run by the human), and what `kosm init` adds once there are no built-ins (the app packages by URL with the starting kosmos, or no starting kosmos).
   - Done when: a config listing only `kosm` and the packages it `kosm add`s applies a kosmos using kitty, ghostty, Hyprland, Zen and nvim, and each package's tests pass in its own repository.
 
+- **13a2. Directory packages leave `zig-pkg/` out of their manifest**
+  - Do: the `.paths` a directory package's manifest gets skip `zig-pkg/` like `zig-out/`: Zig 0.17 keeps fetched dependencies there, and a manifest then lists every file of them.
+  - Done when: a test shows a directory package holding `zig-pkg/` keeps it out of `.paths`.
+
 - **13b. Keyboard layouts** `PLAN FIRST`
   - Do: a core type for keyboard layouts as XKB defines them (layout, variant, model, options, rules), so a kosmos lists `.{ .layout = "rs", .variant = "latin" }` entries instead of hand-aligned comma strings; apps write it the way their program spells it (Hyprland's `kb_layout`/`kb_variant`, and the other standard forms the plan lists).
   - Done when: tests show one list written as Hyprland's comma strings, empty variants kept in position, and a bad entry (a comma inside a name) failing naming the app.
@@ -26,8 +30,8 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: each shell's script is generated and tested for commands, kosmos names and a kosmos' params.
 
 - **13e. One background opacity for every app** `PLAN FIRST`
-  - Do: the background's alpha is set once for the whole theme and every app follows it: terminals' opacity, Zen's background, and transparency switches such as `kosm_nvim.transparent`, which turns on when the alpha is below 1. The plan proposes where it lives (a `kosm.Theme` field, or the palette's black carrying alpha) and which built-in apps gain a derived switch.
-  - Done when: tests show one alpha below 1 makes each built-in app transparent, an alpha of 1 leaves them opaque and writes no switch, and a set field still wins.
+  - Do: the background's alpha is set once for the whole theme and every app follows it: terminals' opacity, Zen's background, and transparency switches such as `kosm_nvim.transparent`, which turns on when the alpha is below 1. The plan proposes where it lives (a `kosm.Theme` field, or the palette's black carrying alpha) and which of kosm's own apps gain a derived switch.
+  - Done when: tests show one alpha below 1 makes each of kosm's own apps transparent, an alpha of 1 leaves them opaque and writes no switch, and a set field still wins.
 
 - **13f. Curves, easings and Hyprland animations** `PLAN FIRST`
   - Do: a core curve type (cubic bezier by two control points, and spring by mass, stiffness and damping) and named standard easings (CSS `ease`, `ease-in-out`, ..., and the `easeOutExpo` family) that translate to bezier points, usable by any app.

@@ -5,15 +5,33 @@ const std = @import("std");
 const Context = @import("Context.zig");
 const Packages = @import("Packages.zig");
 const manifest = @import("manifest.zig");
+const kosm_package = @import("kosm_package");
 
 pub const Error = Context.Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
 
-/// What a new config's manifest says about kosm.
+/// What a new config's manifest depends on.
 pub const Kosm = struct {
     /// Where `zig fetch` gets kosm: its git URL, or in tests a local directory.
     url: []const u8,
     /// Copied into a new config's manifest.
     minimum_zig_version: []const u8,
+    /// The official packages a new config starts with, which the starting kosmos imports.
+    packages: []const Packages.Package,
+};
+
+/// What `kosm init` gives a real config: kosm and every official package, each fetched from the
+/// repository of its name.
+pub const official: Kosm = .{
+    .url = kosm_package.repositories ++ "kosm",
+    .minimum_zig_version = kosm_package.minimum_zig_version,
+    .packages = &official_packages,
+};
+
+const official_packages = blk: {
+    var packages: [kosm_package.official_packages.len]Packages.Package = undefined;
+    for (kosm_package.official_packages, &packages) |name, *package| package.* = .{ .name = name, .url = kosm_package.repositories ++ name };
+    const final = packages;
+    break :blk final;
 };
 
 /// The name in a new config's manifest.
@@ -27,59 +45,63 @@ const build_file =
     \\
 ;
 const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
-/// The starting kosmos written into an empty `kosmoi/`.
+/// The starting kosmos written into the empty `kosmoi/` of a new config.
 const starting_kosmos = .{ .path = "kosmoi/kyanos.zig", .source = @embedFile("kosmoi/kyanos.zig") };
 
 /// Creates the config project at `context.config` (which must exist) from what is missing in
 /// it, printing each file and directory it creates.
 pub fn init(context: Context, kosm: Kosm) Error!void {
-    // Fetching kosm takes the network, so it happens only for a manifest that is really missing,
-    // and before anything is created, so a failed fetch leaves the directory as it was.
+    // Fetching takes the network, so it happens only for a manifest that is really missing, and
+    // before anything is created, so a failed fetch leaves the directory as it was.
     const new_manifest = if (try exists(context, "build.zig.zon")) null else try configManifest(context, kosm);
     var created = false;
     created = try createFile(context, "build.zig", build_file) or created;
     if (new_manifest) |bytes| created = try createFile(context, "build.zig.zon", bytes) or created;
     created = try createFile(context, Packages.file_name, try packagesFile(context.arena, if (new_manifest != null) kosm else null)) or created;
     for (local_directories) |directory| created = try createDirectory(context, directory) or created;
-    if (try isEmpty(context, "kosmoi")) created = try createFile(context, starting_kosmos.path, starting_kosmos.source) or created;
+    // The starting kosmos imports the official packages, which only a new manifest is sure to list.
+    if (new_manifest != null and try isEmpty(context, "kosmoi")) created = try createFile(context, starting_kosmos.path, starting_kosmos.source) or created;
     if (!created) try context.stdout.print("{s} is already a complete config project\n", .{context.config});
 }
 
-/// A new `build.zig.zon` depending on kosm as `zig fetch --save` writes it, its url pinned to
-/// the commit it resolved to, with the package hash. The built-in packages need no entry:
-/// kosm provides them.
+/// A new `build.zig.zon` depending on kosm and the official packages as `zig fetch --save`
+/// writes them: each url pinned to the commit it resolved to, with the package hash.
 fn configManifest(context: Context, kosm: Kosm) Error![]const u8 {
-    const resolved = try fetchKosm(context, kosm);
-    return context.arena.print(
+    var text: std.Io.Writer.Allocating = .init(context.arena);
+    const writer = &text.writer;
+    try writer.print(
         \\.{{
         \\    .name = .{s},
         \\    .version = "0.0.0",
         \\    .fingerprint = 0x{x}, // Changing this has security and trust implications.
         \\    .minimum_zig_version = "{f}",
         \\    .dependencies = .{{
-        \\        .kosm = .{{
-        \\            .url = "{f}",
-        \\            .hash = "{f}",
-        \\        }},
-        \\    }},
-        \\    .paths = .{{""}},
-        \\}}
         \\
-    , .{
-        config_name,
-        manifest.fingerprint(context.io, config_name),
-        std.zig.fmtString(kosm.minimum_zig_version),
-        std.zig.fmtString(resolved.url.?),
-        std.zig.fmtString(resolved.hash.?),
-    });
+    , .{ config_name, manifest.fingerprint(context.io, config_name), std.zig.fmtString(kosm.minimum_zig_version) });
+    for (try fetchDependencies(context, kosm)) |dependency| {
+        try writer.print(
+            \\        .{s} = .{{
+            \\            .url = "{f}",
+            \\            .hash = "{f}",
+            \\        }},
+            \\
+        , .{ dependency.name, std.zig.fmtString(dependency.url.?), std.zig.fmtString(dependency.hash.?) });
+    }
+    try writer.writeAll(
+        \\    },
+        \\    .paths = .{""},
+        \\}
+        \\
+    );
+    return text.written();
 }
 
-/// Where `fetchKosm` lets `zig fetch --save` write, inside the config's own Zig cache.
+/// Where `fetchDependencies` lets `zig fetch --save` write, inside the config's own Zig cache.
 const fetch_directory = ".zig-cache/kosm-init";
 
-/// Runs `zig fetch --save=kosm` against a throwaway manifest and returns the entry it wrote,
-/// so the url is exactly what Zig resolved it to.
-fn fetchKosm(context: Context, kosm: Kosm) Error!manifest.Dependency {
+/// Runs `zig fetch --save` for kosm and every official package against a throwaway manifest and
+/// returns the entries it wrote, kosm first, so each url is exactly what Zig resolved it to.
+fn fetchDependencies(context: Context, kosm: Kosm) Error![]const manifest.Dependency {
     const directory = try std.Io.Dir.path.join(context.arena, &.{ context.config, fetch_directory });
     std.Io.Dir.cwd().createDirPath(context.io, directory) catch |err|
         return context.fail("cannot create {s}: {s}", .{ directory, @errorName(err) });
@@ -97,12 +119,14 @@ fn fetchKosm(context: Context, kosm: Kosm) Error!manifest.Dependency {
     std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = build_path, .data = "pub fn build(_: *@import(\"std\").Build) void {}\n" }) catch |err|
         return context.fail("cannot create {s}: {s}", .{ build_path, @errorName(err) });
 
+    const wanted = try wantedPackages(context.arena, kosm);
     var in_directory = context;
     in_directory.config = directory;
-    const fetched = try in_directory.runZig(&.{ "fetch", "--save=kosm", kosm.url });
-    if (!fetched.term.success()) {
+    for (wanted) |package| {
+        const fetched = try in_directory.runZig(&.{ "fetch", try context.arena.print("--save={s}", .{package.name}), try package.fetchArgument(context.arena) });
+        if (fetched.term.success()) continue;
         try context.stderr.writeAll(fetched.stderr);
-        return context.fail("zig fetch could not fetch kosm from {s}, so build.zig.zon was not created", .{kosm.url});
+        return context.fail("zig fetch could not fetch {s} from {s}, so build.zig.zon was not created", .{ package.name, package.url });
     }
     const saved = std.Io.Dir.cwd().readFileAllocOptions(context.io, throwaway_path, context.arena, .limited(1024 * 1024), .of(u8), 0) catch |err|
         return context.fail("cannot read {s}: {s}", .{ throwaway_path, @errorName(err) });
@@ -110,17 +134,28 @@ fn fetchKosm(context: Context, kosm: Kosm) Error!manifest.Dependency {
         error.OutOfMemory => return error.OutOfMemory,
         error.InvalidManifest => return context.fail("zig fetch --save wrote a manifest kosm cannot read: {s}", .{throwaway_path}),
     };
-    for (dependencies) |dependency| {
-        if (std.mem.eql(u8, dependency.name, "kosm") and dependency.url != null and dependency.hash != null) return dependency;
+    const resolved = try context.arena.alloc(manifest.Dependency, wanted.len);
+    for (wanted, resolved) |package, *slot| {
+        slot.* = for (dependencies) |dependency| {
+            if (std.mem.eql(u8, dependency.name, package.name) and dependency.url != null and dependency.hash != null) break dependency;
+        } else return context.fail("zig fetch --save wrote no url and hash for {s} into {s}", .{ package.name, throwaway_path });
     }
-    return context.fail("zig fetch --save wrote no url and hash for kosm into {s}", .{throwaway_path});
+    return resolved;
 }
 
-/// A new `packages.zon`, following kosm's default branch when `kosm` was just added.
+/// Kosm itself, then the official packages: everything a new config depends on.
+fn wantedPackages(arena: std.mem.Allocator, kosm: Kosm) std.mem.Allocator.Error![]const Packages.Package {
+    return std.mem.concat(arena, Packages.Package, &.{ &.{.{ .name = "kosm", .url = kosm.url }}, kosm.packages });
+}
+
+/// A new `packages.zon`, following the default branch of kosm and of every official package
+/// when a new manifest lists them.
 fn packagesFile(arena: std.mem.Allocator, kosm: ?Kosm) std.mem.Allocator.Error![]const u8 {
     var text: std.Io.Writer.Allocating = .init(arena);
     var packages: Packages = .{};
-    if (kosm) |added| try packages.put(arena, .{ .name = "kosm", .url = added.url });
+    if (kosm) |added| {
+        for (try wantedPackages(arena, added)) |package| try packages.put(arena, package);
+    }
     packages.write(&text.writer) catch return error.OutOfMemory;
     return text.written();
 }
@@ -173,8 +208,8 @@ fn isEmpty(context: Context, name: []const u8) Error!bool {
 const testing = std.testing;
 const test_kosm = @import("test_kosm.zig");
 
-/// A temp directory holding a stub kosm package to fetch, offline, and the config project
-/// `project/`. Zig's global cache is the tests' own, so nothing lands in ~/.cache/zig.
+/// A temp directory holding a stub kosm and a stub official package to fetch, offline, and the
+/// config project `project/`. Zig's global cache is the tests' own, so nothing lands in ~/.cache/zig.
 const TestConfig = struct {
     tmp: testing.TmpDir,
     arena: std.heap.ArenaAllocator,
@@ -237,7 +272,7 @@ const TestConfig = struct {
     }
 };
 
-test "init in an empty directory creates the whole project, depending on kosm alone by url" {
+test "init in an empty directory creates the whole project, depending on kosm and the official packages by url" {
     var test_config: TestConfig = undefined;
     try test_config.init();
     defer test_config.deinit();
@@ -258,10 +293,13 @@ test "init in an empty directory creates the whole project, depending on kosm al
     const arena = test_config.arena.allocator();
     const written: [:0]const u8 = try arena.dupeSentinel(u8, (try test_config.read("build.zig.zon")).?, 0);
     const dependencies = try manifest.dependencies(arena, written);
-    try testing.expectEqual(1, dependencies.len);
+    try testing.expectEqual(2, dependencies.len);
     try testing.expectEqualStrings("kosm", dependencies[0].name);
     try testing.expectEqualStrings(test_config.kosm.url, dependencies[0].url.?);
     try testing.expect(std.mem.startsWith(u8, dependencies[0].hash.?, "kosm-0.0.0-"));
+    try testing.expectEqualStrings("kosm_kitty", dependencies[1].name);
+    try testing.expectEqualStrings(test_config.kosm.packages[0].url, dependencies[1].url.?);
+    try testing.expect(std.mem.startsWith(u8, dependencies[1].hash.?, "kosm_kitty-0.0.0-"));
     try testing.expect(std.mem.find(u8, written, ".minimum_zig_version = \"0.17.0\",") != null);
 
     var diagnostics: std.zon.parse.Diagnostics = undefined;
@@ -269,6 +307,7 @@ test "init in an empty directory creates the whole project, depending on kosm al
     const packages = try Packages.parse(arena, packages_source, &diagnostics);
     try testing.expectEqualStrings(test_config.kosm.url, packages.find("kosm").?.url);
     try testing.expectEqual(null, packages.find("kosm").?.ref);
+    try testing.expectEqualStrings(test_config.kosm.packages[0].url, packages.find("kosm_kitty").?.url);
 }
 
 test "a kosm that can't be fetched fails init before anything is created" {
@@ -281,6 +320,20 @@ test "a kosm that can't be fetched fails init before anything is created" {
     try testing.expectError(error.Failed, init(test_config.context(), kosm));
     try testing.expect(std.mem.find(u8, test_config.stderr.written(), "zig fetch could not fetch kosm from") != null);
     try testing.expectEqual(null, try test_config.read("build.zig"));
+}
+
+test "an official package that can't be fetched fails init before anything is created" {
+    var test_config: TestConfig = undefined;
+    try test_config.init();
+    defer test_config.deinit();
+    const arena = test_config.arena.allocator();
+    var kosm = test_config.kosm;
+    kosm.packages = &.{.{ .name = "kosm_kitty", .url = try std.Io.Dir.path.join(arena, &.{ test_config.root, "missing" }) }};
+
+    try testing.expectError(error.Failed, init(test_config.context(), kosm));
+    try testing.expect(std.mem.find(u8, test_config.stderr.written(), "zig fetch could not fetch kosm_kitty from") != null);
+    try testing.expectEqual(null, try test_config.read("build.zig"));
+    try testing.expectEqual(null, try test_config.read("build.zig.zon"));
 }
 
 test "init on a complete project changes no byte" {
@@ -321,7 +374,7 @@ test "init on a directory holding kosmoi adds only the project files and other d
     try testing.expectEqual(null, try test_config.read("kosmoi/kyanos.zig"));
 }
 
-test "init on a project missing only kosmoi adds kosmoi and the starting kosmos" {
+test "init on a project missing only kosmoi adds it without the starting kosmos, whose packages the manifest may lack" {
     var test_config: TestConfig = undefined;
     try test_config.init();
     defer test_config.deinit();
@@ -330,7 +383,8 @@ test "init on a project missing only kosmoi adds kosmoi and the starting kosmos"
     try test_config.tmp.dir.createDirPath(testing.io, "project/adapters/.hidden");
 
     try init(test_config.context(), test_config.kosm);
-    try testing.expectEqualStrings("created kosmoi/\ncreated kosmoi/kyanos.zig\n", test_config.stdout.written());
+    try testing.expectEqualStrings("created kosmoi/\n", test_config.stdout.written());
+    try testing.expectEqual(null, try test_config.read("kosmoi/kyanos.zig"));
     for ([_][]const u8{ "build.zig", "build.zig.zon", "packages.zon" }) |name| {
         try testing.expectEqualStrings("// mine\n", (try test_config.read(name)).?);
     }
@@ -346,20 +400,35 @@ test "an empty kosmoi with only hidden entries gets the starting kosmos" {
     try testing.expectEqualStrings(starting_kosmos.source, (try test_config.read("kosmoi/kyanos.zig")).?);
 }
 
-test "an initialized config builds with the forked kosm sources, applies its starting kosmos and lists it" {
+/// A kosmos of the stub `kosm_kitty`, which is all a test config's official packages hold.
+const check_kosmos =
+    \\const kosm = @import("kosm");
+    \\const kitty = @import("kosm_kitty");
+    \\
+    \\pub const Check = struct { kitty: kitty.App };
+    \\
+    \\pub fn kosmos() Check {
+    \\    var check: Check = .{ .kitty = kitty.from(kosm.Theme.from(.{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff") }, .dark)) };
+    \\    check.kitty.fonts.font_size = 13;
+    \\    return check;
+    \\}
+    \\
+;
+
+test "an initialized config builds with the forked kosm sources, applies a kosmos of an official package and lists it" {
     var test_config: TestConfig = undefined;
     try test_config.init();
     defer test_config.deinit();
     const arena = test_config.arena.allocator();
     var context = test_config.context();
     try init(context, test_config.kosm);
-    // The starting kosmos writes Zen's prefs into every profile, so the home needs one.
-    try test_config.tmp.dir.createDirPath(testing.io, "home/.zen/a.default");
-    try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.zen/a.default/prefs.js", .data = "" });
+    // The starting kosmos needs the real official packages, which only a fetch from the network has.
+    try test_config.tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
+    try test_config.write("kosmoi/check.zig", check_kosmos);
 
     // The pinned kosm is an empty stub, so only the fork to this repository can build the config.
     context.sources = try test_kosm.sources(arena, testing.io);
-    const build = try context.runZig(&.{ "build", "-Dkosmos=kyanos" });
+    const build = try context.runZig(&.{ "build", "-Dkosmos=check" });
     if (!build.term.success()) std.debug.print("{s}\n", .{build.stderr});
     try testing.expect(build.term.success());
     // Editors learn the config's imports from the check step.
@@ -371,25 +440,21 @@ test "an initialized config builds with the forked kosm sources, applies its sta
     if (!applied.term.success()) std.debug.print("{s}\n", .{applied.stderr});
     try testing.expect(applied.term.success());
     const kitty = try test_config.tmp.dir.readFileAlloc(testing.io, "home/.config/kitty/kosm.conf", arena, .limited(1024 * 1024));
-    try testing.expect(std.mem.find(u8, kitty, "font_size 13") != null);
+    try testing.expectEqualStrings("font_size 13\n", kitty);
 
     test_config.stdout.clearRetainingCapacity();
-    try @import("list.zig").list(context, "kyanos");
+    try @import("list.zig").list(context, "check");
     try testing.expectEqualStrings(
-        \\kyanos  kosmoi/kyanos.zig
+        \\check  kosmoi/check.zig
         \\  kitty: kosm_kitty.App
-        \\  ghostty: kosm_ghostty.App
-        \\  hyprland: kosm_hyprland.App
-        \\  zen: kosm_zen.App
-        \\  nvim: kosm_nvim.App
         \\
     , test_config.stdout.written());
     test_config.stdout.clearRetainingCapacity();
     try @import("list.zig").list(context, null);
-    try testing.expect(std.mem.startsWith(u8, test_config.stdout.written(), "kosmoi:\n  kyanos  kosmoi/kyanos.zig\npackages:\n  kosm_css\n    adapter  css\n"));
+    try testing.expect(std.mem.startsWith(u8, test_config.stdout.written(), "kosmoi:\n  check  kosmoi/check.zig\npackages:\n  kosm_kitty\n    app      kosm_kitty.App\n    adapter  kitty\n"));
 
     context.sources = null;
-    const pinned = try context.runZig(&.{ "build", "-Dkosmos=kyanos" });
+    const pinned = try context.runZig(&.{ "build", "-Dkosmos=check" });
     try testing.expect(!pinned.term.success());
 }
 
@@ -400,8 +465,9 @@ test "a runner speaking another interface fails before planning, naming both num
     const arena = test_config.arena.allocator();
     var context = test_config.context();
     try init(context, test_config.kosm);
+    try test_config.write("kosmoi/check.zig", check_kosmos);
     context.sources = try test_kosm.sources(arena, testing.io);
-    const build = try context.runZig(&.{ "build", "-Dkosmos=kyanos" });
+    const build = try context.runZig(&.{ "build", "-Dkosmos=check" });
     try testing.expect(build.term.success());
 
     try test_config.environ.put("KOSM_INTERFACE", "999");
@@ -410,4 +476,31 @@ test "a runner speaking another interface fails before planning, naming both num
     try testing.expect(!applied.term.success());
     try testing.expect(std.mem.find(u8, applied.stderr, "speaks interface 999, but the kosm this config builds with speaks interface") != null);
     try testing.expectError(error.FileNotFound, test_config.tmp.dir.access(testing.io, "home/.config/kitty/kosm.conf", .{}));
+}
+
+test "a config initialized from the real repositories diffs its starting kosmos" {
+    // Fetches kosm and every official package from their repositories: `zig build test -Dnetwork`.
+    if (!kosm_package.network_tests) return error.SkipZigTest;
+    var test_config: TestConfig = undefined;
+    try test_config.init();
+    defer test_config.deinit();
+    const arena = test_config.arena.allocator();
+    var context = test_config.context();
+    try init(context, official);
+    // The starting kosmos writes Zen's prefs into every profile, so the home needs one.
+    try test_config.tmp.dir.createDirPath(testing.io, "home/.zen/a.default");
+    try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.zen/a.default/prefs.js", .data = "" });
+
+    // The fork builds the fetched packages against this repository's kosm.
+    context.sources = try test_kosm.sources(arena, testing.io);
+    const build = try context.runZig(&.{ "build", "-Dkosmos=kyanos" });
+    if (!build.term.success()) std.debug.print("{s}\n", .{build.stderr});
+    try testing.expect(build.term.success());
+    const runner = try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" });
+    const diff = try context.run(&.{ runner, "--diff", "--config", context.config });
+    if (!diff.term.success()) std.debug.print("{s}\n", .{diff.stderr});
+    try testing.expect(diff.term.success());
+    for ([_][]const u8{ "~/.config/kitty/kosm.conf", "~/.config/ghostty/kosm", "~/.config/hypr/kosm.lua", "~/.config/ZenBrowser/kosm.css", "~/.zen/a.default/user.js", "~/.config/nvim/lua/theme.lua" }) |file| {
+        try testing.expect(std.mem.find(u8, diff.stdout, try arena.print("+++ {s}\n", .{file})) != null);
+    }
 }
