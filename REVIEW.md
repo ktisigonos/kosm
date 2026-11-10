@@ -26,3 +26,12 @@ this file once everything in it is reviewed.
   lack the official packages it imports.
 - `zig build test -Dnetwork` is a test that needs the network and the pushed repositories; it is
   skipped otherwise.
+
+## Your config project
+
+- `~/.config/kosm/build.zig.zon` and `packages.zon` now list kosm and the 11 packages, pinned to
+  the local commits (your `kosm` is this repository's build, which no longer ships packages, so
+  Krystallos did not build). Checked with `kosm apply krystallos --diff` only. The old files are
+  not kept; `git diff` in your dotfiles shows the change.
+- Zig's own cache (`~/.cache/zig`) was given each pinned package, so the config builds before
+  anything is pushed.
