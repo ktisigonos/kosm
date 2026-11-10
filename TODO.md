@@ -1,6 +1,6 @@
 # TODO
 
-One step at a time, then stop for review (`AGENTS.md`).
+One step at a time, then stop for review (`AGENTS.md`). Decisions taken while the human was away are listed in `REVIEW.md`.
 
 Each step has **Do** (what to build) and **Done when** (how to verify). Markers: `ASK` stop and ask the human first; `PLAN FIRST` post a short plan (files, key types, order) and wait for the go-ahead; `BLOCKED` wait for the named question in `QUESTIONS.md`.
 
@@ -9,7 +9,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 ---
 
 - **13a. Kosm's packages in their own repositories**
-  - Do: the code is done and each package is a branch of this repository, named like the package, pinning kosm and its adapter packages by url. What is left is the human's: push kosm, create a repository per package (`kosm_css` ... `kosm_zen`) and push each branch to it as `master`.
+  - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
 - **13a2. Directory packages leave `zig-pkg/` out of their manifest**
