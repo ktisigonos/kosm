@@ -87,3 +87,25 @@ this file once everything in it is reviewed.
 - Hyprland gets nothing: its `misc.background_color` is the color behind every window. Zen's
   page background pref (`browser.display.background_color`) also stays opaque.
 - Kyanos still sets its alpha by hand; the starting kosmos is replaced in 13o.
+
+## 13f. Curves, easings and Hyprland animations
+
+- Core: `kosm.Curve` is a union of `.bezier` (`x1, y1, x2, y2`, as CSS's `cubic-bezier`) and
+  `.spring` (`mass` 1, `stiffness`, `damping`). The easings are declarations on it, so a kosmos
+  writes `.ease_out_expo`: CSS's `linear`, `ease`, `ease_in`, `ease_out`, `ease_in_out`, and
+  `ease_in_*`, `ease_out_*`, `ease_in_out_*` for sine, quad, cubic, quart, quint, expo, circ and
+  back. Elastic and bounce have no bezier, so they are left out.
+- `kosm_hyprland` gets two fields named after Hyprland's calls: `curve` (named curves) and
+  `animation` (one entry per leaf). `animation` sits next to the existing `animations` section
+  (`animations.enabled`); say if you want other names.
+- An animation names its curve by string, as Hyprland does; the app writes it under `bezier` or
+  `spring` by what the curve is. `default` is Hyprland's own bezier and needs no definition.
+- The generated module's shape: the calls first, then `return { ... }` as before, so the block
+  `hl.config(require("kosm"))` and reading single values from the module still work. A new
+  `hyprland` adapter in the package writes it, using the `lua` adapter for values.
+- Leaves are an enum in Zig spelling (32 leaves, `fade_glow` included); `Hyprland
+  --verify-config` accepted every one and the generated module. That flag is a way to check
+  generated Hyprland config without touching the running session.
+- Hyprland reads a spring's `damping` and also the misspelling `dampening` your curves.lua
+  uses; kosm writes `damping`.
+- With the `.edit` target, set curves or animations fail the apply: kosm never adds calls.

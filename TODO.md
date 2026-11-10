@@ -12,11 +12,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
-- **13f. Curves, easings and Hyprland animations** `PLAN FIRST`
-  - Do: a core curve type (cubic bezier by two control points, and spring by mass, stiffness and damping) and named standard easings (CSS `ease`, `ease-in-out`, ..., and the `easeOutExpo` family) that translate to bezier points, usable by any app.
-  - Do: `kosm_hyprland` writes curves (`hl.curve`) and animations (`hl.animation`: leaf, enabled, speed, curve, style), so `animations/` in the human's config can go. The generated module then holds calls, not only a table: the plan proposes its shape.
-  - Done when: tests cover each easing's points, a spring, and the generated curves and animations, including an animation naming a curve that isn't defined (fails naming both).
-
 - **13g. Hyprland environment variables** `PLAN FIRST`
   - Do: `kosm_hyprland` sets environment variables (`hl.env`) from a plain field, written in order; values the theme knows (cursor theme and size, GTK and Qt theme) can be derived. The plan settles the field's shape and which variables are derived.
   - Done when: tests show variables written in order, a name set twice failing naming both, and derived ones yielding to set ones.
