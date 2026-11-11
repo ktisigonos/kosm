@@ -22,8 +22,8 @@ pub fn kosmos() base.Base {
     apps.ghostty.?.cursor_style = .block;
     // These write into files or folders their programs create; set them back once you have
     // the program.
-    apps.cs16 = null;
-    apps.cs2 = null;
+    apps.counter_strike_1_6 = null;
+    apps.counter_strike_2 = null;
     apps.darkreader = null;
     apps.hyprmouse = null;
     apps.ohmyposh = null;

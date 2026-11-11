@@ -9,14 +9,14 @@ const package_build = @import("build/package.zig");
 
 /// Where `kosm init` fetches kosm and the official packages from: each one's repository is
 /// this followed by its name.
-const repositories = "git+https://git.nnstdios.com/nnra6864/";
+const repositories = "git+https://git.nnstdios.com/ktisigonos/";
 /// The official packages `kosm init` adds to a new config, sorted by name.
 const official_packages = [_][]const u8{
     "kosm_adwsteamgtk",
     "kosm_base",
     "kosm_blender",
-    "kosm_cs16",
-    "kosm_cs2",
+    "kosm_counter_strike_1_6",
+    "kosm_counter_strike_2",
     "kosm_css",
     "kosm_darkreader",
     "kosm_dunst",
