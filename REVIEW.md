@@ -343,3 +343,18 @@ fields.
 - Your idea of the base taking the list of enabled apps is step 13p in TODO.
 - The commit mixing a feature and docs stays: rewriting it would break the pins of every
   package built on later kosm commits.
+
+## 13q. The kosmos' name in apps
+
+- Each app keeps its own field for the shown name (KDE's `name`, Vicinae's `meta.name`, tuios'
+  `display_name`); `from` copies `Theme.name` into it, and null falls back to the name kosm
+  applies the kosmos under. A `files` field on each of the five apps carries `Theme.files`, and
+  their default paths hold `{name}` (`Output.namedFile` fills it).
+- KDE: `ColorScheme` is always the scheme file's name (KDE selects by it), `Name` the shown
+  name; before both were `kosm`. tuios' `id` defaults to the theme file's name.
+- `Output.kosmos` defaults to empty so other packages' test fixtures keep building; a name
+  that needs it then fails with `NoKosmosName` instead of writing `.colors` files with no name.
+- Not done: your config. Writing to `~/.config/kosm` was refused by the permission check, so it
+  still pins the old commits. Checked on a copy in a temporary folder instead: Krystallos'
+  `--diff` with `theme.name = "Krystallos"` changes only KDE's `Name`, tuios' `display_name`
+  and Vicinae's `name`; with `.per_kosmos` the five files become `krystallos.*`.
