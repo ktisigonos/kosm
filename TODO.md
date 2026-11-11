@@ -32,3 +32,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13p. Drop nwg-look, maybe qt6ct and Kvantum** `ASK`
   - Do: list what nwg-look, qt6ct/qt5ct and Kvantum still set on the human's system (GTK theme, icons, cursor, fonts in `settings.ini` and gsettings; Qt's style, palette, fonts and icons) and which of it `kosm_gtk` and `kosm_kde` could write themselves, so those tools are no longer needed. Name what cannot be replaced (e.g. a Qt style plugin, or gsettings not being a file) and propose the change before building it.
   - Done when: the human has agreed which tools go, and their settings come from kosm instead.
+
+- **13q. Live reload for Qt and KDE apps** `ASK`
+  - Do: find out whether running Qt/KDE apps can pick up new colors without a restart (e.g. KDE's `kdeglobals` change notification over D-Bus, `plasma-apply-colorscheme`, qt5ct/qt6ct watching their files), and whether it works outside Plasma on Hyprland. `kosm_kde` and `kosm_qtct` are the packages it affects: they write `kdeglobals`, `kosm.colors` and the qtct color files. Propose a reloader for them if one works.
+  - Done when: the human has a short answer on what reloads and how, and has chosen whether `kosm_kde` and `kosm_qtct` gain a reloader.
