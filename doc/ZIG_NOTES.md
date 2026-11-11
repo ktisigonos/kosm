@@ -35,6 +35,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **Builtins are not function values:** `@floor` / `@ceil` cannot be passed as a `fn (f32) f32`; pass a small enum and `switch` to the builtin.
 - **A field may not share a name with a file-level declaration:** in a file-struct, `const scaling = @import(...)` plus a field `scaling` is "duplicate struct member name". File-level consts used only by tests count too; name test constants apart (`test_hue`).
 - **A parameter may not shadow a declaration of its container, methods included:** `fn mix(color: Color, ...)` beside `pub fn color(...)` is "function parameter shadows declaration"; rename one.
+- **Locals and captures may not shadow a file-level declaration either:** a private `fn text(...)` makes every `var text` and `|text|` in the file "local variable shadows declaration"; give the function a longer name (`textValue`).
 - **A field of a typed struct literal does not parse:** `Params{}.blur` is "expected `;` after statement"; bind the literal first (`const params: Params = .{};`).
 - **`&.default` does not give the address of the decl:** coercing to `*const T` makes a static copy, so `x == &T.default` is false. Compare the values.
 - **Empty exhaustive enums are rejected:** an enum with no fields, only decls, fails with "empty exhaustive enums must be backed by 'noreturn'". Add `_,` to make it non-exhaustive.
