@@ -9,11 +9,11 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 ---
 
 - **13a. Kosm's packages in their own repositories**
-  - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
+  - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
 - **13l. CS2's fonts.conf** `ASK`
-  - Do: CS2's panorama `fonts.conf` keeps the "Custom fonts" section Ricer's template added; the human describes the exact cleanup (which of the game's font fields to remove, or none now that `kosm_cs2` writes `42-repl-global.conf`), and the plan says whether it runs as the app's `reload` or as edits kosm makes itself (which needs an XML parser for `kosm_xml`).
+  - Do: CS2's panorama `fonts.conf` keeps the "Custom fonts" section Ricer's template added; the human describes the exact cleanup (which of the game's font fields to remove, or none now that `kosm_counter_strike_2` writes `42-repl-global.conf`), and the plan says whether it runs as the app's `reload` or as edits kosm makes itself (which needs an XML parser for `kosm_xml`).
   - Done when: the cleanup is tested without touching the game's real files.
 
 - **13m. Kosm's own GTK and KDE themes** (waits on the human)
@@ -23,3 +23,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13n. Blender theme** (waits on the human)
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
+
+- **13p. Choosing the base's apps** `PLAN FIRST`
+  - Do: let a kosmos list the base's apps it wants on, instead of setting every other one to null; apps left out are never applied. The plan proposes the shape, keeping completion (a struct of booleans like `.{ .kitty = true }`, or a list of an enum of the base's apps), and whether the default stays every app.
+  - Done when: a kosmos enabling only two apps plans only their files, and the starting kosmos uses it instead of its nulls.

@@ -6,8 +6,8 @@ this file once everything in it is reviewed.
 
 ## Where things are
 
-- Every package is a repository of its own beside kosm: `~/Projects/Zig/kosm_<name>`, branch
-  `master`, `origin` set to `https://git.nnstdios.com/nnra6864/kosm_<name>`. None is pushed, and
+- Every package is a repository of its own beside kosm: `~/Projects/Zig/ktisigonos/kosm_<name>`, branch
+  `master`, `origin` set to `https://git.nnstdios.com/ktisigonos/kosm_<name>`. None is pushed, and
   kosm itself is not pushed either.
 - Packages pin kosm and each other by commit and hash. An unpushed commit builds because its
   archive was fetched into Zig's cache first (`doc/ZIG_NOTES.md`), so never amend or rebase a
@@ -15,8 +15,8 @@ this file once everything in it is reviewed.
 - To publish: create one empty repository per package on the forge, then `git push origin master`
   in kosm and `git push -u origin master` in each package directory. After that
   `zig build test -Dnetwork` in kosm checks a config made by the real `kosm init`. Every
-  repository to push, 33 with kosm: `ls -d ~/Projects/Zig/kosm*`. A loop doing it:
-  `for d in ~/Projects/Zig/kosm*; do git -C "$d" push -u origin master; done`.
+  repository to push, 32 with kosm: `ls -d ~/Projects/Zig/ktisigonos/kosm*`. A loop doing it:
+  `for d in ~/Projects/Zig/ktisigonos/kosm*; do git -C "$d" push -u origin master; done`.
 
 ## 13a. Packages in their own repositories
 
@@ -245,10 +245,10 @@ fields.
 - Counter-Strike 1.6: a new adapter package, `kosm_keyvalues`, hand-written (~140 lines), no
   grammar. It edits `.res` and `.vdf` (quoted or bare tokens, blocks, `//` comments, `[$...]`
   conditionals, `#base` / `#include`), writes every value quoted, colors `r g b a`. It has no
-  `serialize`: Valve's files are edited in place. `kosm_cs16` sets the 25 `Scheme.Colors`
+  `serialize`: Valve's files are edited in place. `kosm_counter_strike_1_6` sets the 25 `Scheme.Colors`
   (snake_case fields, `control_bg` for `ControlBG`) and every font's `name`. Steam's default
   library is the default `file`; Krystallos points it at `~/Data/SteamLibrary`.
-- Counter-Strike 2: `kosm_cs2` generates `42-repl-global.conf` (the game's global replacements,
+- Counter-Strike 2: `kosm_counter_strike_2` generates `42-repl-global.conf` (the game's global replacements,
   in `core/panorama/fonts/conf.d`) with `kosm_xml`: per replaced family a `font` rule
   (`assign`) and a `pattern` rule (`prepend`, strong), as Ricer's file had. Checked with
   `fc-match` in a temp config: Arial resolved to Maple Mono. **Not done: `fonts.conf`.** Your
@@ -257,7 +257,7 @@ fields.
   describe, so 13l stays in TODO for that part. Since fonts.conf's own comment says the
   42-repl-global replacements still apply, the generated file alone may be enough; worth
   trying in game before deciding.
-- `kosm init` lists the five new packages (`kosm_cs16`, `kosm_cs2`, `kosm_hyprmouse`,
+- `kosm init` lists the five new packages (`kosm_counter_strike_1_6`, `kosm_counter_strike_2`, `kosm_hyprmouse`,
   `kosm_hyprtoolkit`, `kosm_keyvalues`).
 - Krystallos has `hyprtoolkit.zig`, `hyprmouse.zig`, `cs16.zig`, `cs2.zig` and a
   `steam_library` value; `--diff` exits 0. Differences from Ricer's output you will see:
@@ -310,7 +310,7 @@ fields.
   package's `from(theme)` plus the fonts. `fonts` is `.{ .families, .size }` and comptime, so
   the base can build foot's font list and Hyprland's Pango string without memory. A kosmos
   returns the `Base` after plain assignments (`apps.kitty.?.fonts.font_size = 14`), drops an app
-  with `apps.cs2 = null`, and adds its own apps by returning `struct { base: base.Base, ... }`.
+  with `apps.counter_strike_2 = null`, and adds its own apps by returning `struct { base: base.Base, ... }`.
   Variants stay a function call: call the base kosmos' function, assign the tweaks.
 - The base keeps every app on. Apps that edit a program's own file fail when it is missing
   (naming app and file), so a user without the program sets it to null. The alternative,
@@ -329,3 +329,17 @@ fields.
   only as a copy in this session's scratch directory, which is temporary.
 - Equibop's tweak starts over from `from` with the translucent theme, as before, keeping the
   base's font.
+
+## After your first review (2026-11-11)
+
+- Everything moved to `~/Projects/Zig/ktisigonos/` (kosm included), every `origin` is
+  `https://git.nnstdios.com/ktisigonos/<name>`, and `kosm init` fetches from there. Every
+  manifest's URLs changed, so all 31 packages were re-pinned bottom-up, one `chore:` commit
+  each; your config is re-pinned too.
+- `kosm_cs16` and `kosm_cs2` are `kosm_counter_strike_1_6` and `kosm_counter_strike_2`
+  (Zig names allow no `-` or `.`); the base's fields and the starting kosmos follow.
+- CS 1.6's backgrounds already took the theme's background alpha; Krystallos now gives it the
+  translucent theme (`counter_strike_1_6.zig`), so they are at 128 like the rest. A test pins it.
+- Your idea of the base taking the list of enabled apps is step 13p in TODO.
+- The commit mixing a feature and docs stays: rewriting it would break the pins of every
+  package built on later kosm commits.
