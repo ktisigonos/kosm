@@ -28,7 +28,7 @@ A tool that rices a whole desktop from Zig code: a kosmos is a Zig function retu
 
 - **Layers (hard rule 7).** Core data (Color, Modifier, Theme) knows nothing about apps or files. Apps never parse and never do file IO; they only call `output`. Adapters never know about any app. Kosm's own apps and adapters are written exactly like third-party packages, with no private API.
 - **Real configs (hard rule 6).** Never touch the Ktisis. Do not run `kosm apply` (or anything that commits a plan) against real configs unless the human asks for that exact command; `--diff` is fine.
-- **ASCII exceptions (hard rule 12).** The Greek words naming the project (`κόσμος`, `κτίσις`).
+- **ASCII exceptions (hard rule 12).** You may write the Greek words naming the project (`κόσμος`, `κτίσις`).
 - **Grammars are dependencies (hard rule 5).** A tree-sitter grammar needs approval like any library. If a binding's comments are not enough, search tree-sitter's `api.h` and each grammar's `node-types.json` for node names.
 
 ## Priorities in kosm
