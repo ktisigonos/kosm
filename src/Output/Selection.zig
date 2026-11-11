@@ -194,7 +194,7 @@ fn checkIndex(selection: *Selection, path: Path, count: usize, index: usize) Err
 fn formatValue(selection: *Selection, about: []const u8, value: anytype) Error![]const u8 {
     const allocator = selection.output.allocator;
     var context: Adapter.Context = .{ .format = selection.format };
-    const tree = value_tree.from(allocator, &context.clipped, value) catch |err| switch (err) {
+    const tree = value_tree.from(allocator, value) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.IntegerTooLarge => return selection.fail(error.UnsupportedValue, "{s}: the integer is too large for a file value", .{about}),
         error.NullInList => return selection.fail(error.UnsupportedValue, "{s}: the value is null, or a list holding null; kosm never removes keys", .{about}),
@@ -206,7 +206,6 @@ fn formatValue(selection: *Selection, about: []const u8, value: anytype) Error![
         error.WriteFailed => return error.OutOfMemory,
         error.UnsupportedValue => return selection.fail(error.UnsupportedValue, "{s}: adapter '{s}': {s}", .{ about, selection.adapter.name, context.message() }),
     };
-    try planning.warnClipped(selection.output, selection.selector, about, &context.clipped);
     return content.toOwnedSlice();
 }
 

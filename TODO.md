@@ -10,6 +10,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
+  - Do: when `kosm_kitty` and `kosm_json` next pin kosm, drop their tests of clip warnings (`context.clipped`, the `outside sRGB` warning), and the "so a clipped color warns" line in kitty's and ghostty's `Joined.zig`.
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
 - **13l. CS2's fonts.conf** (waits on the human)

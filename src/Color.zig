@@ -184,9 +184,6 @@ pub fn format(color: Color, comptime template: []const u8, comptime components: 
             text.append(template[index..][0..1]);
         }
     }
-    inline for (components) |component| {
-        if (clipsRgb(rgb, component)) text.clipped = color;
-    }
     return text;
 }
 
@@ -233,7 +230,6 @@ pub fn formatComponent(color: Color, component: Component, decimals: u8) Text {
     const rgb = color.toRgb();
     var text: Text = .{};
     appendComponent(color, rgb, component, @min(decimals, max_decimals), &text);
-    if (clipsRgb(rgb, component)) text.clipped = color;
     return text;
 }
 
@@ -482,15 +478,7 @@ test "a round-tripped hex color never clips" {
     for ([_][]const u8{ "#ffffff", "#000000", "#ff0000", "#00ff00", "#0000ff", "#ffff00", "#00ffff" }) |sample| {
         const color = try parseHex(sample);
         try testing.expect(!color.clips(.hex8));
-        try testing.expectEqual(null, color.hex().clipped);
     }
-}
-
-test "formatted text remembers a clipped color" {
-    const vivid: Color = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 };
-    try testing.expectEqual(vivid, vivid.format("rgba({})", &.{.hex8}).clipped.?);
-    try testing.expectEqual(null, vivid.format("{}", &.{.lightness}).clipped);
-    try testing.expectEqual(vivid, vivid.formatComponent(.green_255, 6).clipped.?);
 }
 
 test "format fills components and keeps doubled braces" {

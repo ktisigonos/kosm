@@ -70,7 +70,6 @@ test {
     std.testing.refAllDecls(treesitter);
     std.testing.refAllDecls(Diagnostics);
     std.testing.refAllDecls(Warnings);
-    std.testing.refAllDecls(@import("ClippedColors.zig"));
     std.testing.refAllDecls(Reloader);
     std.testing.refAllDecls(Plan);
     std.testing.refAllDecls(Plan.Edit);

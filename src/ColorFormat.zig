@@ -26,14 +26,6 @@ pub fn init(comptime template: []const u8, comptime components: []const Color.Co
     return .{ .template = template, .components = components };
 }
 
-/// Whether printing `color` in this format clips it to the gamut.
-pub fn clips(format: ColorFormat, color: Color) bool {
-    for (format.components) |component| {
-        if (color.clips(component)) return true;
-    }
-    return false;
-}
-
 /// Errors from `write`.
 pub const WriteError = std.Io.Writer.Error || error{InvalidColorFormat};
 

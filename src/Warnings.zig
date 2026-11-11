@@ -40,13 +40,13 @@ test "write names kosmos, app and file, leaving out what is empty" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     var warnings: Warnings = .init(arena.allocator());
-    try warnings.add("terminal.kitty", "~/.config/kitty/kosm.conf", "color {d} clipped", .{1});
+    try warnings.add("terminal.kitty", "~/.config/kitty/kosm.conf", "reload failed: exit code {d}", .{1});
     try warnings.add("", "", "plain", .{});
     var buffer: [256]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     try warnings.write("frost", &writer);
     try std.testing.expectEqualStrings(
-        "warning: kosmos 'frost', app 'terminal.kitty', file ~/.config/kitty/kosm.conf: color 1 clipped\n" ++
+        "warning: kosmos 'frost', app 'terminal.kitty', file ~/.config/kitty/kosm.conf: reload failed: exit code 1\n" ++
             "warning: kosmos 'frost': plain\n",
         writer.buffered(),
     );

@@ -1,5 +1,6 @@
 //! What `kosm colors` prints: every palette a kosmos' file declares, each color with its hex
-//! value and, on a terminal, a block in that color.
+//! value, a mark when that value is clipped from outside sRGB and, on a terminal, a block in
+//! that color.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -60,7 +61,8 @@ pub fn declaredPalettes(comptime File: type) []const Named {
 
 /// One line for the palette's name, then one per color: black, white, gray and the 12 hues in
 /// wheel order, each `name  #rrggbb`, with `mixed` after a color the palette does not set
-/// itself. With `blocks`, a block in the color (truecolor escapes) comes before its hex value.
+/// itself and `clipped` after one outside sRGB, whose hex value is the nearest in it. With
+/// `blocks`, a block in the color (truecolor escapes) comes before its hex value.
 pub fn write(writer: *std.Io.Writer, named: Named, blocks: bool) std.Io.Writer.Error!void {
     const resolved = named.palette.resolve();
     try writer.print("{s}\n", .{named.name});
@@ -89,6 +91,7 @@ fn writeColor(writer: *std.Io.Writer, name: []const u8, color: kosm.Color, mixed
     }
     try writer.writeAll(hex.slice());
     if (mixed) try writer.writeAll("  mixed");
+    if (color.clips(.hex)) try writer.writeAll("  clipped");
     try writer.writeByte('\n');
 }
 
@@ -132,7 +135,7 @@ test "without blocks a palette is plain text, hues it does not set marked as mix
     var mixed: usize = 0;
     while (lines.next()) |line| {
         count += 1;
-        if (std.mem.endsWith(u8, line, "  mixed")) mixed += 1;
+        if (std.mem.find(u8, line, "  mixed") != null) mixed += 1;
     }
     try testing.expectEqual(16, count);
     // Gray and the ten hues between red and cyan.
@@ -140,6 +143,15 @@ test "without blocks a palette is plain text, hues it does not set marked as mix
     // Orange sits between red and cyan on the wheel, so it is neither.
     try testing.expect(std.mem.find(u8, written, "  orange   #ff0000") == null);
     try testing.expect(std.mem.find(u8, written, "  orange   #") != null);
+}
+
+test "a color outside sRGB is marked clipped after its nearest hex value" {
+    var text: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer text.deinit();
+    const vivid: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .green = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 } };
+    try write(&text.writer, .{ .name = "vivid", .palette = vivid }, false);
+    try testing.expect(std.mem.find(u8, text.written(), "  green    #00ff00  clipped\n") != null);
+    try testing.expect(std.mem.find(u8, text.written(), "  white    #ffffff\n") != null);
 }
 
 test "with blocks each color is drawn in truecolor before its hex value" {

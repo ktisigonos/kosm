@@ -8,7 +8,6 @@ const Adapter = @import("Adapter.zig");
 const Format = @import("Format.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Warnings = @import("Warnings.zig");
-const ClippedColors = @import("ClippedColors.zig");
 const Plan = @import("Plan.zig");
 const Theme = @import("Theme.zig");
 const template_writer = @import("template.zig");
@@ -166,15 +165,13 @@ pub fn templateBlock(output: *Output, app: anytype, options: anytype) Error!void
     var content: std.Io.Writer.Allocating = .init(output.allocator);
     defer content.deinit();
     var failure: template_writer.Failure = .{};
-    var clipped: ClippedColors = .{};
     const name = comptime if (isComptimeField(Options, "file")) options.file else "template block";
-    template_writer.render(&content.writer, name, options.text, app, format, &failure, &clipped) catch |err| switch (err) {
+    template_writer.render(&content.writer, name, options.text, app, format, &failure) catch |err| switch (err) {
         error.WriteFailed => return error.OutOfMemory,
         error.MissingValue => return planning.fail(output, error.MissingValue, resolved.file, "block '{s}', template line {d}: kosm.{s} is null", .{ resolved.id, failure.line, failure.path }),
         // checkFormat already wrote this color format once.
         error.InvalidColorFormat => unreachable,
     };
-    try planning.warnClipped(output, resolved.file, "", &clipped);
     try output.planBlock(resolved, path, comment, content.written());
 }
 
@@ -285,7 +282,7 @@ fn displayPath(output: *Output, path: []const u8) Error![]const u8 {
 fn serialize(output: *Output, file: []const u8, adapter: Adapter, own: Format, values: anytype) Error![]const u8 {
     const format = try output.checkFormat(file, own.orElse(adapter.default_format).resolve());
     var context: Adapter.Context = .{ .format = format };
-    const root = value.from(output.allocator, &context.clipped, values) catch |err| switch (err) {
+    const root = value.from(output.allocator, values) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.IntegerTooLarge => return planning.fail(output, error.UnsupportedValue, file, "an integer is too large for a file value", .{}),
         error.NullInList => return planning.fail(output, error.UnsupportedValue, file, "a list contains null", .{}),
@@ -297,7 +294,6 @@ fn serialize(output: *Output, file: []const u8, adapter: Adapter, own: Format, v
         error.WriteFailed => return error.OutOfMemory,
         error.UnsupportedValue => return planning.fail(output, error.UnsupportedValue, file, "adapter '{s}': {s}", .{ adapter.name, context.message() }),
     };
-    try planning.warnClipped(output, file, "", &context.clipped);
     return content.toOwnedSlice();
 }
 
@@ -314,15 +310,13 @@ pub fn template(output: *Output, app: anytype, options: anytype) Error!void {
     var content: std.Io.Writer.Allocating = .init(output.allocator);
     defer content.deinit();
     var failure: template_writer.Failure = .{};
-    var clipped: ClippedColors = .{};
     const name = comptime if (isComptimeField(Options, "file")) options.file else "template";
-    template_writer.render(&content.writer, name, options.text, app, format, &failure, &clipped) catch |err| switch (err) {
+    template_writer.render(&content.writer, name, options.text, app, format, &failure) catch |err| switch (err) {
         error.WriteFailed => return error.OutOfMemory,
         error.MissingValue => return planning.fail(output, error.MissingValue, options.file, "template line {d}: kosm.{s} is null", .{ failure.line, failure.path }),
         // checkFormat already wrote this color format once.
         error.InvalidColorFormat => unreachable,
     };
-    try planning.warnClipped(output, options.file, "", &clipped);
     try output.addFile(options.file, path, content.written());
 }
 
@@ -674,45 +668,17 @@ test "template renders the app's fields with the file's format" {
 
 const vivid_green: Color = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 };
 
-test "a clipped color warns naming the app and file, once per color, and is still written" {
+test "a color outside sRGB is written clipped, without a warning" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
     var output = try fixture.output("terminal", &.{lines_adapter});
-    try output.generate(.{ .file = "~/a.lines" }, .{ .accent = vivid_green, .border = vivid_green, .glow = vivid_green.format("rgba({})", &.{.hex8}) });
-
-    try testing.expectEqualStrings("accent = #00ff00ff\nborder = #00ff00ff\nglow = \"rgba(00ff00ff)\"\n", readPlanned(&fixture, 0));
-    const warnings = fixture.warnings.items.items;
-    try testing.expectEqual(1, warnings.len);
-    try testing.expectEqualStrings("terminal", warnings[0].app);
-    try testing.expectEqualStrings("~/a.lines", warnings[0].file);
-    try testing.expectEqualStrings("color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00 (3 times)", warnings[0].message);
-}
-
-test "in-gamut colors and unclipped float components do not warn" {
-    var fixture: Fixture = undefined;
-    try fixture.init();
-    defer fixture.deinit();
-    var output = try fixture.output("terminal", &.{lines_adapter});
-    const accent = try Color.parseHex("#5e81ac");
-    try output.generate(.{ .file = "~/a.lines" }, .{ .accent = accent, .white = try Color.parseHex("#ffffff"), .glow = vivid_green.format("{}", &.{.red_01}) });
-    const app: TemplateApp = .{ .accent = accent };
-    try output.template(app, .{ .file = "~/theme.lua", .text = "kosm.accent kosm.accent.red_255", .format = app.format });
-    try testing.expectEqual(0, fixture.warnings.items.items.len);
-}
-
-test "a template warns with the line of a clipped placeholder" {
-    var fixture: Fixture = undefined;
-    try fixture.init();
-    defer fixture.deinit();
-    var output = try fixture.output("editor", &.{});
+    try output.generate(.{ .file = "~/a.lines" }, .{ .accent = vivid_green, .glow = vivid_green.format("rgba({})", &.{.hex8}) });
+    try testing.expectEqualStrings("accent = #00ff00ff\nglow = \"rgba(00ff00ff)\"\n", readPlanned(&fixture, 0));
     const app: TemplateApp = .{ .accent = vivid_green };
-    try output.template(app, .{ .file = "~/theme.lua", .text = "a\nkosm.accent.lightness\nkosm.accent.green_255\n" });
-    try testing.expectEqualStrings("a\n0.9\n255\n", readPlanned(&fixture, 0));
-    const warnings = fixture.warnings.items.items;
-    try testing.expectEqual(1, warnings.len);
-    try testing.expectEqualStrings("~/theme.lua", warnings[0].file);
-    try testing.expectEqualStrings("template line 3: color oklch(0.9 0.4 140) is outside sRGB and is clipped to #00ff00", warnings[0].message);
+    try output.template(app, .{ .file = "~/theme.lua", .text = "kosm.accent.green_255\n" });
+    try testing.expectEqualStrings("255\n", readPlanned(&fixture, 1));
+    try testing.expectEqual(0, fixture.warnings.items.items.len);
 }
 
 test "an app's own warning names it and its file" {

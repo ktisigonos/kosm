@@ -51,7 +51,7 @@ there is undecided, so ask.
 - **Background alpha:** one alpha every app gives its own background, so a single value makes terminals, browser and editors translucent together.
 - **Name:** the name programs show for the kosmos, falling back to the name kosm applies it under. One switch names the files a program picks by name: `kosm` for every kosmos, or after the kosmos so each keeps its own. Files a program includes by path are always `kosm`.
 - **Variations:** named color transforms in families (lightness, emphasis, state, surface, line, contrast, alpha), tweaked once on the theme for every app.
-- Colors are OKLCH in f64. Modifiers also work in HSV, HSL, RGB and CMYK. A color outside sRGB is clipped when printed, with a warning.
+- Colors are OKLCH in f64. Modifiers also work in HSV, HSL, RGB and CMYK. A color outside sRGB is clipped when printed; `kosm colors` marks the palette colors that are.
 
 ## Rules for apps
 

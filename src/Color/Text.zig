@@ -2,13 +2,8 @@
 
 const Text = @This();
 
-const Color = @import("../Color.zig");
-
 buffer: [capacity]u8 = undefined,
 length: usize = 0,
-/// The color this text was printed from, when printing clipped it to the gamut;
-/// kosm warns about it when the text is written to a file.
-clipped: ?Color = null,
 
 /// Maximum formatted length in bytes, checked at compile time by `format`.
 pub const capacity = 256;
