@@ -17,7 +17,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the cleanup is tested without touching the game's real files.
 
 - **13m. Kosm's own GTK and KDE themes** (waits on the human)
-  - Do: `kosm_gtk` (libadwaita's color variables in GTK 4's gtk.css, `@define-color` names for adw-gtk3 in GTK 3's) and `kosm_kde` (a `.colors` scheme and a kdeglobals block) are done and in Krystallos. Left: the human checks them in real apps (`REVIEW.md` says how), and says whether GTK 3 apps should move from the Oomox theme to adw-gtk3.
+  - Do: `kosm_gtk` (libadwaita's color variables in GTK 4's gtk.css, `@define-color` names for adw-gtk3 in GTK 3's) and `kosm_kde` (a `.colors` scheme and a kdeglobals block) are done and in Krystallos. Left: the human checks them in real apps (`REVIEW.md` says how), Decided: GTK 3 apps move from Oomox to adw-gtk3; `kosm_gtk`'s README lists `adw-gtk-theme` (Arch package) as an optional dependency for GTK 3 (its GTK 3 colors need it), and re-pin the base and the config afterwards.
   - Done when: the human has seen libadwaita, adw-gtk3 and KDE apps take the colors.
 
 - **13n. Blender theme** (waits on the human)
@@ -27,3 +27,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13p. Choosing the base's apps** `PLAN FIRST`
   - Do: let a kosmos list the base's apps it wants on, instead of setting every other one to null; apps left out are never applied. The plan proposes the shape, keeping completion (a struct of booleans like `.{ .kitty = true }`, or a list of an enum of the base's apps), and whether the default stays every app.
   - Done when: a kosmos enabling only two apps plans only their files, and the starting kosmos uses it instead of its nulls.
+
+- **13q. The kosmos' name in apps** (plan agreed with the human)
+  - Do: core: `Theme.name: ?[]const u8 = null`, the name programs show ("Krystallos"); null takes the name kosm applies the kosmos under (`krystallos`, `krystallos.dark`). `Theme.files: Files = .shared`, a global switch: `.shared` writes `kosm.<ext>` for every kosmos, `.per_kosmos` writes `<kosmos name>.<ext>` (always the lowercase name kosm applies it under, never the display name). `Output.kosmos`, set by the runner, plus helpers on Output: the display name, and filling a `{name}` placeholder in an app's file path from the switch.
+  - Do: apps whose files a program picks by name implement it: KDE (`{name}.colors`, the scheme's `Name`, kdeglobals' `ColorScheme`), Blender (`{name}.xml`), Vicinae (`themes/{name}.toml`, its `name`, the selection in settings.json), tuios (`themes/{name}.json`, `id`, `display_name`, the selection in config.toml), qt5ct/qt6ct (`colors/{name}.conf`, `color_scheme_path`). Files a program must include stay `kosm` whatever the switch (Hyprland's kosm.lua, kitty, ghostty, Zen, nvim, the GTK, Equibop and AdwSteamGtk blocks).
+  - Do: Krystallos sets `theme.name = "Krystallos"`; DESIGN.md gets one line on the name and the switch; READMEs of the five apps say what the switch does; re-pin kosm, the five apps, the base and `~/.config/kosm` (bottom-up; `REVIEW.md` "Where things are" says how pins work).
+  - Done when: tests show each of the five apps writing `kosm.*` with `.shared` and `<kosmos>.*` with `.per_kosmos`, the display name from `Theme.name` and the fallback to the kosmos name, and Krystallos' `--diff` changes only those names.
