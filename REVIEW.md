@@ -262,3 +262,40 @@ fields.
   hyprtoolkit's accents are now cyan instead of bright white, `icon_theme = Ricer` is written
   bare (hyprlang has no quoted strings, so the quotes were part of the name before), CS 1.6's
   `ListBG` is opaque (it was alpha 0) and its dim text is grayer (the theme's emphasis steps).
+
+## 13m. GTK and KDE colors (decided without a plan from you)
+
+- No generated GTK theme. A full GTK 3 theme is thousands of lines of CSS, and Oomox's is a
+  vendored copy of one. Instead `kosm_gtk` writes the colors the toolkits already draw with:
+  - GTK 4: a block at the end of `~/.config/gtk-4.0/gtk.css` with libadwaita 1.10's color
+    variables (`:root { --window-bg-color: ...; }`), the 51 it defines (read from its compiled
+    stylesheet). Every libadwaita app follows them. Your gtk.css today is Oomox's 3000-line
+    copy; the block goes after it and wins.
+  - GTK 3: a block in `~/.config/gtk-3.0/gtk.css` of `@define-color window_bg_color ...` lines,
+    written by a small `gtk3` adapter inside the package. **Only adw-gtk3 follows these**
+    (the `adw-gtk-theme` package, theme `adw-gtk3-dark`); your Oomox GTK 3 theme ignores them.
+    Switching GTK 3 apps to adw-gtk3 is your call (`gtk-theme-name` in settings.ini; kosm does
+    not touch settings.ini).
+  - Both forms parse without errors in GTK 4.24 and 3.24 (checked with a CssProvider).
+- `kosm_kde` generates `~/.local/share/color-schemes/kosm.colors` (all eight sets, `[WM]`,
+  `r,g,b`) and writes the same colors plus `[General] ColorScheme=kosm` as a block at the end
+  of `~/.config/kdeglobals`, since KDE apps outside Plasma read kdeglobals, not the scheme.
+  KConfig takes a key's last value (checked with `kreadconfig6`), so the block overrides
+  Ricer's values above it. A KDE settings page saving kdeglobals drops the markers but keeps
+  the values; the next apply then appends a fresh block.
+- How to check: apply, then open a libadwaita app (Nautilus, Settings), a GTK 3 app with
+  adw-gtk3, and a KDE app (Dolphin, Kate).
+- Both are in Krystallos (`gtk.from(theme)`, `kde.from(theme)` straight from the package) and
+  in `kosm init`'s list.
+
+## 13n. Blender
+
+- `kosm_blender` generates `~/.config/blender/5.2/scripts/presets/interface_theme/kosm.xml`
+  with `kosm_xml`: the interface colors, 21 widget kinds, 18 editors' generic colors and the
+  shared regions (Blender 5's layout). Blender resets the theme before loading a preset, so
+  everything else is its default. Blender only loads presets whose element types are on its
+  whitelist, so the types are Blender's own.
+- Checked in a headless Blender 5.2 with a temp home and `--factory-startup`: the preset runs
+  and the colors land (panel, widgets, properties, the 3D view's single color, channels).
+- The version folder (`5.2`) is in the default `file`; a Blender update means changing it.
+- In Krystallos and `kosm init`'s list.

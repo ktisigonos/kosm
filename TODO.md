@@ -16,13 +16,13 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: CS2's panorama `fonts.conf` keeps the "Custom fonts" section Ricer's template added; the human describes the exact cleanup (which of the game's font fields to remove, or none now that `kosm_cs2` writes `42-repl-global.conf`), and the plan says whether it runs as the app's `reload` or as edits kosm makes itself (which needs an XML parser for `kosm_xml`).
   - Done when: the cleanup is tested without touching the game's real files.
 
-- **13m. Kosm's own GTK and KDE themes** `PLAN FIRST` `ASK`
-  - Do: generate a GTK theme (GTK 3 and 4 CSS, replacing Oomox) and KDE colors (`kdeglobals` and a `.colors` scheme) from the theme, so no outside theme tool is needed. The plan scopes what a minimal theme must cover and where it is installed.
-  - Done when: the generated themes load in a temp `XDG_DATA_HOME` (checked by the human) and are tested for each color they set.
+- **13m. Kosm's own GTK and KDE themes** (waits on the human)
+  - Do: `kosm_gtk` (libadwaita's color variables in GTK 4's gtk.css, `@define-color` names for adw-gtk3 in GTK 3's) and `kosm_kde` (a `.colors` scheme and a kdeglobals block) are done and in Krystallos. Left: the human checks them in real apps (`REVIEW.md` says how), and says whether GTK 3 apps should move from the Oomox theme to adw-gtk3.
+  - Done when: the human has seen libadwaita, adw-gtk3 and KDE apps take the colors.
 
-- **13n. Blender theme** `PLAN FIRST`
-  - Do: a Blender app writing a theme preset (Blender's XML theme format) from the theme.
-  - Done when: the preset is generated in a temp directory and loads in Blender (checked by the human).
+- **13n. Blender theme** (waits on the human)
+  - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
+  - Done when: the human has seen the theme in Blender.
 
 - **13o. The base kosmos** `PLAN FIRST` `ASK`
   - Do: one official kosmos holding every officially supported app with sane defaults, that a user's kosmos builds on: set its palette and fonts, override single values, add or drop apps. The plan proposes how a kosmos builds on another (a function taking the theme and returning the base's apps, as variants do), where it ships (with kosm or as a package, 13a) and how it relates to the starting kosmos `kosm init` writes. Krystallos becomes a kosmos on top of it.
