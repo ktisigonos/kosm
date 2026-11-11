@@ -15,7 +15,7 @@ this file once everything in it is reviewed.
 - To publish: create one empty repository per package on the forge, then `git push origin master`
   in kosm and `git push -u origin master` in each package directory. After that
   `zig build test -Dnetwork` in kosm checks a config made by the real `kosm init`. Every
-  package directory to push, 32 with kosm: `ls -d ~/Projects/Zig/kosm*`. A loop doing it:
+  repository to push, 33 with kosm: `ls -d ~/Projects/Zig/kosm*`. A loop doing it:
   `for d in ~/Projects/Zig/kosm*; do git -C "$d" push -u origin master; done`.
 
 ## 13a. Packages in their own repositories
@@ -324,6 +324,8 @@ fields.
   `hyprmouse.zig` are gone (the base covers them; the Steam paths and hyprmouse's opacity are
   three lines in root.zig). Hyprland is still built whole by `hyprland.zig`. Dark Reader and
   oh-my-posh are null, as before. `--diff` gives the same 26 files with the same bytes, only
-  in the base's (alphabetical) order. The old files are in your dotfiles' git history.
+  in the base's (alphabetical) order. The five deleted files were ones I had added this
+  session; `~/.config/kosm` is not in any git repository, so the pre-rewrite Krystallos exists
+  only as a copy in this session's scratch directory, which is temporary.
 - Equibop's tweak starts over from `from` with the translucent theme, as before, keeping the
   base's font.
