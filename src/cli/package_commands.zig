@@ -22,7 +22,7 @@ const manifest_name = "build.zig.zon";
 const inspector_path = "zig-out/bin/inspect";
 
 /// `kosm add <url>[#ref]`: fetches the package, refuses it when its name is already installed or
-/// when it provides no app, adapter or kosmos, and records the url and ref in packages.zon.
+/// when it provides no app, adapter, kosmos or base, and records the url and ref in packages.zon.
 pub fn add(context: Context, argument: []const u8) Error!void {
     const package = try fetchName(context, splitRef(argument));
     const original = try readManifest(context);
@@ -76,7 +76,7 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
     errdefer restoreManifest(context, original);
     for (selected) |package| try save(context, package);
     for (selected) |package| {
-        // Kosm provides no app, adapter or kosmos; the next build checks it.
+        // Kosm provides no app, adapter, kosmos or base; the next build checks it.
         if (!std.mem.eql(u8, package.name, kosm_name)) try check(context, package.name);
     }
     for (selected) |package| try context.stdout.print("updated {s}\n", .{package.name});
@@ -108,7 +108,7 @@ fn save(context: Context, package: Packages.Package) Error!void {
 }
 
 /// Builds the package against the config and prints what it provides; fails when it does not
-/// compile there or provides no app, adapter or kosmos.
+/// compile there or provides no app, adapter, kosmos or base.
 fn check(context: Context, name: []const u8) Error!void {
     const build = try context.runZig(&.{ "build", try context.arena.print("-Dinspect={s}", .{name}) });
     if (!build.term.success()) return failRun(context, build, "package '{s}' does not build in this config project", .{name});
@@ -363,7 +363,7 @@ test "add of a package that provides nothing leaves every file as it was" {
     const before = (try fixture.read("build.zig.zon")).?;
 
     try testing.expectError(error.Failed, add(fixture.context(), url));
-    try testing.expect(std.mem.find(u8, fixture.stderr.written(), "package 'test_empty' provides no app, adapter or kosmos") != null);
+    try testing.expect(std.mem.find(u8, fixture.stderr.written(), "package 'test_empty' provides no app, adapter, kosmos or base") != null);
     try testing.expectEqualStrings(before, (try fixture.read("build.zig.zon")).?);
     try testing.expectEqual(null, try fixture.read(Packages.file_name));
 }

@@ -1,5 +1,5 @@
-//! What an installed package provides: its apps, adapters and kosmoi, found by reflection.
-//! `kosm add` and `kosm update` refuse a package that provides none of them.
+//! What an installed package provides: its apps, adapters, kosmoi and bases, found by
+//! reflection. `kosm add` and `kosm update` refuse a package that provides none of them.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -17,7 +17,7 @@ pub fn inspect(init: std.process.Init, comptime name: []const u8, comptime Packa
         return 1;
     }
     if (report.isEmpty()) {
-        try stderr.interface.print("error: package '{s}' provides no app, adapter or kosmos, so it is not a kosm package\n", .{name});
+        try stderr.interface.print("error: package '{s}' provides no app, adapter, kosmos or base, so it is not a kosm package\n", .{name});
         try stderr.interface.flush();
         return 1;
     }
@@ -28,7 +28,7 @@ pub fn inspect(init: std.process.Init, comptime name: []const u8, comptime Packa
     return 0;
 }
 
-/// A package's apps, adapters and kosmoi, each as the user spells them.
+/// A package's apps, adapters, kosmoi and bases, each as the user spells them.
 pub const Provided = struct {
     /// Public app types, as `@import` paths: "kosm_kitty.App".
     apps: []const []const u8,
@@ -36,9 +36,11 @@ pub const Provided = struct {
     adapters: []const []const u8,
     /// Kosmoi as `kosm apply` spells them: "nord", "nord.iced".
     kosmoi: []const []const u8,
+    /// Functions a kosmos builds on, returning a struct of apps: "kosm_base.from".
+    bases: []const []const u8,
 
     fn isEmpty(self: Provided) bool {
-        return self.apps.len == 0 and self.adapters.len == 0 and self.kosmoi.len == 0;
+        return self.apps.len == 0 and self.adapters.len == 0 and self.kosmoi.len == 0 and self.bases.len == 0;
     }
 
     /// One line per kind: `name provides:` then `  app kosm_kitty.App` and so on.
@@ -47,32 +49,48 @@ pub const Provided = struct {
         try self.writeItems("  ", writer);
     }
 
-    /// One line per app, adapter and kosmos, each after `indent`: `  app      kosm_kitty.App`.
+    /// One line per app, adapter, kosmos and base, each after `indent`: `  app      kosm_kitty.App`.
     pub fn writeItems(self: Provided, indent: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         for (self.apps) |app| try writer.print("{s}app      {s}\n", .{ indent, app });
         for (self.adapters) |adapter| try writer.print("{s}adapter  {s}\n", .{ indent, adapter });
         for (self.kosmoi) |kosmos| try writer.print("{s}kosmos   {s}\n", .{ indent, kosmos });
+        for (self.bases) |base| try writer.print("{s}base     {s}\n", .{ indent, base });
     }
 };
 
-/// Every public app type, adapter constant and kosmos function at the top of `Package`.
+/// Every public app type, adapter constant, kosmos function and base function at the top of
+/// `Package`.
 pub fn provided(comptime name: []const u8, comptime Package: type) Provided {
     @setEvalBranchQuota(discovery.branch_quota);
     comptime var apps: []const []const u8 = &.{};
     comptime var kosmoi: []const []const u8 = &.{};
+    comptime var bases: []const []const u8 = &.{};
     inline for (@typeInfo(Package).@"struct".decl_names) |decl| {
         const Declaration = @TypeOf(@field(Package, decl));
         if (Declaration == type and discovery.isApp(@field(Package, decl))) apps = apps ++ .{name ++ "." ++ decl};
         if (comptime discovery.notKosmosReason(Package, decl) == null) {
             kosmoi = kosmoi ++ .{if (comptime std.mem.eql(u8, decl, "kosmos")) name else name ++ "." ++ decl};
-        }
+        } else if (comptime isBase(Package, decl)) bases = bases ++ .{name ++ "." ++ decl};
     }
     comptime var adapters: []const []const u8 = &.{};
     inline for (comptime discovery.declaredAdapters(Package)) |adapter| adapters = adapters ++ .{adapter.name};
     const final_apps = apps[0..apps.len].*;
     const final_adapters = adapters[0..adapters.len].*;
     const final_kosmoi = kosmoi[0..kosmoi.len].*;
-    return .{ .apps = &final_apps, .adapters = &final_adapters, .kosmoi = &final_kosmoi };
+    const final_bases = bases[0..bases.len].*;
+    return .{ .apps = &final_apps, .adapters = &final_adapters, .kosmoi = &final_kosmoi, .bases = &final_bases };
+}
+
+/// Whether `Package.name` is a base: a function, not a kosmos, whose result is a struct holding
+/// apps but no app itself, like `kosm_base.from(theme, fonts, apps)`.
+fn isBase(comptime Package: type, comptime name: []const u8) bool {
+    const function = switch (@typeInfo(@TypeOf(@field(Package, name)))) {
+        .@"fn" => |function| function,
+        else => return false,
+    };
+    // A comptime parameter makes the function generic, but its result type is still known.
+    const Result = discovery.Payload(function.return_type orelse return false);
+    return @typeInfo(Result) == .@"struct" and !discovery.isApp(Result) and discovery.containsApp(Result);
 }
 
 const testing = std.testing;
@@ -96,7 +114,17 @@ const TestPackage = struct {
     pub fn helper(size: u8) u8 {
         return size;
     }
+    pub fn from(size: u8) App {
+        return .{ .size = size };
+    }
     pub const Theme = kosm.Theme;
+};
+
+const BasePackage = struct {
+    pub const Base = struct { probe: ?TestPackage.App = null };
+    pub fn from(comptime size: u8) Base {
+        return .{ .probe = .{ .size = size } };
+    }
 };
 
 const EmptyPackage = struct {
@@ -115,6 +143,18 @@ test "a package reports its apps, adapters and kosmoi as the user spells them" {
         \\  adapter  probe
         \\  kosmos   kosm_probe
         \\  kosmos   kosm_probe.iced
+        \\
+    , writer.buffered());
+}
+
+test "a function returning a struct of apps that takes inputs is a base, not a kosmos" {
+    const report = comptime provided("kosm_probe_base", BasePackage);
+    var buffer: [128]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try report.write("kosm_probe_base", &writer);
+    try testing.expectEqualStrings(
+        \\kosm_probe_base provides:
+        \\  base     kosm_probe_base.from
         \\
     , writer.buffered());
 }

@@ -24,7 +24,7 @@ there is undecided, so ask.
 
 ## Vocabulary
 
-- **package:** anything `kosm add` fetches; it may hold apps, adapters and kosmoi.
+- **package:** anything `kosm add` fetches; it may hold apps, adapters, kosmoi and a base kosmoi build on.
 - **app:** support for one program (`kosm_hyprland` exports `App`, `from`, `App.apply`).
 - **adapter:** support for one file format (Lua, TOML, JSON).
 - **kosmos:** a rice, a function returning a tree of apps.
