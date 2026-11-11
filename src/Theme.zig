@@ -1,5 +1,5 @@
-//! What every app's `from` receives: the resolved palette, the mode, the variations and the
-//! alpha of backgrounds.
+//! What every app's `from` receives: the resolved palette, the mode, the variations, the
+//! alpha of backgrounds and the kosmos' names.
 
 const Theme = @This();
 
@@ -17,9 +17,25 @@ variations: Variations,
 /// Alpha of every app's background, 0 (clear) to 1 (opaque): terminals, the browser and
 /// editors follow it, so one value makes the whole desktop translucent. Default: 1.
 background_alpha: f64 = 1,
+/// The name programs show for the kosmos ("Krystallos"), in theme lists and pickers.
+/// null: the name kosm applies the kosmos under (`krystallos`, `krystallos.dark`).
+name: ?[]const u8 = null,
+/// How the files a program picks by name are named. Default: `.shared`, `kosm.<ext>` for
+/// every kosmos.
+files: Files = .shared,
 
 /// The single global fact modules use to choose backgrounds and foregrounds.
 pub const Mode = enum { dark, light };
+
+/// How an app names the files a program picks by name (KDE's color schemes, Blender's presets).
+/// Files a program must include by path are always `kosm`.
+pub const Files = enum {
+    /// `kosm.<ext>`, the same file whatever kosmos is applied.
+    shared,
+    /// `<kosmos>.<ext>`, named as kosm applies the kosmos (`krystallos.dark.colors`), so each
+    /// kosmos applied keeps its own file beside the others.
+    per_kosmos,
+};
 
 /// Resolves the palette and fills every variation's default for `mode`. Contrast picks
 /// choose between the palette's black and white, and shadows mix toward its black.

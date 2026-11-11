@@ -49,6 +49,7 @@ there is undecided, so ask.
 - **Palette:** black and white are required; the 12 hues of the wheel (red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink, 30 deg apart) are optional, and a missing one is mixed from its nearest set neighbours by wheel position. Colors beyond the wheel belong to apps or to the kosmos' own constants.
 - **Mode:** dark or light, the one global fact apps use to pick their own background and foreground. There are no global roles (`bg`, `accent`, `button`); those belong to each app.
 - **Background alpha:** one alpha every app gives its own background, so a single value makes terminals, browser and editors translucent together.
+- **Name:** the name programs show for the kosmos, falling back to the name kosm applies it under. One switch names the files a program picks by name: `kosm` for every kosmos, or after the kosmos so each keeps its own. Files a program includes by path are always `kosm`.
 - **Variations:** named color transforms in families (lightness, emphasis, state, surface, line, contrast, alpha), tweaked once on the theme for every app.
 - Colors are OKLCH in f64. Modifiers also work in HSV, HSL, RGB and CMYK. A color outside sRGB is clipped when printed, with a warning.
 

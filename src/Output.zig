@@ -10,6 +10,7 @@ const Diagnostics = @import("Diagnostics.zig");
 const Warnings = @import("Warnings.zig");
 const ClippedColors = @import("ClippedColors.zig");
 const Plan = @import("Plan.zig");
+const Theme = @import("Theme.zig");
 const template_writer = @import("template.zig");
 const block_writer = @import("block.zig");
 const value = @import("value.zig");
@@ -30,6 +31,9 @@ diagnostics: *Diagnostics,
 warnings: *Warnings,
 /// The app being applied, as its path in the kosmos tree ("terminal.kitty").
 app: []const u8,
+/// The name kosm applies the kosmos under (`krystallos`, `krystallos.dark`), set by kosm.
+/// Empty outside an apply, where `displayName` and `namedFile` fail when they need it.
+kosmos: []const u8 = "",
 
 /// An adapter name two packages export.
 pub const AdapterClash = @import("Output/AdapterClash.zig");
@@ -69,6 +73,8 @@ pub const Error = error{
     InvalidIndices,
     NotAList,
     NoValue,
+    /// `kosmos` is empty and a name needed it.
+    NoKosmosName,
     /// An app called `fail`.
     AppFailed,
     OutOfMemory,
@@ -85,6 +91,31 @@ pub fn warn(output: *Output, file: []const u8, comptime format: []const u8, argu
 /// empty. Use it as `return output.fail(file, "message {s}", .{...});`.
 pub fn fail(output: *Output, file: []const u8, comptime format: []const u8, arguments: anytype) Error {
     return planning.fail(output, error.AppFailed, file, format, arguments);
+}
+
+/// The name a program shows for the kosmos: `name` (an app's copy of `Theme.name`), or the
+/// name kosm applies the kosmos under when it is null. `file` is the file it is for, for errors.
+pub fn displayName(output: *Output, file: []const u8, name: ?[]const u8) Error![]const u8 {
+    return name orelse output.kosmosName(file);
+}
+
+/// `path` with each `{name}` replaced as `files` says: by `kosm` (`.shared`) or by the name kosm
+/// applies the kosmos under (`.per_kosmos`). For files a program picks by name; a path without
+/// `{name}` is returned as is.
+pub fn namedFile(output: *Output, path: []const u8, files: Theme.Files) Error![]const u8 {
+    const placeholder = "{name}";
+    if (std.mem.find(u8, path, placeholder) == null) return path;
+    const name = switch (files) {
+        .shared => "kosm",
+        .per_kosmos => try output.kosmosName(path),
+    };
+    return std.mem.replaceOwned(u8, output.allocator, path, placeholder, name);
+}
+
+fn kosmosName(output: *Output, file: []const u8) Error![]const u8 {
+    if (output.kosmos.len == 0)
+        return planning.fail(output, error.NoKosmosName, file, "the kosmos' name is unknown here, so it cannot name the file or be shown", .{});
+    return output.kosmos;
 }
 
 /// Writes a whole file from `values`, a plain struct the adapter serializes.
@@ -556,6 +587,38 @@ test "an app's own failure names the app and its file" {
     try testing.expectEqualStrings("option 'general.col.active_border': a gradient needs at least one color", fixture.diagnostics.message());
     try testing.expectEqualStrings("~/hypr/kosm.lua", fixture.diagnostics.file);
     try testing.expectEqualStrings("hyprland", fixture.diagnostics.app);
+}
+
+test "namedFile fills {name} with kosm when shared and the kosmos' name per kosmos" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("kde", &.{lines_adapter});
+    output.kosmos = "krystallos.dark";
+    try testing.expectEqualStrings("~/schemes/kosm.colors", try output.namedFile("~/schemes/{name}.colors", .shared));
+    try testing.expectEqualStrings("~/schemes/krystallos.dark.colors", try output.namedFile("~/schemes/{name}.colors", .per_kosmos));
+    try testing.expectEqualStrings("~/schemes/mine.colors", try output.namedFile("~/schemes/mine.colors", .per_kosmos));
+}
+
+test "displayName prefers the theme's name and falls back to the kosmos' name" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("kde", &.{lines_adapter});
+    output.kosmos = "krystallos";
+    try testing.expectEqualStrings("Krystallos", try output.displayName("~/a.lines", "Krystallos"));
+    try testing.expectEqualStrings("krystallos", try output.displayName("~/a.lines", null));
+}
+
+test "a name that needs the kosmos fails when kosm gave none, and shared files never need it" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("kde", &.{lines_adapter});
+    try testing.expectEqualStrings("~/kosm.colors", try output.namedFile("~/{name}.colors", .shared));
+    try testing.expectError(error.NoKosmosName, output.namedFile("~/{name}.colors", .per_kosmos));
+    try testing.expectEqualStrings("~/{name}.colors", fixture.diagnostics.file);
+    try testing.expectError(error.NoKosmosName, output.displayName("~/a.lines", null));
 }
 
 test "two apps writing one file is an error naming the first" {

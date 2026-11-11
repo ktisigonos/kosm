@@ -55,6 +55,7 @@ fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void
         .diagnostics = context.diagnostics,
         .warnings = context.warnings,
         .app = path,
+        .kosmos = context.diagnostics.kosmos,
     };
     app.apply(&output) catch |err| {
         // Output's own errors already explain themselves; an app's own error only has its name.
