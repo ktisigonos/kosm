@@ -14,7 +14,9 @@ this file once everything in it is reviewed.
   commit another manifest pins.
 - To publish: create one empty repository per package on the forge, then `git push origin master`
   in kosm and `git push -u origin master` in each package directory. After that
-  `zig build test -Dnetwork` in kosm checks a config made by the real `kosm init`.
+  `zig build test -Dnetwork` in kosm checks a config made by the real `kosm init`. Every
+  package directory to push, 32 with kosm: `ls -d ~/Projects/Zig/kosm*`. A loop doing it:
+  `for d in ~/Projects/Zig/kosm*; do git -C "$d" push -u origin master; done`.
 
 ## 13a. Packages in their own repositories
 
@@ -299,3 +301,29 @@ fields.
   and the colors land (panel, widgets, properties, the 3D view's single color, channels).
 - The version folder (`5.2`) is in the default `file`; a Blender update means changing it.
 - In Krystallos and `kosm init`'s list.
+
+## 13o. The base kosmos (decided without a plan from you)
+
+- It ships as a package, `kosm_base`, not with kosm: core may not know apps, and it is an
+  ordinary package like anyone's (DESIGN.md now says so). `kosm init` lists it.
+- `base.from(theme, fonts)` returns `Base`: one optional field per official app (22), each the
+  package's `from(theme)` plus the fonts. `fonts` is `.{ .families, .size }` and comptime, so
+  the base can build foot's font list and Hyprland's Pango string without memory. A kosmos
+  returns the `Base` after plain assignments (`apps.kitty.?.fonts.font_size = 14`), drops an app
+  with `apps.cs2 = null`, and adds its own apps by returning `struct { base: base.Base, ... }`.
+  Variants stay a function call: call the base kosmos' function, assign the tweaks.
+- The base keeps every app on. Apps that edit a program's own file fail when it is missing
+  (naming app and file), so a user without the program sets it to null. The alternative,
+  leaving those apps off in the base, would make "every supported app" untrue; your call.
+- The test in `kosm_base` gives a temp home the files edit-based apps need, then applies a
+  kosmos of a palette and two overrides: all 21 apps plan their files.
+- The starting kosmos `kosm init` writes (`kosmoi/kyanos.zig`) is now that: a palette, the
+  base, two overrides, and the eight apps that need their program set to null.
+- Krystallos is rewritten on the base: `root.zig` returns `base.Base`, each app file is a
+  `tweak(app, ...)` of the base's app, and `fontconfig.zig`, `qtct.zig`, `cs16.zig`, `cs2.zig`,
+  `hyprmouse.zig` are gone (the base covers them; the Steam paths and hyprmouse's opacity are
+  three lines in root.zig). Hyprland is still built whole by `hyprland.zig`. Dark Reader and
+  oh-my-posh are null, as before. `--diff` gives the same 26 files with the same bytes, only
+  in the base's (alphabetical) order. The old files are in your dotfiles' git history.
+- Equibop's tweak starts over from `from` with the translucent theme, as before, keeping the
+  base's font.

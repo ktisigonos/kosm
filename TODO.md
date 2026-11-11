@@ -23,7 +23,3 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13n. Blender theme** (waits on the human)
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
-
-- **13o. The base kosmos** `PLAN FIRST` `ASK`
-  - Do: one official kosmos holding every officially supported app with sane defaults, that a user's kosmos builds on: set its palette and fonts, override single values, add or drop apps. The plan proposes how a kosmos builds on another (a function taking the theme and returning the base's apps, as variants do), where it ships (with kosm or as a package, 13a) and how it relates to the starting kosmos `kosm init` writes. Krystallos becomes a kosmos on top of it.
-  - Done when: a kosmos holding only a palette and two overrides rices every supported app through the base, and Krystallos is rewritten on top of it with the same `--diff` output.
