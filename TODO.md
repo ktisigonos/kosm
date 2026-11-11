@@ -24,6 +24,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
 
-- **13r. Customizable shaders** `PLAN FIRST`
-  - Do: a kosmos can set the values a shader exposes, so its colors follow the theme. Example: ghostty's `custom-shader` runs `cursor_warp.glsl` (ghostty-cursor-shaders), whose `TRAIL_COLOR` (a `vec4` near the top of the file) cannot be set from kosm today, so the trail can't be made to match the cursor. Decided: kosm edits a shader's values in place through a GLSL adapter on the tree-sitter-glsl grammar, in a package of its own (not `kosm_ghostty`), so Hyprland's and other programs' shaders can use it too. First get the grammar approved as a dependency, then plan the package (names, which shaders and values).
-  - Done when: a kosmos sets the trail color of `cursor_warp.glsl` and `--diff` shows only that value changing; the edit is tested on a copy of the shader in a temporary directory.
+- **13r. Customizable shaders** (waits on the human)
+  - Do: `kosm_glsl` (a `glsl` adapter on tree-sitter-glsl, and an app for `cursor_warp.glsl`'s settings) is done and in `kosm init`'s list; `--diff` on a copy of Krystallos changes only `TRAIL_COLOR` in a copy of the real shader. Left: the human pushes `kosm_glsl` and adds it to the config and Krystallos (a `cursor_warp` app beside the base).
+  - Done when: `kosm apply krystallos --diff` in the real config shows only `TRAIL_COLOR` changing in `cursor_warp.glsl`.

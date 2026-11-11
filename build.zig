@@ -24,6 +24,7 @@ const official_packages = [_][]const u8{
     "kosm_fontconfig",
     "kosm_foot",
     "kosm_ghostty",
+    "kosm_glsl",
     "kosm_gtk",
     "kosm_hyprland",
     "kosm_hyprmouse",
