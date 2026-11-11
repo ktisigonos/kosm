@@ -61,7 +61,7 @@ there is undecided, so ask.
 - Every app has `extra` for settings it doesn't cover, written after its own and failing if one overlaps a set setting.
 - An app writes its own file that the program includes, rather than the program's main config. Making the program read it is the user's job, except for an app's own visible include block, which the user can turn off. Kosm never creates backups.
 - Each written file has a `kosm.Format` (color spelling, booleans, float precision) layered from the user's assignment, the app's default, the adapter's and kosm's.
-- An app may reload its program after a successful apply; a failed reload is a warning.
+- An app may reload its program after a successful apply, and set there what a program keeps outside files (gsettings); a failure is a warning.
 - An app's package exports the adapters it writes with, so a config needs only that package to rice the program.
 
 ## Rules for adapters and edits

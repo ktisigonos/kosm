@@ -25,9 +25,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
 
-- **13p. Drop nwg-look, maybe qt6ct and Kvantum** `ASK`
-  - Do: list what nwg-look, qt6ct/qt5ct and Kvantum still set on the human's system (GTK theme, icons, cursor, fonts in `settings.ini` and gsettings; Qt's style, palette, fonts and icons) and which of it `kosm_gtk` and `kosm_kde` could write themselves, so those tools are no longer needed. Name what cannot be replaced (e.g. a Qt style plugin, or gsettings not being a file) and propose the change before building it.
-  - Done when: the human has agreed which tools go, and their settings come from kosm instead.
+- **13p. Drop qt6ct and qt5ct** `ASK`
+  - Do: nwg-look is replaced (`kosm_gtk` writes GTK's settings files and sets gsettings) and Kvantum is not installed. Left: the human removes `GTK_THEME=oomox-Ricer` from `~/.config/hypr/defs.lua` (it overrides adw-gtk3), uninstalls nwg-look and deletes `~/.config/Kvantum`; then decide qt6ct/qt5ct: `QT_QPA_PLATFORMTHEME=kde` (plasma-integration, installed) reads colors, fonts, icons, style and single-click from kdeglobals, which `kosm_kde` would gain fields for; the tooltip qss is lost, and Qt 5 apps need `plasma5-integration` or keep qt5ct.
+  - Do: Krystallos' Hyprland app sets the `GTK_THEME` environment variable (or leaves it unset) instead of the hand-written `defs.lua`.
+  - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
 
 - **13q. Live reload for Qt and KDE apps** `ASK`
   - Do: find out whether running Qt/KDE apps can pick up new colors without a restart (e.g. KDE's `kdeglobals` change notification over D-Bus, `plasma-apply-colorscheme`, qt5ct/qt6ct watching their files), and whether it works outside Plasma on Hyprland. `kosm_kde` and `kosm_qtct` are the packages it affects: they write `kdeglobals`, `kosm.colors` and the qtct color files. Propose a reloader for them if one works.
