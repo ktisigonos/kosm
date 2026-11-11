@@ -23,3 +23,11 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13n. Blender theme** (waits on the human)
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
+
+- **13o. Transparent Qt/KDE apps** `ASK`
+  - Do: find out whether translucent Qt/KDE app backgrounds are possible (some themes do it; the human's own try gave broken colors, apps turned purple and similar). Look at how those themes do it (Kvantum's translucency, the alpha channel in a `.colors` scheme, the compositor's blur) and why colors break. Report what works and what `kosm_kde` would need, then ask before building anything.
+  - Done when: the human has a short answer on what is possible and how, and has chosen whether `kosm_kde` gains it.
+
+- **13p. Drop nwg-look, maybe qt6ct and Kvantum** `ASK`
+  - Do: list what nwg-look, qt6ct/qt5ct and Kvantum still set on the human's system (GTK theme, icons, cursor, fonts in `settings.ini` and gsettings; Qt's style, palette, fonts and icons) and which of it `kosm_gtk` and `kosm_kde` could write themselves, so those tools are no longer needed. Name what cannot be replaced (e.g. a Qt style plugin, or gsettings not being a file) and propose the change before building it.
+  - Done when: the human has agreed which tools go, and their settings come from kosm instead.
