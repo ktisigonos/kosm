@@ -8,9 +8,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **13t. Transparent GTK apps**
-  - Do: GTK 3 (adw-gtk3) and GTK 4 (libadwaita) windows take the theme's `background_alpha`, like the terminals. `kosm_gtk.from` already builds `window_bg` with `theme.asBackground`, but Krystallos never sets `theme.background_alpha` (it applies `values.background_alpha` per app), so GTK stays opaque. Check which colors should follow the alpha (window, view, headerbar, sidebar, card) and which stay opaque for readability (popovers, dialogs, menus), whether every derived color keeps the alpha through its modifiers, and that GTK draws it on Hyprland. Then set the alpha in Krystallos and check it with `--diff`.
-  - Done when: tests cover which `kosm_gtk` colors carry the background alpha, and the human has seen translucent GTK 3 and GTK 4 apps.
+- **13t. Transparent GTK apps** (waits on the human)
+  - Do: `kosm_gtk` gives the theme's `background_alpha` to windows, views, header bars, sidebars, cards, thumbnails and the tab overview; popovers, dialogs, the active toggle and borders stay opaque. Krystallos' `gtk.zig` builds GTK's colors from a theme at `values.background_alpha`, and its config pins the new `kosm_gtk`. Left: the human applies Krystallos and restarts a libadwaita app (Nautilus) and an adw-gtk3 app; surfaces drawn over the window (views, sidebars, cards) add to its opacity where they cover it, so they look less translucent than the window itself.
+  - Done when: the human has seen translucent GTK 3 and GTK 4 apps on Hyprland.
 
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
