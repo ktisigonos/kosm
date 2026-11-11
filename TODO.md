@@ -24,10 +24,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
 
-- **13q. The kosmos' name in apps** (waits on the human)
-  - Do: done in kosm, the five apps and the base (`REVIEW.md` has the decisions). Left: re-pin `~/.config/kosm` (`build.zig.zon`: kosm, kosm_base, kosm_kde, kosm_blender, kosm_vicinae, kosm_tuios, kosm_qtct; `kosmoi/krystallos/build.zig.zon`: kosm) and set `theme.name = "Krystallos"` in Krystallos' `root.zig`; an agent may do it once the human allows writing there.
-  - Done when: Krystallos' `--diff` against the real config changes only KDE's `Name`, tuios' `display_name` and Vicinae's `name`.
-
 - **13r. Customizable shaders** `ASK`
   - Do: a kosmos can set the values a shader exposes, so its colors follow the theme. Example: ghostty's `custom-shader` runs `cursor_warp.glsl` (ghostty-cursor-shaders), whose `TRAIL_COLOR` (a `vec4` near the top of the file) cannot be set from kosm today, so the trail can't be made to match the cursor. Ask the human first: whether kosm edits a shader's constants in place (a GLSL adapter; a tree-sitter grammar is a dependency) or writes its own copy of the shader with the values filled in, which shaders and values to cover, and whether this lives in `kosm_ghostty` or a package of its own (other programs, like Hyprland, take shaders too).
   - Done when: a kosmos sets the trail color of `cursor_warp.glsl` and `--diff` shows only that value changing; the edit is tested on a copy of the shader in a temporary directory.

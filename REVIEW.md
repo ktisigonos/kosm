@@ -354,7 +354,5 @@ fields.
   name; before both were `kosm`. tuios' `id` defaults to the theme file's name.
 - `Output.kosmos` defaults to empty so other packages' test fixtures keep building; a name
   that needs it then fails with `NoKosmosName` instead of writing `.colors` files with no name.
-- Not done: your config. Writing to `~/.config/kosm` was refused by the permission check, so it
-  still pins the old commits. Checked on a copy in a temporary folder instead: Krystallos'
-  `--diff` with `theme.name = "Krystallos"` changes only KDE's `Name`, tuios' `display_name`
-  and Vicinae's `name`; with `.per_kosmos` the five files become `krystallos.*`.
+- Your config is re-pinned and Krystallos sets `theme.name = "Krystallos"`. Checked with
+  `--diff` only: it changes just KDE's `Name`, tuios' `display_name` and Vicinae's `name`.
