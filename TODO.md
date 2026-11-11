@@ -9,7 +9,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 ---
 
 - **13a. Kosm's packages in their own repositories**
-  - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands).
+  - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
 - **13l. CS2's fonts.conf** (waits on the human)
@@ -23,7 +23,3 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13n. Blender theme** (waits on the human)
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
-
-- **13r. Customizable shaders** (waits on the human)
-  - Do: `kosm_glsl` (a `glsl` adapter on tree-sitter-glsl, and an app for `cursor_warp.glsl`'s settings) is done and in `kosm init`'s list; `--diff` on a copy of Krystallos changes only `TRAIL_COLOR` in a copy of the real shader. Left: the human pushes `kosm_glsl` and adds it to the config and Krystallos (a `cursor_warp` app beside the base).
-  - Done when: `kosm apply krystallos --diff` in the real config shows only `TRAIL_COLOR` changing in `cursor_warp.glsl`.
