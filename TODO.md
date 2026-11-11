@@ -24,10 +24,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: `kosm_blender` is done and in Krystallos; the preset loads in a headless Blender 5.2 with every color applied. Left: the human picks it in Blender and checks it looks right.
   - Done when: the human has seen the theme in Blender.
 
-- **13p. Choosing the base's apps** `PLAN FIRST`
-  - Do: let a kosmos list the base's apps it wants on, instead of setting every other one to null; apps left out are never applied. The plan proposes the shape, keeping completion (a struct of booleans like `.{ .kitty = true }`, or a list of an enum of the base's apps), and whether the default stays every app.
-  - Done when: a kosmos enabling only two apps plans only their files, and the starting kosmos uses it instead of its nulls.
-
 - **13q. The kosmos' name in apps** (plan agreed with the human)
   - Do: core: `Theme.name: ?[]const u8 = null`, the name programs show ("Krystallos"); null takes the name kosm applies the kosmos under (`krystallos`, `krystallos.dark`). `Theme.files: Files = .shared`, a global switch: `.shared` writes `kosm.<ext>` for every kosmos, `.per_kosmos` writes `<kosmos name>.<ext>` (always the lowercase name kosm applies it under, never the display name). `Output.kosmos`, set by the runner, plus helpers on Output: the display name, and filling a `{name}` placeholder in an app's file path from the switch.
   - Do: apps whose files a program picks by name implement it: KDE (`{name}.colors`, the scheme's `Name`, kdeglobals' `ColorScheme`), Blender (`{name}.xml`), Vicinae (`themes/{name}.toml`, its `name`, the selection in settings.json), tuios (`themes/{name}.json`, `id`, `display_name`, the selection in config.toml), qt5ct/qt6ct (`colors/{name}.conf`, `color_scheme_path`). Files a program must include stay `kosm` whatever the switch (Hyprland's kosm.lua, kitty, ghostty, Zen, nvim, the GTK, Equibop and AdwSteamGtk blocks).

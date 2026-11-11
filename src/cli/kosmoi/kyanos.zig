@@ -16,19 +16,20 @@ pub const palette: kosm.Palette = .{
 };
 
 pub fn kosmos() base.Base {
-    var apps = base.from(.from(palette, .dark), .{ .families = &.{"monospace"}, .size = 13 });
+    // The apps left out write into files or folders their programs create; take them out of
+    // the list once you have the program.
+    var apps = base.from(.from(palette, .dark), .{ .families = &.{"monospace"}, .size = 13 }, .{ .except = &.{
+        .counter_strike,
+        .counter_strike_2,
+        .darkreader,
+        .hyprmouse,
+        .ohmyposh,
+        .qtct,
+        .tuios,
+        .vicinae,
+    } });
     // Override any single value with a plain assignment:
     apps.kitty.?.cursor.cursor_shape = .block;
     apps.ghostty.?.cursor_style = .block;
-    // These write into files or folders their programs create; set them back once you have
-    // the program.
-    apps.counter_strike = null;
-    apps.counter_strike_2 = null;
-    apps.darkreader = null;
-    apps.hyprmouse = null;
-    apps.ohmyposh = null;
-    apps.qtct = null;
-    apps.tuios = null;
-    apps.vicinae = null;
     return apps;
 }
