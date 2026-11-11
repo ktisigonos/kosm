@@ -20,8 +20,10 @@ pub fn kosmos() base.Base {
     // Override any single value with a plain assignment:
     apps.kitty.?.cursor.cursor_shape = .block;
     apps.ghostty.?.cursor_style = .block;
-    // These edit files their programs create; set them back once you have the program.
+    // These write into files or folders their programs create; set them back once you have
+    // the program.
     apps.cs16 = null;
+    apps.cs2 = null;
     apps.darkreader = null;
     apps.hyprmouse = null;
     apps.ohmyposh = null;
