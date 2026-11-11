@@ -33,3 +33,11 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13q. Live reload for Qt and KDE apps** `ASK`
   - Do: find out whether running Qt/KDE apps can pick up new colors without a restart (e.g. KDE's `kdeglobals` change notification over D-Bus, `plasma-apply-colorscheme`, qt5ct/qt6ct watching their files), and whether it works outside Plasma on Hyprland. `kosm_kde` and `kosm_qtct` are the packages it affects: they write `kdeglobals`, `kosm.colors` and the qtct color files. Propose a reloader for them if one works.
   - Done when: the human has a short answer on what reloads and how, and has chosen whether `kosm_kde` and `kosm_qtct` gain a reloader.
+
+- **13r. Icons generated from the palette** `ASK` `PLAN FIRST`
+  - Do: an app (`kosm_icons`) that generates an icon theme from the theme's colors, so icons follow the kosmos like everything else. The official base set is a minimalistic SVG icon theme, recolored; the human picks which one (license must allow modified copies). Propose how the recoloring works (which SVG colors map to which palette colors), where the theme is written (`~/.local/share/icons/<name>`), and any dependency, then wire its name into `kosm_gtk`'s `gtk_icon_theme_name` and `kosm_kde`'s icons.
+  - Done when: the human has picked the icon set and seen apps use the generated theme in the kosmos' colors.
+
+- **13s. Cursors generated from the palette** `ASK` `PLAN FIRST`
+  - Do: an app (`kosm_cursor`) that builds a cursor theme (XCursor, and hyprcursor) in the theme's colors. Default: Bibata Modern Ice's SVG sources recolored (fill, outline, shadow from the palette). Later maybe a cursor of kosm's own. Make it easy for users to rice their own cursors: their own SVGs, colors and size as plain fields. Propose how SVGs become cursors (rendering and the XCursor/hyprcursor formats, written ourselves or a dependency), where the theme is written, and how `kosm_gtk`'s cursor settings and Hyprland's `XCURSOR_*`/`HYPRCURSOR_*` pick it up.
+  - Done when: the human has seen the generated cursor in GTK, Qt and Hyprland, in the kosmos' colors.
