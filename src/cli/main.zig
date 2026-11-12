@@ -1,7 +1,7 @@
 //! The `kosm` command: `kosm init`, `kosm apply`, which builds the one kosmos in the config
 //! project with `zig build` and runs it, `kosm list`, `kosm colors`, `kosm new`,
 //! `kosm current`, the package commands `kosm add`, `kosm remove` and `kosm update`, and
-//! `kosm source`. Applying a directory kosmos also refreshes its own
+//! `kosm source` and `kosm relay`, the native messaging host browser extensions use. Applying a directory kosmos also refreshes its own
 //! manifest. Every build runs with the kosm sources `Sources` finds.
 
 const std = @import("std");
@@ -16,6 +16,7 @@ const complete_command = @import("complete.zig");
 const completions = @import("completions.zig");
 const new_command = @import("new.zig");
 const source_command = @import("source.zig");
+const relay_command = @import("relay.zig");
 const Sources = @import("Sources.zig");
 const interface = @import("kosm_interface");
 
@@ -31,6 +32,7 @@ const usage =
     \\       kosm remove <name> [--config dir]
     \\       kosm update [name] [--config dir]
     \\       kosm completions fish|bash|zsh
+    \\       kosm relay <file>
     \\
 ;
 
@@ -65,6 +67,7 @@ pub fn main(init: std.process.Init) !u8 {
         .current => return printCurrent(init, &stderr.interface),
         .source => |directory| return source_command.source(init, directory, &stderr.interface),
         .completions => |shell| return printCompletions(init, shell),
+        .relay => |file| return relay_command.relay(init, file, &stderr.interface),
         else => {},
     }
     const builds = try Builds.prepare(init, &stderr.interface) orelse return 1;
@@ -74,7 +77,7 @@ pub fn main(init: std.process.Init) !u8 {
         .new => |new| return runNew(init, builds, new, &stderr.interface),
         .add, .remove, .update, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
         .complete => |words| return runComplete(init, builds, words),
-        .current, .source, .completions => unreachable, // Handled above.
+        .current, .source, .completions, .relay => unreachable, // Handled above.
     }
 }
 
@@ -118,6 +121,7 @@ fn expectedArguments(command: []const u8) []const u8 {
     if (std.mem.eql(u8, command, "completions")) return "one shell: fish, bash or zsh";
     if (std.mem.eql(u8, command, "new")) return "a kind and a name, e.g. kosm new app my_bar";
     if (std.mem.eql(u8, command, "source")) return "at most one directory, or --default";
+    if (std.mem.eql(u8, command, "relay")) return "one file, e.g. kosm relay ~/.local/share/kosm/firefox/values.json";
     return "no arguments";
 }
 
@@ -225,7 +229,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .list => list_command.list(context, config_command.argument),
         // Blocks only where they can be drawn: a pipe or a file gets plain text.
         .colors => colors_command.colors(context, config_command.argument.?, try std.Io.File.stdout().isTty(init.io)),
-        .apply, .current, .init, .new, .source, .completions, .complete => unreachable, // main passes only the five above.
+        .apply, .current, .init, .new, .source, .completions, .complete, .relay => unreachable, // main passes only the five above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -316,6 +320,8 @@ const Command = union(enum) {
     colors: ConfigCommand,
     /// The shell whose completion script to print.
     completions: completions.Shell,
+    /// The file to forward to a browser extension.
+    relay: []const u8,
     /// The words typed after `kosm`, for the completion scripts; not in the usage.
     complete: []const []const u8,
     add: ConfigCommand,
@@ -345,6 +351,11 @@ const Command = union(enum) {
             if (arguments.len < 2) return error.MissingArgument;
             if (arguments.len > 2) return error.UnexpectedArgument;
             return .{ .completions = std.meta.stringToEnum(completions.Shell, arguments[1]) orelse return error.UnexpectedArgument };
+        }
+        if (std.mem.eql(u8, arguments[0], "relay")) {
+            if (arguments.len < 2) return error.MissingArgument;
+            if (arguments.len > 2) return error.UnexpectedArgument;
+            return .{ .relay = arguments[1] };
         }
         if (std.mem.eql(u8, arguments[0], "complete")) {
             const separated = arguments.len > 1 and std.mem.eql(u8, arguments[1], "--");
@@ -475,6 +486,7 @@ test {
     std.testing.refAllDecls(colors_command);
     std.testing.refAllDecls(complete_command);
     std.testing.refAllDecls(completions);
+    std.testing.refAllDecls(relay_command);
     std.testing.refAllDecls(new_command);
     std.testing.refAllDecls(Sources);
 }
@@ -499,6 +511,14 @@ test "a --set whose value is --diff is no diff, as in the runner" {
     const command = try Apply.parse(arena.allocator(), &.{ "apply", "frost", "--set", "--diff" });
     try testing.expect(!command.diff);
     try testing.expectEqual(2, command.runner_arguments.len);
+}
+
+test "relay takes exactly one file" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try testing.expectEqualStrings("/v.json", (try Command.parse(arena.allocator(), &.{ "relay", "/v.json" })).relay);
+    try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{"relay"}));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "relay", "/v.json", "x" }));
 }
 
 test "current takes no arguments" {

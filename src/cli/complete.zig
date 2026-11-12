@@ -28,6 +28,7 @@ const commands = [_]Candidate{
     .{ .text = "remove", .description = "remove a package" },
     .{ .text = "update", .description = "fetch packages again" },
     .{ .text = "completions", .description = "print a shell's completion script" },
+    .{ .text = "relay", .description = "forward a file to a browser extension" },
 };
 const kinds = [_]Candidate{
     .{ .text = "kosmos", .description = "a rice" },
@@ -65,6 +66,8 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
     if (std.mem.eql(u8, command, "completions")) return if (before.len == 0) writeAll(context.stdout, &shells);
     if (std.mem.eql(u8, command, "source")) return if (before.len == 0) writeAll(context.stdout, &.{.{ .text = "--default", .description = "use the installed sources again" }});
     if (std.mem.eql(u8, command, "current")) return;
+    // A file, which each shell completes itself.
+    if (std.mem.eql(u8, command, "relay")) return;
     if (std.mem.eql(u8, command, "apply")) return completeApply(context, before, previous, current);
 
     if (std.mem.startsWith(u8, current, "-")) return writeAll(context.stdout, &.{config_flag});
