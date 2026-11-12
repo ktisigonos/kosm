@@ -8,6 +8,13 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
+- **21. kosm build picks what to build**
+  - Do: `kosm build` builds only the kosmoi in `kosmoi/` by default; kosmoi declared by local apps and adapters and by installed packages are built only when named.
+  - Do: an optional hand-edited `kosm.zon` at the config root holds kosm's own settings; its `.build` is `.all` (the default, also when the file is missing), `.{ .only = .{ "personal", "everforest" } }` or `.{ .except = .{ "catppuccin" } }`, like `kosm_base`'s `Apps`. A name matches like `kosm list`'s: a file name means it and every variant, `file.variant` only that variant. A name that matches nothing is an error naming `kosm.zon`, the name and the kosmoi there are.
+  - Do: on the command line, `kosm build <name>...` (only), `kosm build --except <name>...` and `kosm build --all` replace `kosm.zon`'s choice for that run; same matching and errors. Completions offer kosmos names for them.
+  - Do: `DESIGN.md`'s config project section gains a line on `kosm.zon`.
+  - Done when: tests cover the default (kosmoi/ only), `only` and `except` from `kosm.zon` and from the command line, a variant named alone, `--all` overriding the file, and an unknown name in each place failing before anything is built.
+
 - **17. A kosm browser extension** (waits on the human)
   - Do: done and checked in headless scratch Zen profiles (an apply changed page colors, the page font and `--kosm-*` at once, a site toggled off stayed off after a restart, no relay ran after Zen closed): `kosm relay`, `output.verbatim` with executable files, the new package `kosm_firefox` (Kosm and Kosm Live from one source tree; Kosm Live and its three prefs go into every Zen profile), `kosm_zen`'s `profile.live` (prefs to `kosm-live.json`), `kosm_base`'s `firefox` replacing `darkreader` (pages get the look's fonts, Zen's prefs go live). `kosm_darkreader` is no longer official.
   - Left for the human: the initial push of `kosm_firefox` and a push of kosm; in the config, `kosm remove kosm_darkreader`, `kosm add git+https://git.nnstdios.com/ktisigonos/kosm_firefox`, `kosm update`, and `.darkreader` out of the `except` lists of krystallos and everforest; apply, remove Dark Reader, Stylus and Transparent Zen from Zen, and restart Zen once.
