@@ -1,5 +1,9 @@
 //! What every app's `from` receives: the resolved palette, the mode, the roles, the code
 //! colors, the variations, the alpha of backgrounds and the kosmos' names.
+//!
+//! `from` works everything out from an `Input`, in order: palette, roles, code colors. To
+//! change something later, change `input` and call the update of its level, which redoes that
+//! level and every one after it. Assigning a finished value directly wins but flows nowhere.
 
 const Theme = @This();
 
@@ -8,14 +12,17 @@ const Color = @import("Color.zig");
 const Palette = @import("Palette.zig");
 const Variations = @import("Variations.zig");
 
+/// What the theme was built from. Change it, then call `updatePalette`, `updateRoles` or
+/// `updateCode` to work out that level and every one after it again.
+input: Input,
 /// Every hue filled in.
 palette: Palette.Resolved,
-/// Dark or light; the background and foreground roles follow it.
+/// Dark or light; the background and foreground roles and the variations follow it. To
+/// change it, build a new theme with `from`.
 mode: Mode,
-/// The colors apps give meaning to (background, accent, error, ...). Assign one to recolor
-/// every app; `Roles.from` works them out again after a palette or mode change.
+/// The colors apps give meaning to (background, accent, link, error, ...).
 roles: Roles,
-/// Colors for highlighting code. `Code.from` works them out again after a role changes.
+/// Colors for highlighting code.
 code: Code,
 /// Shared transforms. Tweak them here once, for every module built from this theme.
 variations: Variations,
@@ -32,6 +39,8 @@ files: Files = .shared,
 /// The single global fact modules use to choose backgrounds and foregrounds.
 pub const Mode = enum { dark, light };
 
+/// What a theme is built from: the palette, the mode and the kosmos' own roles and code colors.
+pub const Input = @import("Theme/Input.zig");
 /// The colors apps give meaning to, in libadwaita's names.
 pub const Roles = @import("Theme/Roles.zig");
 /// Colors for highlighting code, in tree-sitter's capture names.
@@ -47,24 +56,44 @@ pub const Files = enum {
     per_kosmos,
 };
 
-/// Resolves the palette and fills every role, code color and variation's default for `mode`.
-/// Contrast picks choose between the palette's black and white, and shadows mix toward its black.
-pub fn from(palette: Palette, mode: Mode) Theme {
-    const resolved = palette.resolve();
-    var variations = Variations.from(mode);
-    variations.contrast.on.contrast.?.dark = resolved.black;
-    variations.contrast.on.contrast.?.light = resolved.white;
-    variations.contrast.on_muted.contrast.?.dark = resolved.black;
-    variations.contrast.on_muted.contrast.?.light = resolved.white;
-    variations.surface.shadow.mix.?.toward = resolved.black;
-    const roles: Roles = .from(resolved, mode);
-    return .{
-        .palette = resolved,
-        .mode = mode,
-        .roles = roles,
-        .code = .from(resolved, roles, variations),
-        .variations = variations,
+/// Works out the palette, every role and code color `input` leaves null, and every
+/// variation's default for its mode. Contrast picks choose between the palette's black and
+/// white, and shadows mix toward its black.
+pub fn from(input: Input) Theme {
+    var theme: Theme = .{
+        .input = input,
+        .palette = undefined,
+        .mode = input.mode,
+        .roles = undefined,
+        .code = undefined,
+        .variations = .from(input.mode),
     };
+    theme.updatePalette();
+    return theme;
+}
+
+/// Resolves `input.palette` again, points the variations' contrast picks and shadow at its
+/// black and white, then updates the roles and code colors.
+pub fn updatePalette(theme: *Theme) void {
+    const palette = theme.input.palette.resolve();
+    theme.palette = palette;
+    theme.variations.contrast.on.contrast.?.dark = palette.black;
+    theme.variations.contrast.on.contrast.?.light = palette.white;
+    theme.variations.contrast.on_muted.contrast.?.dark = palette.black;
+    theme.variations.contrast.on_muted.contrast.?.light = palette.white;
+    theme.variations.surface.shadow.mix.?.toward = palette.black;
+    theme.updateRoles();
+}
+
+/// Works out the roles again from `input.roles` and the palette, then updates the code colors.
+pub fn updateRoles(theme: *Theme) void {
+    theme.roles = .from(theme.palette, theme.mode, theme.input.roles);
+    theme.updateCode();
+}
+
+/// Works out the code colors again from `input.code`, the palette, the roles and the variations.
+pub fn updateCode(theme: *Theme) void {
+    theme.code = .from(theme.palette, theme.roles, theme.variations, theme.input.code);
 }
 
 /// `color` with its alpha scaled by `background_alpha`: what an app's `from` gives the color it
@@ -83,29 +112,31 @@ const test_palette: Palette = .{
     .cyan = .{ .lightness = 0.75, .chroma = 0.08, .hue = 200 },
 };
 
+const test_pink: Color = .{ .lightness = 0.7, .chroma = 0.15, .hue = 350 };
+
 test "contrast picks the palette's black or white" {
-    const theme = from(test_palette, .dark);
+    const theme = from(.{ .palette = test_palette, .mode = .dark });
     try testing.expectEqual(theme.palette.black, theme.variations.contrast.on.apply(theme.palette.white));
     try testing.expectEqual(theme.palette.white, theme.variations.contrast.on.apply(theme.palette.black));
     try testing.expectEqual(theme.palette.black, theme.variations.contrast.on.apply(theme.palette.cyan));
 }
 
 test "shadow mixes toward the palette's black" {
-    const theme = from(test_palette, .light);
+    const theme = from(.{ .palette = test_palette, .mode = .light });
     const shadow = theme.variations.surface.shadow.apply(theme.palette.white);
     try testing.expectEqual(theme.palette.white.mix(theme.palette.black, 0.8).lightness, shadow.lightness);
     try testing.expectEqual(0.5, shadow.alpha);
 }
 
 test "a tweak on the theme reaches the composed variations read from it" {
-    var theme = from(test_palette, .dark);
+    var theme = from(.{ .palette = test_palette, .mode = .dark });
     theme.variations.state.inactive = .{ .chroma = -1 };
     const result = theme.variations.state.selectedInactive().apply(theme.palette.cyan);
     try testing.expectEqual(0.0, result.chroma);
 }
 
 test "backgrounds are opaque unless the theme's alpha is lowered, and only alpha changes" {
-    var theme = from(test_palette, .dark);
+    var theme = from(.{ .palette = test_palette, .mode = .dark });
     try testing.expectEqual(theme.palette.black, theme.asBackground(theme.palette.black));
     theme.background_alpha = 0.5;
     const background = theme.asBackground(theme.palette.black);
@@ -119,23 +150,24 @@ test "backgrounds are opaque unless the theme's alpha is lowered, and only alpha
 }
 
 test "roles default from the palette and the mode flips background and foreground" {
-    const dark = from(test_palette, .dark);
+    const dark = from(.{ .palette = test_palette, .mode = .dark });
     try testing.expectEqual(dark.palette.black, dark.roles.background);
     try testing.expectEqual(dark.palette.white, dark.roles.foreground);
     try testing.expectEqual(dark.palette.cyan, dark.roles.accent);
     try testing.expectEqual(dark.palette.blue, dark.roles.secondary);
+    try testing.expectEqual(dark.palette.cyan, dark.roles.link);
     try testing.expectEqual(dark.palette.green, dark.roles.success);
     try testing.expectEqual(dark.palette.yellow, dark.roles.warning);
     try testing.expectEqual(dark.palette.red, dark.roles.@"error");
 
-    const light = from(test_palette, .light);
+    const light = from(.{ .palette = test_palette, .mode = .light });
     try testing.expectEqual(light.palette.white, light.roles.background);
     try testing.expectEqual(light.palette.black, light.roles.foreground);
     try testing.expectEqual(dark.roles.accent, light.roles.accent);
 }
 
 test "code colors default from the palette and the foreground" {
-    const theme = from(test_palette, .light);
+    const theme = from(.{ .palette = test_palette, .mode = .light });
     const code = theme.code;
     const foreground = theme.palette.black;
     try testing.expectEqual(theme.variations.emphasis.muted.apply(foreground), code.comment);
@@ -152,25 +184,56 @@ test "code colors default from the palette and the foreground" {
     try testing.expectEqual(theme.palette.red, code.tag);
 }
 
-test "an assigned role wins and reaches the code colors worked out again from it" {
-    var theme = from(test_palette, .dark);
-    const pink: Color = .{ .lightness = 0.7, .chroma = 0.15, .hue = 350 };
-    theme.roles.accent = pink;
-    theme.roles.foreground = pink;
-    try testing.expectEqual(pink, theme.roles.accent);
-    try testing.expectEqual(theme.palette.white, theme.code.variable);
-    theme.code = .from(theme.palette, theme.roles, theme.variations);
-    try testing.expectEqual(pink, theme.code.variable);
-    try testing.expectEqual(theme.variations.emphasis.muted.apply(pink), theme.code.comment);
+test "an overridden role wins and flows into the link and code colors" {
+    const theme = from(.{
+        .palette = test_palette,
+        .mode = .dark,
+        .roles = .{ .accent = test_pink, .foreground = test_pink },
+    });
+    try testing.expectEqual(test_pink, theme.roles.accent);
+    try testing.expectEqual(test_pink, theme.roles.link);
+    try testing.expectEqual(test_pink, theme.code.variable);
+    try testing.expectEqual(theme.variations.emphasis.muted.apply(test_pink), theme.code.comment);
 }
 
-test "roles worked out again follow a changed palette and mode" {
-    var theme = from(test_palette, .dark);
-    var palette = test_palette;
-    palette.cyan = .{ .lightness = 0.6, .chroma = 0.1, .hue = 220 };
-    theme.palette = palette.resolve();
-    theme.mode = .light;
-    theme.roles = .from(theme.palette, theme.mode);
-    try testing.expectEqual(palette.cyan.?, theme.roles.accent);
-    try testing.expectEqual(theme.palette.white, theme.roles.background);
+test "an overridden link wins over the accent" {
+    const theme = from(.{ .palette = test_palette, .mode = .dark, .roles = .{ .link = test_pink } });
+    try testing.expectEqual(test_pink, theme.roles.link);
+    try testing.expectEqual(theme.palette.cyan, theme.roles.accent);
+}
+
+test "an overridden code color wins" {
+    const theme = from(.{ .palette = test_palette, .mode = .dark, .code = .{ .comment = test_pink } });
+    try testing.expectEqual(test_pink, theme.code.comment);
+}
+
+test "updating roles redoes the roles and code colors but keeps overrides" {
+    var theme = from(.{ .palette = test_palette, .mode = .dark, .roles = .{ .warning = test_pink } });
+    theme.input.roles.accent = theme.palette.blue;
+    theme.input.roles.foreground = test_pink;
+    theme.updateRoles();
+    try testing.expectEqual(theme.palette.blue, theme.roles.accent);
+    try testing.expectEqual(theme.palette.blue, theme.roles.link);
+    try testing.expectEqual(test_pink, theme.roles.warning);
+    try testing.expectEqual(test_pink, theme.code.variable);
+}
+
+test "updating the palette flows through roles and code colors and keeps variation tweaks" {
+    var theme = from(.{ .palette = test_palette, .mode = .dark });
+    theme.variations.state.hovered.lightness = 0.5;
+    theme.input.palette.cyan = test_pink;
+    theme.input.palette.white = test_pink;
+    theme.updatePalette();
+    try testing.expectEqual(test_pink, theme.roles.accent);
+    try testing.expectEqual(test_pink, theme.roles.link);
+    try testing.expectEqual(test_pink, theme.code.variable);
+    try testing.expectEqual(test_pink, theme.variations.contrast.on.contrast.?.light);
+    try testing.expectEqual(0.5, theme.variations.state.hovered.lightness);
+}
+
+test "updating code colors keeps roles assigned directly" {
+    var theme = from(.{ .palette = test_palette, .mode = .dark });
+    theme.roles.foreground = test_pink;
+    theme.updateCode();
+    try testing.expectEqual(test_pink, theme.code.variable);
 }

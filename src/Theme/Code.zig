@@ -3,6 +3,7 @@
 
 const Code = @This();
 
+const std = @import("std");
 const Color = @import("../Color.zig");
 const Palette = @import("../Palette.zig");
 const Roles = @import("Roles.zig");
@@ -33,20 +34,31 @@ punctuation: Color,
 /// Markup tags (HTML, XML, JSX). Default: red.
 tag: Color,
 
-/// Every code color's default from `palette`, the `roles`' foreground and `variations`.
-pub fn from(palette: Palette.Resolved, roles: Roles, variations: Variations) Code {
+/// The code colors a kosmos sets itself, each optional.
+pub const Overrides = @import("Code/Overrides.zig");
+
+/// Every code color `overrides` leaves null from `palette`, the `roles`' foreground and
+/// `variations`.
+pub fn from(palette: Palette.Resolved, roles: Roles, variations: Variations, overrides: Overrides) Code {
     return .{
-        .comment = variations.emphasis.muted.apply(roles.foreground),
-        .keyword = palette.purple,
-        .string = palette.green,
-        .number = palette.orange,
-        .constant = palette.orange,
-        .function = palette.blue,
-        .type = palette.yellow,
-        .variable = roles.foreground,
-        .property = roles.foreground,
-        .operator = roles.foreground,
-        .punctuation = roles.foreground,
-        .tag = palette.red,
+        .comment = overrides.comment orelse variations.emphasis.muted.apply(roles.foreground),
+        .keyword = overrides.keyword orelse palette.purple,
+        .string = overrides.string orelse palette.green,
+        .number = overrides.number orelse palette.orange,
+        .constant = overrides.constant orelse palette.orange,
+        .function = overrides.function orelse palette.blue,
+        .type = overrides.type orelse palette.yellow,
+        .variable = overrides.variable orelse roles.foreground,
+        .property = overrides.property orelse roles.foreground,
+        .operator = overrides.operator orelse roles.foreground,
+        .punctuation = overrides.punctuation orelse roles.foreground,
+        .tag = overrides.tag orelse palette.red,
     };
+}
+
+test "every code color can be overridden" {
+    try std.testing.expectEqualDeep(
+        std.meta.fieldNames(Code),
+        std.meta.fieldNames(Overrides),
+    );
 }

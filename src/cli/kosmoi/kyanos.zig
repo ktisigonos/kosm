@@ -18,7 +18,7 @@ pub const palette: kosm.Palette = .{
 pub fn kosmos() base.Base {
     // The apps left out write into files or folders their programs create; take them out of
     // the list once you have the program.
-    var apps = base.from(.from(palette, .dark), .{ .families = &.{"monospace"}, .size = 13 }, .{ .except = &.{
+    var apps = base.from(.from(.{ .palette = palette, .mode = .dark }), .{ .families = &.{"monospace"}, .size = 13 }, .{ .except = &.{
         .counter_strike,
         .counter_strike_2,
         .darkreader,

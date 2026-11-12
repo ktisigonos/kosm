@@ -239,7 +239,7 @@ const check_kosmos =
     \\pub const Check = struct { bar: my_bar.App, lang: Lang };
     \\
     \\pub fn kosmos() Check {
-    \\    const theme = kosm.Theme.from(.{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff") }, .dark);
+    \\    const theme = kosm.Theme.from(.{ .palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff") }, .mode = .dark });
     \\    return .{ .bar = my_bar.from(theme), .lang = .{ .accent = theme.palette.cyan } };
     \\}
     \\

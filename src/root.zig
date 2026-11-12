@@ -51,6 +51,9 @@ test {
     std.testing.refAllDecls(@import("Color/parse.zig"));
     std.testing.refAllDecls(@import("color_choice.zig"));
     std.testing.refAllDecls(Palette);
+    std.testing.refAllDecls(Theme);
+    std.testing.refAllDecls(Theme.Roles);
+    std.testing.refAllDecls(Theme.Code);
     std.testing.refAllDecls(Modifier);
     std.testing.refAllDecls(Modifier.Step);
     std.testing.refAllDecls(Variations);

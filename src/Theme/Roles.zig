@@ -1,8 +1,9 @@
 //! The colors apps give meaning to, in libadwaita's names. An app reads these, never the
-//! palette color one defaults to, so assigning a role recolors every app.
+//! palette color one defaults to, so setting a role recolors every app.
 
 const Roles = @This();
 
+const std = @import("std");
 const Color = @import("../Color.zig");
 const Palette = @import("../Palette.zig");
 const Mode = @import("../Theme.zig").Mode;
@@ -16,6 +17,8 @@ foreground: Color,
 accent: Color,
 /// A second highlight beside the accent. Default: blue.
 secondary: Color,
+/// Links. Default: the accent.
+link: Color,
 /// Successful actions and states. Default: green.
 success: Color,
 /// Warnings and caution. Default: yellow.
@@ -23,21 +26,34 @@ warning: Color,
 /// Errors and destructive actions. Default: red.
 @"error": Color,
 
-/// Every role's default from `palette`, background and foreground following `mode`.
-pub fn from(palette: Palette.Resolved, mode: Mode) Roles {
+/// The roles a kosmos sets itself, each optional.
+pub const Overrides = @import("Roles/Overrides.zig");
+
+/// Every role `overrides` leaves null from `palette`, background and foreground following
+/// `mode`, and the link following the accent.
+pub fn from(palette: Palette.Resolved, mode: Mode, overrides: Overrides) Roles {
+    const accent = overrides.accent orelse palette.cyan;
     return .{
-        .background = switch (mode) {
+        .background = overrides.background orelse switch (mode) {
             .dark => palette.black,
             .light => palette.white,
         },
-        .foreground = switch (mode) {
+        .foreground = overrides.foreground orelse switch (mode) {
             .dark => palette.white,
             .light => palette.black,
         },
-        .accent = palette.cyan,
-        .secondary = palette.blue,
-        .success = palette.green,
-        .warning = palette.yellow,
-        .@"error" = palette.red,
+        .accent = accent,
+        .secondary = overrides.secondary orelse palette.blue,
+        .link = overrides.link orelse accent,
+        .success = overrides.success orelse palette.green,
+        .warning = overrides.warning orelse palette.yellow,
+        .@"error" = overrides.@"error" orelse palette.red,
     };
+}
+
+test "every role can be overridden" {
+    try std.testing.expectEqualDeep(
+        std.meta.fieldNames(Roles),
+        std.meta.fieldNames(Overrides),
+    );
 }

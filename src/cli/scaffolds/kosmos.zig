@@ -22,7 +22,7 @@ pub const Kosmos = struct {
 
 /// The theme every app is built from. A variation tweaked here changes every app.
 pub fn themeFor(mode: kosm.Theme.Mode) kosm.Theme {
-    var theme = kosm.Theme.from(palette, mode);
+    var theme = kosm.Theme.from(.{ .palette = palette, .mode = mode });
     theme.variations.state.hovered.lightness = 0.06;
     return theme;
 }

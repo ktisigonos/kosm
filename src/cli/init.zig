@@ -410,7 +410,7 @@ const check_kosmos =
     \\pub const palette: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .red = kosm.hex("ff0000") };
     \\
     \\pub fn kosmos() Check {
-    \\    var check: Check = .{ .kitty = kitty.from(kosm.Theme.from(palette, .dark)) };
+    \\    var check: Check = .{ .kitty = kitty.from(kosm.Theme.from(.{ .palette = palette, .mode = .dark })) };
     \\    check.kitty.fonts.font_size = 13;
     \\    return check;
     \\}
