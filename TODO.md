@@ -55,12 +55,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
 
-- **14a. Roles and code colors on the theme** `PLAN FIRST`
-  - Do: `kosm.Theme` gains the roles (background, foreground, accent, secondary, success, warning, error) and the code colors (tree-sitter's capture names), each optional with a default from the palette and the mode (accent cyan; secondary, success, warning, error, and the code colors, as the official apps use the palette for them today). Propose the defaults and how a role is read (resolved once in `Theme.from`, or a function) before coding.
-  - Done when: tests cover each default, an assigned role winning, and the mode flipping background and foreground.
-
 - **14b. Official apps read the roles**
   - Do: every official app's `from` reads the theme's roles and code colors where it now uses the palette for them (`palette.cyan` as accent in gtk, kde, qtct, zen, kitty, hyprland, dunst, tuios, hyprtoolkit, hyprmouse, blender, counter_strike; nvim's highlights). Terminal ANSI colors stay palette colors. Pin the new kosm in each and push them.
+  - Do: nvim's base16 slots each take one code color: `base08` (variables in base16) reads `code.tag`, since `code.variable` now defaults to the foreground; `base09` reads `code.number`, `base0A` `code.type`, `base0B` `code.string`, `base0D` `code.function`, `base0E` `code.keyword`.
   - Done when: each package's tests pass, and Krystallos' `--diff` is unchanged with its accent set to cyan.
 
 - **14c. Looks and shared values in the base** `PLAN FIRST`

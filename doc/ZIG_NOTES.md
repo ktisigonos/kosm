@@ -51,6 +51,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`@floatCast` from f64 to f32 never traps:** out-of-range values become +/-inf, so check `std.math.isFinite` after narrowing. A widened f32 keeps its exact binary value (`6.4` prints as `6.400000095367432`).
 - **`Union.tag` is the tag enum, not a union value:** `FontStyle.disabled` passed to an `anytype` parameter has the type `@typeInfo(FontStyle).@"union".tag_type`, so code checking for the union never sees it. Coerce first: `@as(FontStyle, .disabled)` (a typed field does this for you).
 - **`{t}` prints an enum's tag name:** `writer.print("{t}", .{direction})` writes `up`, no `@tagName` needed.
+- **`type` is a plain field name, `error` is not:** `zig fmt` turns `@"type": Color` and `.@"type"` into `type: Color` and `.type`, but `error` still needs `@"error"`.
 
 ### std
 
