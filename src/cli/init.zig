@@ -500,9 +500,12 @@ test "a config initialized from the real repositories diffs its starting kosmos"
     const arena = test_config.arena.allocator();
     var context = test_config.context();
     try init(context, official);
-    // The starting kosmos writes Zen's prefs into every profile, so the home needs one.
+    // The starting kosmos writes Zen's prefs into every profile and Blender's theme into every
+    // Blender version that has run, so the home needs one of each.
     try test_config.tmp.dir.createDirPath(testing.io, "home/.zen/a.default");
     try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.zen/a.default/prefs.js", .data = "" });
+    try test_config.tmp.dir.createDirPath(testing.io, "home/.config/blender/5.2/config");
+    try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.config/blender/5.2/config/bookmarks.txt", .data = "" });
 
     // The fork builds the fetched packages against this repository's kosm.
     context.sources = try test_kosm.sources(arena, testing.io);
