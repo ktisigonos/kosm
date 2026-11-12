@@ -12,7 +12,8 @@ there is undecided, so ask.
 
 ## Goals
 
-- **A minimal kosmos is tiny.** Black, white and a few hues rice everything; every app derives the rest. The end goal is one official base kosmos with every supported app and sane defaults, that a user's kosmos builds on by setting its palette and fonts and overriding single values.
+- **Kosm configures the whole system,** not only its looks: settings several programs share (keyboard layouts, cursor, rounding) are set once like colors are.
+- **A minimal kosmos is tiny.** One official base holds every supported app with plain defaults; a look makes it look nice; a user's kosmos picks a base and a look and sets the few things that are personal. Every app derives the rest.
 - **Depth is opt-in, in the same file.** Any single value of any app is overridden by a plain assignment.
 - **Variants are a function call.** A variant calls its base's build function with a few changed inputs, then assigns its own tweaks.
 - **Nothing is written twice.** No full-file template copies of configs.
@@ -27,7 +28,9 @@ there is undecided, so ask.
 - **package:** anything `kosm add` fetches; it may hold apps, adapters, kosmoi and a base kosmoi build on.
 - **app:** support for one program (`kosm_hyprland` exports `App`, `from`, `App.apply`).
 - **adapter:** support for one file format (Lua, TOML, JSON).
-- **kosmos:** a rice, a function returning a tree of apps.
+- **kosmos:** a rice, a function returning a tree of apps. It is what kosm applies.
+- **base:** turns a look into apps; the official one is `kosm_base`, and a user's own base holds it and adds apps.
+- **look:** what makes a base look nice (Krystallos, Everforest): a theme, fonts, the base's shared values, and a tweak of the official base's apps. A look builds no apps, so it works on any base holding the official one.
 
 "Module" only ever means a Zig module.
 
@@ -44,10 +47,12 @@ there is undecided, so ask.
 
 ## Theme
 
-`kosm.Theme` is the only thing every app receives: a palette, a mode, a background alpha and variations.
+`kosm.Theme` is the only thing every app receives: a palette, a mode, roles, code colors, a background alpha and variations.
 
 - **Palette:** black and white are required; the 12 hues of the wheel (red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink, 30 deg apart) are optional, and a missing one is mixed from its nearest set neighbours by wheel position. Colors beyond the wheel belong to apps or to the kosmos' own constants.
-- **Mode:** dark or light, the one global fact apps use to pick their own background and foreground. There are no global roles (`bg`, `accent`, `button`); those belong to each app.
+- **Mode:** dark or light; the background and foreground roles follow it.
+- **Roles:** libadwaita's names, which KDE and Material map onto: background, foreground, accent, secondary, success, warning, error. Each is optional and defaults from the palette (the accent is cyan); an app reads the role, never the palette color it defaults to, so one assignment recolors every app. An app's own colors beyond these stay its own fields.
+- **Code colors:** tree-sitter's capture names (comment, keyword, string, number, constant, function, type, variable, property, operator, punctuation, tag), each optional and defaulting from the palette, for editors and anything highlighting code.
 - **Background alpha:** one alpha every app gives its own background, so a single value makes terminals, browser and editors translucent together.
 - **Name:** the name programs show for the kosmos, falling back to the name kosm applies it under. One switch names the files a program picks by name: `kosm` for every kosmos, or after the kosmos so each keeps its own. Files a program includes by path are always `kosm`.
 - **Variations:** named color transforms in families (lightness, emphasis, state, surface, line, contrast, alpha), tweaked once on the theme for every app.
@@ -76,7 +81,8 @@ there is undecided, so ask.
 - A config project (`~/.config/kosm`, made by `kosm init`) is a Zig project depending on `kosm` by URL; `kosmoi/`, `apps/` and `adapters/` hold the user's own. A file there is private to its directory; a directory with `root.zig` is a package.
 - Package commands (`kosm add`, `remove`, `update`) wrap `zig fetch`; `packages.zon` remembers the ref to follow.
 - Kosm's own packages live in repositories of their own, like anyone's. `kosm init` adds every official package to a new config, with a starting kosmos that uses them.
-- The base kosmos is the package `kosm_base`: `from(theme, fonts, apps)` returns the official apps chosen, each an optional field. A kosmos built on it chooses its apps (all, none, only some, or all but some; the others are never applied), assigns its overrides, and holds the base in a struct of its own to add apps. The starting kosmos builds on it.
+- The base kosmos is the package `kosm_base`: `from(look, apps)` returns the official apps chosen, each an optional field, then applies the look's tweak. Its default look is literal: black is `#000000`, red `#ff0000`, rounding 0. Its shared values (rounding, gaps, border, padding, cursor, keyboard layouts and the like) are set once and read by every app with that setting; a value is shared once two apps use it or very likely will. Personal settings (shaders, keyboard layouts, editor) default to null, so the program's own default applies.
+- A kosmos chooses its base, its look and its apps (all, none, only some, or all but some; the others are never applied), then assigns its overrides. A user's own base holds `kosm_base`'s in a struct of its own beside its added apps, which follow the look through the theme's roles. The starting kosmos builds on `kosm_base`.
 - A build holds one copy of each package: what a config (or a package built on its own) lists itself wins over the copy a package pins, and packages pinning different copies of a package it doesn't list fail the build naming them.
 - Zig is pinned to a tagged release, never master.
 
@@ -86,7 +92,6 @@ there is undecided, so ask.
 - Backup files.
 - Checking package versions against the user's kosm.
 - `**`, predicates or regex in paths.
-- Global semantic colors (bg, fg, accent roles): these belong to apps.
 - `.with` / `.override` patch APIs.
 - Wallpaper -> palette generation (could be a package later).
 - Any custom configuration language.

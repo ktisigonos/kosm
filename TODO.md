@@ -54,3 +54,28 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13w. Commet theme** `ASK`
   - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
+
+- **14a. Roles and code colors on the theme** `PLAN FIRST`
+  - Do: `kosm.Theme` gains the roles (background, foreground, accent, secondary, success, warning, error) and the code colors (tree-sitter's capture names), each optional with a default from the palette and the mode (accent cyan; secondary, success, warning, error, and the code colors, as the official apps use the palette for them today). Propose the defaults and how a role is read (resolved once in `Theme.from`, or a function) before coding.
+  - Done when: tests cover each default, an assigned role winning, and the mode flipping background and foreground.
+
+- **14b. Official apps read the roles**
+  - Do: every official app's `from` reads the theme's roles and code colors where it now uses the palette for them (`palette.cyan` as accent in gtk, kde, qtct, zen, kitty, hyprland, dunst, tuios, hyprtoolkit, hyprmouse, blender, counter_strike; nvim's highlights). Terminal ANSI colors stay palette colors. Pin the new kosm in each and push them.
+  - Done when: each package's tests pass, and Krystallos' `--diff` is unchanged with its accent set to cyan.
+
+- **14c. Looks and shared values in the base** `PLAN FIRST`
+  - Do: `kosm_base.Look` (theme, fonts, shared values, an optional tweak of `Base`) and `kosm_base.Values`: the settings several official apps share (border size, rounding, rounding power, gaps, padding, shadow, cursor, icon theme, keyboard layouts), each read by every app having it. `from(look, apps)` replaces `from(theme, fonts, apps)` and runs the tweak last. The default look is literal (pure black, white and hues, rounding 0); personal settings (shaders, keyboard layouts, editor) are null. Propose the field list first.
+  - Do: the starting kosmos `kosm init` makes uses the new `from`.
+  - Done when: tests show a value of `Values` reaching every app having that setting, the tweak running after `from`, and a user base holding `Base` beside an added app taking the look's accent.
+
+- **14d. Krystallos as a look** `ASK`
+  - Do: in the human's config, on the human's request: Krystallos exports a `kosm_base.Look` (its palette, roles, fonts, values, and a tweak with only its app-specific changes); `colors.zig` becomes roles; its personal settings move out to 14f.
+  - Done when: a kosmos of Krystallos' look plus 14f's personal settings diffs the same as today's Krystallos.
+
+- **14e. Everforest look** `ASK`
+  - Do: in the human's config, on the human's request: an Everforest look (its published palette, green accent), proving a second look needs only values.
+  - Done when: a kosmos switching Krystallos' look for Everforest's diffs every app in Everforest's colors.
+
+- **14f. The human's personal kosmos** `ASK`
+  - Do: in the human's config, on the human's request: a kosmos using Krystallos' look on the official base (or a base of the human's own), setting only the personal settings (Ghostty shader, keyboard layouts, editor, Steam library, Hyprland's layout).
+  - Done when: it diffs the same as today's Krystallos.

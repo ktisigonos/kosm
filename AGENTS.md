@@ -13,7 +13,7 @@ Humans: edit the "Project settings" section freely; the rest is the stable ruleb
 
 ## Project settings (edit me)
 
-- **Project name:** Kosm (prose name). The repo, binary, package and namespace are lowercase `kosm`; packages are `kosm_<name>` (`kosm_hyprland`, `kosm_lua`); environment variables use `KOSM_`. A rice is a **kosmos** (pl. **kosmoi**); the dotfiles holding them are the **Ktisis**. Use these words, and **package / app / adapter**, exactly as `DESIGN.md` does. "Module" only ever means a Zig module.
+- **Project name:** Kosm (prose name). The repo, binary, package and namespace are lowercase `kosm`; packages are `kosm_<name>` (`kosm_hyprland`, `kosm_lua`); environment variables use `KOSM_`. A rice is a **kosmos** (pl. **kosmoi**), what makes one look nice is a **look**, what turns a look into apps a **base**; the dotfiles holding them are the **Ktisis**. Use these words, and **package / app / adapter / base / look**, exactly as `DESIGN.md` does. "Module" only ever means a Zig module.
 - **Language / version:** Zig 0.17.0 (tagged release). Pinned via `minimum_zig_version` in `build.zig.zon`. Never target Zig master.
 - **Docs location:** dependency docs live in the dependencies themselves under `zig-pkg/`. `doc/` holds project docs, plus the Zig language reference in `doc/generated/zig/`. All of these can be large: follow "Reading documentation and large files" in `general.md`.
 - **Primary dev platform:** Linux (Hyprland, Wayland). Hosts: nous, egregoros, ergasterion, synekdemos. No Windows or macOS yet.
@@ -22,7 +22,7 @@ Humans: edit the "Project settings" section freely; the rest is the stable ruleb
 
 ## What this project is
 
-A tool that rices a whole desktop from Zig code: a kosmos is a Zig function returning a tree of apps, and kosm writes their values into the apps' real config files, all or nothing. Read `DESIGN.md` before touching anything structural: goals, architecture, rules and non-goals. Your task list is `TODO.md`.
+A tool that configures a whole desktop system from Zig code: a kosmos is a Zig function returning a tree of apps, and kosm writes their values into the apps' real config files, all or nothing. Read `DESIGN.md` before touching anything structural: goals, architecture, rules and non-goals. Your task list is `TODO.md`.
 
 ## Kosm rules
 
