@@ -8,14 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **15. Fastfetch** (waits on the human)
-  - Do: `kosm_fastfetch` is done and in the base: it owns `~/.config/fastfetch/config.jsonc` whole, its fields mirror fastfetch's (`logo`, `display`, `modules`, `extra`), and `from(theme)` colors it from the roles. The human's personal kosmos holds the port of their config (`kosmoi/personal/fastfetch.zig`); fastfetch prints the same text from it as from the hand-written one. Left: the human applies and checks the colors.
-  - Done when: fastfetch shows the kosmos' colors and the human's layout after an apply.
-
-- **15b. Oh My Posh owns its config** (waits on the human)
-  - Do: `kosm_ohmyposh` is done and in the base: it writes the whole prompt config (`~/.config/oh-my-posh/kosm.json`, config version 4) from `blocks` and their segments, with a palette of the roles and the wheel that segments and color templates name as `p:<name>`; without `blocks` the prompt is a powerline of path, git and status. The human's personal kosmos holds the port of `Ricer.json` (`kosmoi/personal/ohmyposh.zig`, shades of the accent and darkened palette colors by a 0.07 lightness step); Oh My Posh prints the same text from it as from `Ricer.json`. Left: the human points `config.fish` at `kosm.json`, applies and checks the prompt, then may delete `Ricer.json`.
-  - Done when: the prompt shows the kosmos' colors and the human's layout after an apply.
-
 - **16. Live reload for Firefox browsers** `ASK` `PLAN FIRST`
   - Do: Firefox-based browsers (Zen, Firefox, LibreWolf, Floorp) read `user.js` and `userChrome.css` only at startup, and nothing outside a running browser can set its prefs (Marionette works but marks every window as remote-controlled). Decided direction: Firefox's autoconfig, which every Gecko browser supports. Two files go into the browser's install directory once (`/opt/zen-browser-bin` for Zen; needs root, so the human or a documented one-line command installs them); they load a script the app writes into the profile. Like `kosm_blender`'s startup script, it checks a file kosm writes for changes every `reload_interval`, then sets the listed prefs through `Services.prefs` (Zen's mods follow live through `@media -moz-pref` and `--mod-*`), and re-registers `kosm.css` through the style sheet service. A companion extension was weighed and loses: extensions can't set arbitrary prefs, style the browser's own UI, or write another extension's storage. Find out: whether autoconfig survives a `zen-browser-bin` update, and whether the script can be shared by a `kosm_firefox` package that `kosm_zen` builds on. Propose the files, the script, the plan and the install command first.
   - Done when: the human applies with Zen open and sees prefs and colors change without a restart.
