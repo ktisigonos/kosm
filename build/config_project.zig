@@ -3,8 +3,10 @@
 //! `zig-out/bin/kosmos`, the runner for that one kosmos. `-Dinspect=kosm_kitty` (repeatable) builds
 //! `zig-out/bin/inspect`, which reports what each named installed package provides. `-Dlist` builds
 //! `zig-out/bin/list`, which lists every kosmos and installed package. `-Dcolors=frost` builds
-//! `zig-out/bin/colors`, which prints the palettes that kosmos' file declares. `check` compiles
-//! every local one, so editors see the config's imports.
+//! `zig-out/bin/colors`, which prints the palettes that kosmos' file declares. `-Dprebuild=frost`
+//! (repeatable) compiles the runner of each named kosmos without installing it, so a later
+//! `-Dkosmos=` of it is a cache hit, and installs `zig-out/prebuilt/<name>`, an empty file,
+//! for each one that compiled. `check` compiles every local one, so editors see the config's imports.
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -24,6 +26,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const inspected_names = b.option([]const []const u8, "inspect", "An installed package to report on, for kosm add and kosm update; repeat it for several");
     const list = b.option(bool, "list", "Build the listing of every kosmos and package, for kosm list") orelse false;
     const colors_name = b.option([]const u8, "colors", "The kosmos whose palettes to print, for kosm colors");
+    const prebuilt_names = b.option([]const []const u8, "prebuild", "A kosmos whose runner to compile without installing it, for kosm build; repeat it for several");
 
     var names: Names = .{ .b = b };
     inline for (@typeInfo(@TypeOf(manifest.dependencies)).@"struct".field_names) |name| {
@@ -59,8 +62,27 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     if (inspected_names) |inspected| addInspector(b, target, optimize, kosm_dependency, names.modules.items, inspected);
     if (list) addLister(b, target, optimize, kosm_dependency, names.modules.items);
     if (colors_name) |name| addColors(b, target, optimize, kosm_dependency, names.modules.items, name);
+    if (prebuilt_names) |prebuilt| addPrebuilt(b, target, optimize, kosm_dependency, names.modules.items, prebuilt);
     const name = kosmos_name orelse return;
-    addRunner(b, target, optimize, kosm_dependency, names.modules.items, name);
+    const runner = addRunner(b, target, optimize, kosm_dependency, names.modules.items, name) orelse return;
+    b.installArtifact(runner);
+}
+
+/// Compiles the runner of each kosmos in `names`, as `-Dkosmos=` would but without installing
+/// it, and marks each that compiled with `zig-out/prebuilt/<name>`. Zig builds the others after
+/// one fails, and each step is named after its kosmos, so its errors say which one it is.
+fn addPrebuilt(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry, names: []const []const u8) void {
+    const markers = b.addWriteFiles();
+    for (names) |name| {
+        const runner = addRunner(b, target, optimize, kosm_dependency, entries, name) orelse continue;
+        runner.step.name = b.fmt("compile kosmos {s}", .{name});
+        // Without a user of the binary Zig compiles with -fno-emit-bin, which a later
+        // -Dkosmos= build would not find in the cache.
+        _ = runner.getEmittedBin();
+        const marker = b.addInstallFile(markers.add(name, ""), b.fmt("prebuilt/{s}", .{name}));
+        marker.step.dependOn(&runner.step);
+        b.getInstallStep().dependOn(&marker.step);
+    }
 }
 
 /// A `check` step compiling every local kosmos, app and adapter, which `zig build` and kosm never
@@ -165,13 +187,17 @@ fn localLessThan(_: void, left: Local, right: Local) bool {
     return std.mem.lessThan(u8, left.name, right.name);
 }
 
-/// Generates the runner's main for kosmos `name` ("frost" or "frost.iced") and installs it
-/// as `kosmos`.
-fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry, name: []const u8) void {
+/// Generates the runner's main for kosmos `name` ("frost" or "frost.iced") and returns the
+/// executable `kosmos` compiling it. Fails the build and returns null when `name` names no
+/// kosmos file or its imports can't be read.
+fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry, name: []const u8) ?*std.Build.Step.Compile {
     const dot = std.mem.findScalar(u8, name, '.');
     const function = if (dot) |index| name[index + 1 ..] else "kosmos";
-    const kosmos = kosmosFile(b, entries, name) orelse return;
-    const reached = reachedLocals(b, entries, kosmos) catch |err| return fail(b, "cannot read the imports of {s}: {s}", .{ kosmos.origin, @errorName(err) });
+    const kosmos = kosmosFile(b, entries, name) orelse return null;
+    const reached = reachedLocals(b, entries, kosmos) catch |err| {
+        fail(b, "cannot read the imports of {s}: {s}", .{ kosmos.origin, @errorName(err) });
+        return null;
+    };
 
     var source: std.Io.Writer.Allocating = .init(b.allocator);
     const writer = &source.writer;
@@ -203,7 +229,7 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const root_module = b.createModule(.{ .root_source_file = main, .target = target, .optimize = optimize });
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
-    b.installArtifact(b.addExecutable(.{ .name = "kosmos", .root_module = root_module }));
+    return b.addExecutable(.{ .name = "kosmos", .root_module = root_module });
 }
 
 /// The local kosmos, app or adapter, or the installed package, holding kosmos `name` ("frost" or

@@ -8,10 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **20. kosm build**
-  - Do: `kosm build [--config dir]` builds the runner of every kosmos and variant in the config, so the next `kosm apply` of any of them needs no compile. One failing kosmos fails the command naming it, after the others are built.
-  - Done when: after `kosm build` in a temporary config, applying each kosmos and variant with `--diff` compiles nothing (timed, or the cache unchanged), and a broken kosmos is named.
-
 - **17. A kosm browser extension** (waits on the human)
   - Do: done and checked in headless scratch Zen profiles (an apply changed page colors, the page font and `--kosm-*` at once, a site toggled off stayed off after a restart, no relay ran after Zen closed): `kosm relay`, `output.verbatim` with executable files, the new package `kosm_firefox` (Kosm and Kosm Live from one source tree; Kosm Live and its three prefs go into every Zen profile), `kosm_zen`'s `profile.live` (prefs to `kosm-live.json`), `kosm_base`'s `firefox` replacing `darkreader` (pages get the look's fonts, Zen's prefs go live). `kosm_darkreader` is no longer official.
   - Left for the human: the initial push of `kosm_firefox` and a push of kosm; in the config, `kosm remove kosm_darkreader`, `kosm add git+https://git.nnstdios.com/ktisigonos/kosm_firefox`, `kosm update`, and `.darkreader` out of the `except` lists of krystallos and everforest; apply, remove Dark Reader, Stylus and Transparent Zen from Zen, and restart Zen once.

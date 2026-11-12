@@ -28,6 +28,7 @@ const commands = [_]Candidate{
     .{ .text = "remove", .description = "remove a package" },
     .{ .text = "update", .description = "fetch packages again" },
     .{ .text = "clean", .description = "delete caches and unused package versions" },
+    .{ .text = "build", .description = "compile every kosmos, so applies start at once" },
     .{ .text = "completions", .description = "print a shell's completion script" },
     .{ .text = "relay", .description = "forward a file to a browser extension" },
 };
