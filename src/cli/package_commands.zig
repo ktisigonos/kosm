@@ -26,6 +26,7 @@ const inspector_path = "zig-out/bin/inspect";
 /// packages.zon. A package installed without kosm add (say, kept only as another package's
 /// dependency) is fetched from `url` and recorded, so kosm update follows it from then on.
 pub fn add(context: Context, argument: []const u8) Error!void {
+    try progress(context, "fetching {s}", .{argument});
     const package = try fetchName(context, splitRef(argument));
     const original = try readManifest(context);
     var packages = try loadPackages(context);
@@ -77,7 +78,10 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
     if (selected.len == 0) return context.stdout.print("nothing to update: {s} lists no packages\n", .{Packages.file_name});
 
     errdefer restoreManifest(context, original);
-    for (selected) |package| try save(context, package);
+    for (selected) |package| {
+        try progress(context, "fetching {s}", .{package.name});
+        try save(context, package);
+    }
     var checked: std.ArrayList([]const u8) = .empty;
     for (selected) |package| {
         // Kosm provides no app, adapter, kosmos or base; the next build checks it.
@@ -119,6 +123,7 @@ fn check(context: Context, names: []const []const u8) Error!void {
     var arguments: std.ArrayList([]const u8) = .empty;
     try arguments.append(context.arena, "build");
     for (names) |name| try arguments.append(context.arena, try context.arena.print("-Dinspect={s}", .{name}));
+    if (names.len == 1) try progress(context, "checking {s}", .{names[0]}) else try progress(context, "checking {d} packages", .{names.len});
     const build = try context.runZig(arguments.items);
     if (!build.term.success()) {
         if (names.len == 1) return failRun(context, build, "package '{s}' does not build in this config project", .{names[0]});
@@ -164,10 +169,12 @@ fn writeManifest(context: Context, bytes: []const u8) Error!void {
     files.replace(context.io, path, bytes) catch |err| return fail(context, "cannot write {s}: {s}", .{ path, @errorName(err) });
 }
 
-/// Puts back what build.zig.zon held before the command, after a failure.
+/// Puts back what build.zig.zon held before the command, after a failure, and says so.
 fn restoreManifest(context: Context, original: []const u8) void {
     const path = std.Io.Dir.path.join(context.arena, &.{ context.config, manifest_name }) catch return reportUnrestored(context, error.OutOfMemory);
-    files.replace(context.io, path, original) catch |err| reportUnrestored(context, err);
+    files.replace(context.io, path, original) catch |err| return reportUnrestored(context, err);
+    // Already failing; a broken stderr leaves nothing else to report to.
+    context.stderr.print("reverted: {s} is back as it was, so no package changed\n", .{manifest_name}) catch {};
 }
 
 fn reportUnrestored(context: Context, err: anyerror) void {
@@ -198,6 +205,14 @@ fn invalidManifest(context: Context, err: manifest.Error) Error {
         error.OutOfMemory => error.OutOfMemory,
         error.InvalidManifest => fail(context, "{s} in {s} is not valid; zig build says why", .{ manifest_name, context.config }),
     };
+}
+
+/// Says on stderr what the command starts doing now, at once: fetches and builds take seconds,
+/// while results wait until the command has succeeded.
+fn progress(context: Context, comptime format: []const u8, arguments: anytype) Error!void {
+    try context.stdout.flush();
+    try context.stderr.print(format ++ "\n", arguments);
+    try context.stderr.flush();
 }
 
 fn fail(context: Context, comptime format: []const u8, arguments: anytype) Error {
@@ -486,6 +501,8 @@ test "an update with a package that does not compile names its files and keeps t
     try testing.expect(std.mem.find(u8, stderr, "zig-pkg/test_second-") != null);
     try testing.expect(std.mem.find(u8, stderr, "missing_adapter") != null);
     try testing.expect(std.mem.find(u8, stderr, "the packages do not all build in this config project") != null);
+    try testing.expect(std.mem.find(u8, stderr, "fetching test_adapter\nfetching test_second\nchecking 2 packages\n") != null);
+    try testing.expect(std.mem.endsWith(u8, stderr, "reverted: build.zig.zon is back as it was, so no package changed\n"));
     try testing.expectEqualStrings(added, (try fixture.read("build.zig.zon")).?);
     try fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{});
 }
