@@ -10,7 +10,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
-  - Do: when `kosm_kitty` and `kosm_json` next pin kosm, drop their tests of clip warnings (`context.clipped`, the `outside sRGB` warning), and the "so a clipped color warns" line in kitty's and ghostty's `Joined.zig`.
+  - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
 - **13l. CS2's fonts.conf** (waits on the human)
@@ -54,11 +54,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13w. Commet theme** `ASK`
   - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
-
-- **14b. Official apps read the roles**
-  - Do: every official app's `from` reads the theme's roles and code colors where it now uses the palette for them (`palette.cyan` as accent in gtk, kde, qtct, zen, kitty, hyprland, dunst, tuios, hyprtoolkit, hyprmouse, blender, counter_strike; nvim's highlights). Terminal ANSI colors stay palette colors. Pin the new kosm in each and push them.
-  - Do: nvim's base16 slots each take one code color: `base08` (variables in base16) reads `code.tag`, since `code.variable` now defaults to the foreground; `base09` reads `code.number`, `base0A` `code.type`, `base0B` `code.string`, `base0D` `code.function`, `base0E` `code.keyword`.
-  - Done when: each package's tests pass, and Krystallos' `--diff` is unchanged with its accent set to cyan.
 
 - **14c. Looks and shared values in the base** `PLAN FIRST`
   - Do: `kosm_base.Look` (theme, fonts, shared values, an optional tweak of `Base`) and `kosm_base.Values`: the settings several official apps share (border size, rounding, rounding power, gaps, padding, shadow, cursor, icon theme, keyboard layouts), each read by every app having it. `from(look, apps)` replaces `from(theme, fonts, apps)` and runs the tweak last. The default look is literal (pure black, white and hues, rounding 0); personal settings (shaders, keyboard layouts, editor) are null. Propose the field list first.
