@@ -20,6 +20,7 @@ const official_packages = [_][]const u8{
     "kosm_css",
     "kosm_dunst",
     "kosm_equibop",
+    "kosm_fastfetch",
     "kosm_firefox",
     "kosm_fontconfig",
     "kosm_foot",
