@@ -69,6 +69,15 @@ fn read(plan: *Plan, path: []const u8) LoadError!?[]u8 {
     };
 }
 
+/// Whether the file at `path` has an execute bit; a file that can't be looked at has none.
+fn isExecutable(plan: *Plan, path: []const u8) bool {
+    const stat = std.Io.Dir.cwd().statFile(plan.io, path, .{}) catch return false;
+    return stat.permissions.toMode() & executable_bits != 0;
+}
+
+/// The mode bits that let a file be run.
+pub const executable_bits = 0o111;
+
 /// Adds a file to the plan, taking ownership of `old`.
 fn append(plan: *Plan, path: []const u8, display_path: []const u8, old: ?[]u8) LoadError!*File {
     errdefer if (old) |bytes| plan.allocator.free(bytes);
@@ -78,7 +87,8 @@ fn append(plan: *Plan, path: []const u8, display_path: []const u8, old: ?[]u8) L
     errdefer plan.allocator.free(owned_display_path);
     const new = try plan.allocator.dupe(u8, old orelse "");
     errdefer plan.allocator.free(new);
-    try plan.files.append(plan.allocator, .{ .path = owned_path, .display_path = owned_display_path, .old = old, .new = new });
+    const was_executable = old != null and plan.isExecutable(path);
+    try plan.files.append(plan.allocator, .{ .path = owned_path, .display_path = owned_display_path, .old = old, .new = new, .was_executable = was_executable });
     return &plan.files.items[plan.files.items.len - 1];
 }
 

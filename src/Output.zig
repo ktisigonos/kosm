@@ -40,6 +40,8 @@ pub const AdapterClash = @import("Output/AdapterClash.zig");
 pub const GenerateOptions = @import("Output/GenerateOptions.zig");
 /// Options for `block`.
 pub const BlockOptions = @import("Output/BlockOptions.zig");
+/// Options for `verbatim`.
+pub const VerbatimOptions = @import("Output/VerbatimOptions.zig");
 /// Options for `edit`.
 pub const EditOptions = @import("Output/EditOptions.zig");
 /// Options for `find`.
@@ -125,6 +127,17 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
         return planning.fail(output, error.MissingCapability, options.file, "adapter '{s}' cannot write whole files (it has no serialize)", .{adapter.name});
     const content = try output.serialize(options.file, adapter, options.format, values);
     try output.addFile(options.file, path, content);
+}
+
+/// Writes `options.content` as a whole file, byte for byte, with no adapter: for files kosm
+/// only carries, such as a browser extension's scripts or a launcher.
+pub fn verbatim(output: *Output, options: VerbatimOptions) Error!void {
+    const path = try output.resolvePath(options.file);
+    try output.addFile(options.file, path, options.content);
+    if (options.executable) {
+        const planned = output.plan.load(path, options.file) catch |err| return output.failRead(options.file, err);
+        planned.executable = true;
+    }
 }
 
 /// Writes `values`, serialized like `generate`'s, as block `options.id` of a file the user

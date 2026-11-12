@@ -16,6 +16,10 @@ old: ?[]const u8,
 edits: std.ArrayList(Edit) = .empty,
 /// Contents after the apply: `old` with every edit applied.
 new: []const u8 = "",
+/// Whether the apply makes the file executable, as an app asked.
+executable: bool = false,
+/// Whether the file on disk is executable now; false when it does not exist.
+was_executable: bool = false,
 
 /// The contents edits are ranges of: `old`, or empty for a missing file.
 pub fn current(file: File) []const u8 {
@@ -25,6 +29,7 @@ pub fn current(file: File) []const u8 {
 /// Whether committing would change the file on disk.
 pub fn changed(file: File) bool {
     const old = file.old orelse return true;
+    if (file.executable and !file.was_executable) return true;
     return !std.mem.eql(u8, old, file.new);
 }
 

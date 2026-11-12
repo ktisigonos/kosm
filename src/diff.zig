@@ -14,6 +14,11 @@ const max_edit_distance = 2000;
 pub fn writePlan(allocator: std.mem.Allocator, terminal: std.Io.Terminal, plan: *const Plan) !void {
     for (plan.files.items) |file| {
         if (!file.changed()) continue;
+        if (file.executable and !file.was_executable) {
+            try terminal.setColor(.bold);
+            try terminal.writer.print("chmod +x {s}", .{file.display_path});
+            try endLine(terminal);
+        }
         try writeFile(allocator, terminal, file.display_path, file.old, file.new);
     }
 }
@@ -395,4 +400,20 @@ fn longestCommonSubsequence(allocator: std.mem.Allocator, old: []const []const u
         }
     }
     return table[old.len * width + new.len];
+}
+
+test "a file that only becomes executable says so, with no hunks" {
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    try plan.files.append(testing.allocator, .{
+        .path = try testing.allocator.dupe(u8, "/h/run.sh"),
+        .display_path = try testing.allocator.dupe(u8, "~/run.sh"),
+        .old = try testing.allocator.dupe(u8, "x\n"),
+        .new = try testing.allocator.dupe(u8, "x\n"),
+        .executable = true,
+    });
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+    try writePlan(testing.allocator, .{ .writer = &output.writer, .mode = .no_color }, &plan);
+    try testing.expectEqualStrings("chmod +x ~/run.sh\n--- ~/run.sh\n+++ ~/run.sh\n", output.written());
 }

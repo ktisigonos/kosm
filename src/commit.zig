@@ -23,7 +23,7 @@ pub fn writePlan(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, fa
     for (plan.files.items) |file| {
         if (!file.changed()) continue;
         failure.path = file.display_path;
-        var atomic = try createTemp(arena.allocator(), io, file.path, file.old != null);
+        var atomic = try createTemp(arena.allocator(), io, file.path, file.old != null, file.executable);
         errdefer atomic.deinit(io);
         try writeContents(io, &atomic, file.new);
         try pending.append(arena.allocator(), atomic);
@@ -35,7 +35,7 @@ pub fn writePlan(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, fa
     failure.path = "";
 }
 
-fn createTemp(allocator: std.mem.Allocator, io: std.Io, path: []const u8, exists: bool) !std.Io.File.Atomic {
+fn createTemp(allocator: std.mem.Allocator, io: std.Io, path: []const u8, exists: bool, executable: bool) !std.Io.File.Atomic {
     const cwd = std.Io.Dir.cwd();
     var target = path;
     var permissions: std.Io.File.Permissions = .default_file;
@@ -44,6 +44,8 @@ fn createTemp(allocator: std.mem.Allocator, io: std.Io, path: []const u8, exists
         target = try cwd.realPathFileAlloc(io, path, allocator);
         permissions = (try cwd.statFile(io, target, .{})).permissions;
     }
+    // Whoever may read the file may run it, as `chmod +x` under a umask does.
+    if (executable) permissions = .fromMode(permissions.toMode() | ((permissions.toMode() & 0o444) >> 2));
     return cwd.createFileAtomic(io, target, .{ .permissions = permissions, .make_path = true, .replace = true });
 }
 
@@ -103,6 +105,32 @@ test "writePlan writes changed files, creating folders, and keeps permissions" {
     try testing.expectEqualStrings("body {}\n", created_contents);
     const stat = try tmp.dir.statFile(testing.io, "existing.conf", .{});
     try testing.expectEqual(0o600, stat.permissions.toMode() & 0o777);
+}
+
+test "an executable file is created runnable, and an existing one gains the bits with unchanged contents" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "existing.sh", .data = "same\n" });
+    try tmp.dir.setFilePermissions(testing.io, "existing.sh", .fromMode(0o640), .{});
+    var root_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try tmpPath(&tmp, &root_buffer);
+
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    const existing = try std.Io.Dir.path.join(testing.allocator, &.{ root, "existing.sh" });
+    defer testing.allocator.free(existing);
+    const created = try std.Io.Dir.path.join(testing.allocator, &.{ root, "created.sh" });
+    defer testing.allocator.free(created);
+    try plan.add(existing, "~/existing.sh", "browser", "same\n");
+    try plan.add(created, "~/created.sh", "browser", "#!/bin/sh\n");
+    for (plan.files.items) |*file| file.executable = true;
+    try testing.expect(plan.files.items[0].changed());
+
+    var failure: Failure = .{};
+    try writePlan(testing.allocator, testing.io, &plan, &failure);
+
+    try testing.expectEqual(0o750, (try tmp.dir.statFile(testing.io, "existing.sh", .{})).permissions.toMode() & 0o777);
+    try testing.expect((try tmp.dir.statFile(testing.io, "created.sh", .{})).permissions.toMode() & 0o100 != 0);
 }
 
 test "a failing plan writes nothing" {
