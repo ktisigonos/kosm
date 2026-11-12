@@ -28,7 +28,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13p. Drop qt6ct and qt5ct** `ASK`
   - Do: nwg-look is replaced (`kosm_gtk` writes GTK's settings files and sets gsettings) and Kvantum is not installed. Left: the human uninstalls nwg-look and deletes `~/.config/Kvantum`; then decide qt6ct/qt5ct: `QT_QPA_PLATFORMTHEME=kde` (plasma-integration, installed) reads colors, fonts, icons, style and single-click from kdeglobals, which `kosm_kde` would gain fields for; the tooltip qss is lost, and Qt 5 apps need `plasma5-integration` or keep qt5ct.
   - Do: Krystallos' Hyprland app sets the `GTK_THEME` environment variable (or leaves it unset) instead of the hand-written `defs.lua`.
-  - Do: the human's Flatpak overrides (`flatpak override --user --show`, and the system-wide one) still set `GTK_THEME` (oomox-Ricer, Nordic-darker-v40), `QT_QPA_PLATFORMTHEME=qt6ct`, `QT_STYLE_OVERRIDE=breeze` and Kvantum access; settle them with qt6ct/qt5ct. Nicotine+ needs `NICOTINE_LIBADWAITA=1` to follow kosm's GTK colors outside GNOME.
+  - Do: the human's Flatpak overrides (`flatpak override --user --show`, and the system-wide one) still set `GTK_THEME` (oomox-Ricer, Nordic-darker-v40), `QT_QPA_PLATFORMTHEME=qt6ct`, `QT_STYLE_OVERRIDE=breeze` and Kvantum access; settle them with qt6ct/qt5ct. Flatpaks read the theme name kosm sets in gsettings, but see themes only in `~/.local/share/themes` (not `/usr/share/themes`), so plain GTK 4 Flatpaks such as Nicotine+ need adw-gtk3 there to follow kosm's colors.
   - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
 
 - **13q. Live reload for Qt and KDE apps** `ASK`
