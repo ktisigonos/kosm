@@ -8,10 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **13t. Transparent GTK apps** (waits on the human)
-  - Do: `kosm_gtk` gives the theme's `background_alpha` to windows, views, header bars, sidebars, cards, thumbnails and the tab overview; popovers, dialogs, the active toggle and borders stay opaque. Krystallos' `gtk.zig` builds GTK's colors from a theme at `values.background_alpha`, and its config pins the new `kosm_gtk`. Left: the human applies Krystallos and restarts a libadwaita app (Nautilus) and an adw-gtk3 app; surfaces drawn over the window (views, sidebars, cards) add to its opacity where they cover it, so they look less translucent than the window itself.
-  - Done when: the human has seen translucent GTK 3 and GTK 4 apps on Hyprland.
-
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
   - Do: when `kosm_kitty` and `kosm_json` next pin kosm, drop their tests of clip warnings (`context.clipped`, the `outside sRGB` warning), and the "so a clipped color warns" line in kitty's and ghostty's `Joined.zig`.
@@ -32,6 +28,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13p. Drop qt6ct and qt5ct** `ASK`
   - Do: nwg-look is replaced (`kosm_gtk` writes GTK's settings files and sets gsettings) and Kvantum is not installed. Left: the human uninstalls nwg-look and deletes `~/.config/Kvantum`; then decide qt6ct/qt5ct: `QT_QPA_PLATFORMTHEME=kde` (plasma-integration, installed) reads colors, fonts, icons, style and single-click from kdeglobals, which `kosm_kde` would gain fields for; the tooltip qss is lost, and Qt 5 apps need `plasma5-integration` or keep qt5ct.
   - Do: Krystallos' Hyprland app sets the `GTK_THEME` environment variable (or leaves it unset) instead of the hand-written `defs.lua`.
+  - Do: the human's Flatpak overrides (`flatpak override --user --show`, and the system-wide one) still set `GTK_THEME` (oomox-Ricer, Nordic-darker-v40), `QT_QPA_PLATFORMTHEME=qt6ct`, `QT_STYLE_OVERRIDE=breeze` and Kvantum access; settle them with qt6ct/qt5ct. Nicotine+ needs `NICOTINE_LIBADWAITA=1` to follow kosm's GTK colors outside GNOME.
   - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
 
 - **13q. Live reload for Qt and KDE apps** `ASK`
