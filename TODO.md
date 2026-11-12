@@ -8,10 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **19. kosm clean**
-  - Do: `kosm clean [--config dir]` deletes the config's `.zig-cache` and every folder in `zig-pkg/` (the config's and each local kosmos', app's and adapter's) that no `build.zig.zon` in the dependency tree uses any more. Never the global `~/.cache/zig`. Add it to the usage text, completions and the README.
-  - Done when: tests in a temporary config show a used package version kept, an old one deleted, a version pinned only by another package kept, and the cache gone.
-
 - **20. kosm build**
   - Do: `kosm build [--config dir]` builds the runner of every kosmos and variant in the config, so the next `kosm apply` of any of them needs no compile (the README recommends `kosm update && kosm build` in a system update script). One failing kosmos fails the command naming it, after the others are built.
   - Done when: after `kosm build` in a temporary config, applying each kosmos and variant with `--diff` compiles nothing (timed, or the cache unchanged), and a broken kosmos is named.

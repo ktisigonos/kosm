@@ -1,6 +1,6 @@
 //! The `kosm` command: `kosm init`, `kosm apply`, which builds the one kosmos in the config
 //! project with `zig build` and runs it, `kosm list`, `kosm colors`, `kosm new`,
-//! `kosm current`, the package commands `kosm add`, `kosm remove` and `kosm update`, and
+//! `kosm current`, the package commands `kosm add`, `kosm remove` and `kosm update`, `kosm clean`, and
 //! `kosm source` and `kosm relay`, the native messaging host browser extensions use. Applying a directory kosmos also refreshes its own
 //! manifest. Every build runs with the kosm sources `Sources` finds.
 
@@ -12,6 +12,7 @@ const Context = @import("Context.zig");
 const init_command = @import("init.zig");
 const list_command = @import("list.zig");
 const colors_command = @import("colors.zig");
+const clean_command = @import("clean.zig");
 const complete_command = @import("complete.zig");
 const completions = @import("completions.zig");
 const new_command = @import("new.zig");
@@ -31,6 +32,7 @@ const usage =
     \\       kosm add <url>[#ref] [--config dir]
     \\       kosm remove <name> [--config dir]
     \\       kosm update [name] [--config dir]
+    \\       kosm clean [--config dir]
     \\       kosm completions fish|bash|zsh
     \\       kosm relay <file>
     \\
@@ -75,7 +77,7 @@ pub fn main(init: std.process.Init) !u8 {
         .apply => |apply| return runApply(init, builds, apply, &stderr.interface),
         .init => |init_arguments| return runInit(init, builds, init_arguments, &stderr.interface),
         .new => |new| return runNew(init, builds, new, &stderr.interface),
-        .add, .remove, .update, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
+        .add, .remove, .update, .clean, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
         .complete => |words| return runComplete(init, builds, words),
         .current, .source, .completions, .relay => unreachable, // Handled above.
     }
@@ -214,8 +216,8 @@ fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, c
     return true;
 }
 
-/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm list` or `kosm colors` against the
-/// config project.
+/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm clean`, `kosm list` or `kosm colors`
+/// against the config project.
 fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, config_command: ConfigCommand, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, config_command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
@@ -226,10 +228,11 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .add => package_commands.add(context, config_command.argument.?),
         .remove => package_commands.remove(context, config_command.argument.?),
         .update => package_commands.update(context, config_command.argument),
+        .clean => clean_command.clean(context),
         .list => list_command.list(context, config_command.argument),
         // Blocks only where they can be drawn: a pipe or a file gets plain text.
         .colors => colors_command.colors(context, config_command.argument.?, try std.Io.File.stdout().isTty(init.io)),
-        .apply, .current, .init, .new, .source, .completions, .complete, .relay => unreachable, // main passes only the five above.
+        .apply, .current, .init, .new, .source, .completions, .complete, .relay => unreachable, // main passes only the six above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -327,6 +330,7 @@ const Command = union(enum) {
     add: ConfigCommand,
     remove: ConfigCommand,
     update: ConfigCommand,
+    clean: ConfigCommand,
 
     const ParseError = Apply.ParseError || New.ParseError || error{ConfigNotRead};
 
@@ -368,15 +372,16 @@ const Command = union(enum) {
         if (std.mem.eql(u8, arguments[0], "add")) return .{ .add = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "remove")) return .{ .remove = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "update")) return .{ .update = try .parse(arguments[1..], .optional) };
+        if (std.mem.eql(u8, arguments[0], "clean")) return .{ .clean = try .parse(arguments[1..], .none) };
         return .{ .apply = try Apply.parse(arena, arguments) };
     }
 };
 
 /// A command working on a config project, with at most one argument and `--config`:
-/// `init`, `list`, `add`, `remove` or `update`.
+/// `init`, `list`, `add`, `remove`, `update` or `clean`.
 const ConfigCommand = struct {
     /// add: the url and ref; remove: the name; update: the name, or null for every package;
-    /// list: the kosmos, or null for everything; colors: the kosmos; init: always null.
+    /// list: the kosmos, or null for everything; colors: the kosmos; init and clean: always null.
     argument: ?[]const u8,
     /// The `--config` directory, or null for the default.
     config: ?[]const u8,
@@ -484,6 +489,7 @@ test {
     std.testing.refAllDecls(init_command);
     std.testing.refAllDecls(list_command);
     std.testing.refAllDecls(colors_command);
+    std.testing.refAllDecls(clean_command);
     std.testing.refAllDecls(complete_command);
     std.testing.refAllDecls(completions);
     std.testing.refAllDecls(relay_command);
