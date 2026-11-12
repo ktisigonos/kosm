@@ -1,8 +1,16 @@
-//! Kyanos (dark blue): every official app through the base kosmos, from a palette and
-//! a font. kosm init wrote this file; it is yours to edit.
+//! Kyanos (dark blue): every official app through the base kosmos, from a look of a palette
+//! and a font. kosm init wrote this file; it is yours to edit.
 
 const kosm = @import("kosm");
 const base = @import("kosm_base");
+
+/// What makes Kyanos look nice: its palette and font. Assign a role to recolor every app
+/// (`.roles = .{ .accent = palette.blue.? }`) and set values all apps share in `.values`
+/// (`.{ .rounding = 10, .padding = 10 }`).
+pub const look: base.Look = .{
+    .theme = .from(.{ .palette = palette, .mode = .dark }),
+    .fonts = .{ .families = &.{"monospace"}, .size = 13 },
+};
 
 pub const palette: kosm.Palette = .{
     .black = kosm.hex("041c26"),
@@ -18,7 +26,8 @@ pub const palette: kosm.Palette = .{
 pub fn kosmos() base.Base {
     // The apps left out write into files or folders their programs create; take them out of
     // the list once you have the program.
-    var apps = base.from(.from(.{ .palette = palette, .mode = .dark }), .{ .families = &.{"monospace"}, .size = 13 }, .{ .except = &.{
+    var apps = base.from(look, .{ .except = &.{
+        .blender,
         .counter_strike,
         .counter_strike_2,
         .darkreader,

@@ -82,7 +82,7 @@ pub fn provided(comptime name: []const u8, comptime Package: type) Provided {
 }
 
 /// Whether `Package.name` is a base: a function, not a kosmos, whose result is a struct holding
-/// apps but no app itself, like `kosm_base.from(theme, fonts, apps)`.
+/// apps but no app itself, like `kosm_base.from(look, apps)`.
 fn isBase(comptime Package: type, comptime name: []const u8) bool {
     const function = switch (@typeInfo(@TypeOf(@field(Package, name)))) {
         .@"fn" => |function| function,
