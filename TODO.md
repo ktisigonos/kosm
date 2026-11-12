@@ -8,6 +8,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
+- **15. Fastfetch** `ASK`
+  - Do: an app (`kosm_fastfetch`) for fastfetch's `~/.config/fastfetch/config.jsonc`: the logo's colors (`logo.color.1`..`9`), keys, title, separator and output colors (`display.color.*`), from the theme's roles and wheel, in the base. Find out which of the human's existing settings it edits in place and whether it generates the file or a block; propose its fields and the Krystallos values first.
+  - Done when: the human has agreed on the app, and fastfetch shows the kosmos' colors after an apply.
+
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
