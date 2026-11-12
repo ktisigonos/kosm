@@ -9,7 +9,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 ---
 
 - **20. kosm build**
-  - Do: `kosm build [--config dir]` builds the runner of every kosmos and variant in the config, so the next `kosm apply` of any of them needs no compile (the README recommends `kosm update && kosm build` in a system update script). One failing kosmos fails the command naming it, after the others are built.
+  - Do: `kosm build [--config dir]` builds the runner of every kosmos and variant in the config, so the next `kosm apply` of any of them needs no compile. One failing kosmos fails the command naming it, after the others are built.
   - Done when: after `kosm build` in a temporary config, applying each kosmos and variant with `--diff` compiles nothing (timed, or the cache unchanged), and a broken kosmos is named.
 
 - **17. A kosm browser extension** (waits on the human)
