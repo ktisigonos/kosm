@@ -8,11 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **16. Zen's colors as a Zen mod** (waits on the human)
-  - Do: done in `kosm_zen` (pinned in `kosm_base`): the kosm mod in each profile's `chrome/zen-themes/kosm/` paints the window, compact sidebar, sidebar panel, glance and page tint with the background at its alpha and zooms a page in on tab switch (`tab_switch`, a `kosm.Curve`). Its values are `kosm.*` prefs in `user.js`, which Zen sets as `--kosm-*` properties at startup; `kosm.css`, `prefs.mod.sameerasw` and the stylesheets pref default are gone. Zen rebuilds `zen-themes.css` only on a mod toggle or update, never at startup, so values live in prefs and a change needs a restart.
-  - Left: the human re-pins the config (`kosm_zen` to `f31d481`, hash `kosm_zen-0.0.0-PJSR5FAHAQBQdvzDU3Y6nQlwIREzijkjukYc6EjqNjMQ`; `kosm_base` to `b6e52ff`, hash `kosm_base-0.0.0-WYmO4PinAAAAfyPfKYBIVE6f_Bg3Q9Y9csjDKFnykzMc`, in `~/.config/kosm/build.zig.zon` and each kosmos' `build.zig.zon`), adds the mod's entry to the profile's `zen-themes.json` with Zen closed (`kosm_zen`'s README), removes Transparent Zen and the `kosm.css` import, applies and restarts Zen.
-  - Done when: Zen shows the kosmos' colors, translucent background, compact sidebar and tab animation in Krystallos and Everforest.
-
 - **17. A kosm browser extension** `ASK` `PLAN FIRST`
   - Do: first, in a scratch Zen profile (never the human's), load a throwaway extension calling `browser.theme.update` and report how much of Zen the Theme API recolors live; the human decides whether the extension sets the browser theme at all.
   - Do: an extension for every Firefox-based browser, replacing Dark Reader and the human's Stylus `Font` style: pages darkened by Dark Reader's engine (the MIT npm package `darkreader`, a dependency to ask for, plus whatever bundles it) in the theme's colors; a per-site on/off toggle with a history of the sites toggled, and no other UI; the page font; and the browser theme if the test above earns it. Stock Dark Reader (4.9.135, same as its main branch) accepts nothing from other extensions, so it can't be driven instead.
