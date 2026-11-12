@@ -30,7 +30,6 @@ pub fn kosmos() base.Base {
         .blender,
         .counter_strike,
         .counter_strike_2,
-        .darkreader,
         .hyprmouse,
         .ohmyposh,
         .qtct,
