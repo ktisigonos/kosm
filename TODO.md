@@ -48,7 +48,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: Nicotine+ and Blanket take kosm's colors like native GTK apps.
 
 - **13v. Blender theme on start and live** (waits on the human)
-  - Do: `kosm_blender` writes a startup script (`startup_script`, `~/.config/blender/5.2/scripts/startup/kosm.py`) that loads the preset when Blender starts and checks its modification time every `reload_interval` (0.25 s, one file status call) to reload it after an apply, then redraws every area. Checked in a headless Blender 5.2: the script registers its timer, loads the preset, and reloads a changed one. Left: the human applies, restarts Blender and sees the kosm theme without picking it, then applies a change with Blender open and sees it recolor.
+  - Do: `kosm_blender` writes the preset and a startup script (`startup_script`, `scripts/startup/kosm.py`) into every Blender version that has run (`~/.config/blender/<version>`, found by the files in its `config` folder); the script loads the preset when Blender starts and checks its modification time every `reload_interval` (0.25 s, one file status call) to reload it after an apply, then redraws every area. Checked in a headless Blender 5.2: the script registers its timer, loads the preset, and reloads a changed one. Left: the human applies, restarts Blender and sees the kosm theme without picking it, then applies a change with Blender open and sees it recolor.
   - Done when: the human has seen both in a real Blender.
 
 - **13w. Commet theme** `ASK`
