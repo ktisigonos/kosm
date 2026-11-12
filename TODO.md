@@ -8,6 +8,19 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
+- **18. Faster kosm update with a fresh cache**
+  - Do: `kosm update` (and `kosm add`) check every selected package in one `zig build` (`-Dinspect=a,b,c`, one inspector reporting each package) instead of one build per package; measured on a 33-package config, the per-package builds were 13 of 15.5 s. A failed check prints zig's output, which names the failing package's files; no per-package search afterwards.
+  - Do: after a successful `kosm update`, delete the config's `.zig-cache` (each update otherwise leaves its inspectors and stale runners behind). A failed update leaves it alone. Never touch the global `~/.cache/zig`.
+  - Done when: tests show an update of several packages runs one check build and reports each package, a broken package fails the update naming its files and restores build.zig.zon, and the cache is gone after a successful update but kept after a failed one; timed on a scratch copy of a real config.
+
+- **19. kosm clean**
+  - Do: `kosm clean [--config dir]` deletes the config's `.zig-cache` and every folder in `zig-pkg/` (the config's and each local kosmos', app's and adapter's) that no `build.zig.zon` in the dependency tree uses any more. Never the global `~/.cache/zig`. Add it to the usage text, completions and the README.
+  - Done when: tests in a temporary config show a used package version kept, an old one deleted, a version pinned only by another package kept, and the cache gone.
+
+- **20. kosm build**
+  - Do: `kosm build [--config dir]` builds the runner of every kosmos and variant in the config, so the next `kosm apply` of any of them needs no compile (the README recommends `kosm update && kosm build` in a system update script). One failing kosmos fails the command naming it, after the others are built.
+  - Done when: after `kosm build` in a temporary config, applying each kosmos and variant with `--diff` compiles nothing (timed, or the cache unchanged), and a broken kosmos is named.
+
 - **17. A kosm browser extension** (waits on the human)
   - Do: done and checked in headless scratch Zen profiles (an apply changed page colors, the page font and `--kosm-*` at once, a site toggled off stayed off after a restart, no relay ran after Zen closed): `kosm relay`, `output.verbatim` with executable files, the new package `kosm_firefox` (Kosm and Kosm Live from one source tree; Kosm Live and its three prefs go into every Zen profile), `kosm_zen`'s `profile.live` (prefs to `kosm-live.json`), `kosm_base`'s `firefox` replacing `darkreader` (pages get the look's fonts, Zen's prefs go live). `kosm_darkreader` is no longer official.
   - Left for the human: the initial push of `kosm_firefox` and a push of kosm; in the config, `kosm remove kosm_darkreader`, `kosm add git+https://git.nnstdios.com/ktisigonos/kosm_firefox`, `kosm update`, and `.darkreader` out of the `except` lists of krystallos and everforest; apply, remove Dark Reader, Stylus and Transparent Zen from Zen, and restart Zen once.
