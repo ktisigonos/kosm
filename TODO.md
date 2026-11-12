@@ -28,7 +28,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13p. Drop qt6ct and qt5ct** `ASK`
   - Do: nwg-look is replaced (`kosm_gtk` writes GTK's settings files and sets gsettings) and Kvantum is not installed. Left: the human uninstalls nwg-look and deletes `~/.config/Kvantum`; then decide qt6ct/qt5ct: `QT_QPA_PLATFORMTHEME=kde` (plasma-integration, installed) reads colors, fonts, icons, style and single-click from kdeglobals, which `kosm_kde` would gain fields for; the tooltip qss is lost, and Qt 5 apps need `plasma5-integration` or keep qt5ct.
   - Do: Krystallos' Hyprland app sets the `GTK_THEME` environment variable (or leaves it unset) instead of the hand-written `defs.lua`.
-  - Do: the human's Flatpak overrides (`flatpak override --user --show`, and the system-wide one) still set `GTK_THEME` (oomox-Ricer, Nordic-darker-v40), `QT_QPA_PLATFORMTHEME=qt6ct`, `QT_STYLE_OVERRIDE=breeze` and Kvantum access; settle them with qt6ct/qt5ct. Flatpaks read the theme name kosm sets in gsettings, but see themes only in `~/.local/share/themes` (not `/usr/share/themes`), so plain GTK 4 Flatpaks such as Nicotine+ need adw-gtk3 there to follow kosm's colors.
+  - Do: the human's Flatpak overrides (`flatpak override --user --show`, and the system-wide one) still set `QT_QPA_PLATFORMTHEME=qt6ct`, `QT_STYLE_OVERRIDE=breeze` and Kvantum access; settle them with qt6ct/qt5ct.
   - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
 
 - **13q. Live reload for Qt and KDE apps** `ASK`
@@ -42,3 +42,15 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13s. Cursors generated from the palette** `ASK` `PLAN FIRST`
   - Do: an app (`kosm_cursor`) that builds a cursor theme (XCursor, and hyprcursor) in the theme's colors. Default: Bibata Modern Ice's SVG sources recolored (fill, outline, shadow from the palette). Later maybe a cursor of kosm's own. Make it easy for users to rice their own cursors: their own SVGs, colors and size as plain fields. Propose how SVGs become cursors (rendering and the XCursor/hyprcursor formats, written ourselves or a dependency), where the theme is written, and how `kosm_gtk`'s cursor settings and Hyprland's `XCURSOR_*`/`HYPRCURSOR_*` pick it up.
   - Done when: the human has seen the generated cursor in GTK, Qt and Hyprland, in the kosmos' colors.
+
+- **13u. Flatpak GTK apps** (waits on the human)
+  - Do: Flatpak apps still load the old theme: the human's Flatpak overrides set `GTK_THEME` (`oomox-Ricer` per user, `Nordic-darker-v40` system-wide), so libadwaita Flatpaks (Blanket) get Oomox drawn over them and plain GTK 4 ones (Nicotine+) draw Oomox. Without it, Flatpaks take the theme name kosm sets in gsettings, but see themes only in `~/.local/share/themes` (not `/usr/share/themes`), so plain GTK 4 Flatpaks need adw-gtk3 there; with it they follow kosm's colors (checked off-screen with a plain GTK 4 window). Setting `GTK_THEME=adw-gtk3-dark` instead would also force adw-gtk3's copy of libadwaita's stylesheet over every libadwaita app's own. Left: the human unsets `GTK_THEME` (`flatpak override --user --unset-env=GTK_THEME`) and makes adw-gtk3 visible to Flatpaks (a copy in `~/.local/share/themes`, which pacman does not update); then decide whether `kosm_gtk` keeps that copy current or unsets the override itself, after an apply.
+  - Done when: Nicotine+ and Blanket take kosm's colors like native GTK apps.
+
+- **13v. Blender theme on start and live** `ASK`
+  - Do: Blender keeps its theme in its preferences (`userpref.blend`), not the preset, so the `kosm` preset is lost on restart unless preferences are saved after picking it. `kosm_blender` writes a startup script (`~/.config/blender/<version>/scripts/startup/kosm.py`, the app's own file) that loads the preset once Blender has started (`bpy.app.timers`, then `bpy.ops.script.execute_preset`), and reloads it whenever the preset file changes, so an apply recolors a running Blender. Check both against a real Blender 5.2 (the preset already loads headless); ask whether watching the file is wanted and how often it polls.
+  - Done when: a restarted Blender shows the kosm theme without picking the preset, and an apply recolors a running Blender.
+
+- **13w. Commet theme** `ASK`
+  - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
+  - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
