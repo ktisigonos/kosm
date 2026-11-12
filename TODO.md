@@ -8,9 +8,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **15. Fastfetch** `PLAN FIRST`
-  - Do: an app (`kosm_fastfetch`) that owns fastfetch's `~/.config/fastfetch/config.jsonc` and generates it whole (fastfetch can't include another file, and kosm never inserts keys). Its fields mirror fastfetch's config in Zig casing (`logo`, `display`, `modules`), so a kosmos customizes everything from kosm; `from(theme)` sets the colors from the roles: keys and title the accent, output the foreground, separator and the bar's rest muted foreground, the bar's elapsed part the accent, percent and temperature success/warning/error, logo colors 1 and 2 accent and secondary. Fastfetch takes `#rrggbb` everywhere. Default modules: fastfetch's own (`fastfetch --gen-config`). In the base; the human's personal kosmos moves its current modules and `logo.sh` logo into kosm.
-  - Done when: the human has agreed on the plan, and fastfetch shows the kosmos' colors and the human's layout after an apply.
+- **15. Fastfetch** (waits on the human)
+  - Do: `kosm_fastfetch` is done and in the base: it owns `~/.config/fastfetch/config.jsonc` whole, its fields mirror fastfetch's (`logo`, `display`, `modules`, `extra`), and `from(theme)` colors it from the roles. The human's personal kosmos holds the port of their config (`kosmoi/personal/fastfetch.zig`); fastfetch prints the same text from it as from the hand-written one. Left: the human applies and checks the colors.
+  - Done when: fastfetch shows the kosmos' colors and the human's layout after an apply.
 
 - **15b. Oh My Posh owns its config** `ASK` `PLAN FIRST`
   - Do: like step 15, `kosm_ohmyposh` generates the whole prompt config from fields mirroring Oh My Posh's (blocks, segments, their templates and colors) instead of replacing only its `palette`, so a kosmos customizes the prompt from kosm. Propose the fields, the default prompt and how the human's current prompt moves into their kosmos; then it goes back into the human's kosmoi.
