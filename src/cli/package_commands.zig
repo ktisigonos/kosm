@@ -35,7 +35,7 @@ pub fn add(context: Context, argument: []const u8) Error!void {
 
     errdefer restoreManifest(context, original);
     try save(context, package);
-    try check(context, package.name);
+    try check(context, &.{package.name});
     try packages.put(context.arena, package);
     try savePackages(context, packages);
     try context.stdout.print("added {s}\n", .{package.name});
@@ -57,8 +57,9 @@ pub fn remove(context: Context, name: []const u8) Error!void {
 }
 
 /// `kosm update [name]`: fetches every package in packages.zon again (or only `name`) at its
-/// ref and checks each but kosm itself like `add`. Dependencies missing from packages.zon
-/// are skipped.
+/// ref and checks all but kosm itself like `add`, in one build. Dependencies missing from
+/// packages.zon are skipped. A successful update deletes the config's `.zig-cache`, which
+/// otherwise keeps every build made with the old packages.
 pub fn update(context: Context, name: ?[]const u8) Error!void {
     const packages = try loadPackages(context);
     const original = try readManifest(context);
@@ -77,11 +78,14 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
 
     errdefer restoreManifest(context, original);
     for (selected) |package| try save(context, package);
+    var checked: std.ArrayList([]const u8) = .empty;
     for (selected) |package| {
         // Kosm provides no app, adapter, kosmos or base; the next build checks it.
-        if (!std.mem.eql(u8, package.name, kosm_name)) try check(context, package.name);
+        if (!std.mem.eql(u8, package.name, kosm_name)) try checked.append(context.arena, package.name);
     }
+    if (checked.items.len != 0) try check(context, checked.items);
     for (selected) |package| try context.stdout.print("updated {s}\n", .{package.name});
+    try deleteCache(context);
 }
 
 /// `url#ref` split at the last `#`; the name is filled in by `fetchName`.
@@ -109,11 +113,17 @@ fn save(context: Context, package: Packages.Package) Error!void {
     if (!result.term.success()) return failRun(context, result, "zig fetch could not save {s}", .{package.name});
 }
 
-/// Builds the package against the config and prints what it provides; fails when it does not
-/// compile there or provides no app, adapter, kosmos or base.
-fn check(context: Context, name: []const u8) Error!void {
-    const build = try context.runZig(&.{ "build", try context.arena.print("-Dinspect={s}", .{name}) });
-    if (!build.term.success()) return failRun(context, build, "package '{s}' does not build in this config project", .{name});
+/// Builds the packages against the config in one build and prints what each provides; fails
+/// when one does not compile there or provides no app, adapter, kosmos or base.
+fn check(context: Context, names: []const []const u8) Error!void {
+    var arguments: std.ArrayList([]const u8) = .empty;
+    try arguments.append(context.arena, "build");
+    for (names) |name| try arguments.append(context.arena, try context.arena.print("-Dinspect={s}", .{name}));
+    const build = try context.runZig(arguments.items);
+    if (!build.term.success()) {
+        if (names.len == 1) return failRun(context, build, "package '{s}' does not build in this config project", .{names[0]});
+        return failRun(context, build, "the packages do not all build in this config project; zig's errors above name the failing one's files (zig-pkg/<name>-...)", .{});
+    }
     const inspector = try std.Io.Dir.path.join(context.arena, &.{ context.config, inspector_path });
     const result = try context.run(&.{inspector});
     if (!result.term.success()) {
@@ -124,6 +134,18 @@ fn check(context: Context, name: []const u8) Error!void {
 }
 
 const RunResult = std.process.RunResult;
+
+/// The config's own Zig cache, relative to the config.
+const cache_name = ".zig-cache";
+
+/// Deletes the config's Zig cache, never the global one. The update has already succeeded, so a
+/// failure is a warning.
+fn deleteCache(context: Context) Error!void {
+    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, cache_name });
+    std.Io.Dir.cwd().deleteTree(context.io, path) catch |err| {
+        try context.stderr.print("warning: cannot delete {s} ({s}); delete it yourself to free its space\n", .{ path, @errorName(err) });
+    };
+}
 
 fn readManifest(context: Context) Error![:0]const u8 {
     const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, manifest_name });
@@ -426,6 +448,46 @@ test "update fetches a package again, and a failing check puts build.zig.zon bac
     try testing.expectError(error.Failed, update(fixture.context(), "test_adapter"));
     try testing.expectEqualStrings(updated, (try fixture.read("build.zig.zon")).?);
     try testing.expectError(error.Failed, update(fixture.context(), "kosm"));
+}
+
+const second_adapter_fingerprint = 0x21c6164728404232;
+
+test "update checks every package in one build, then deletes the config's cache" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const arena = fixture.arena.allocator();
+    try add(fixture.context(), try fixture.writePackage("test_adapter", adapter_fingerprint, adapterRoot("probe")));
+    try add(fixture.context(), try fixture.writePackage("test_second", second_adapter_fingerprint, adapterRoot("second")));
+    try fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{});
+
+    fixture.stdout.clearRetainingCapacity();
+    try update(fixture.context(), null);
+    try testing.expect(std.mem.endsWith(u8, fixture.stdout.written(), "test_adapter provides:\n  adapter  probe\n" ++
+        "test_second provides:\n  adapter  second\nupdated test_adapter\nupdated test_second\n"));
+    try testing.expectError(error.FileNotFound, fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{}));
+
+    const inspector = try std.Io.Dir.path.join(arena, &.{ fixture.root, "config", inspector_path });
+    const inspected = try fixture.context().run(&.{inspector});
+    try testing.expectEqualStrings("test_adapter provides:\n  adapter  probe\ntest_second provides:\n  adapter  second\n", inspected.stdout);
+}
+
+test "an update with a package that does not compile names its files and keeps the cache" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    try add(fixture.context(), try fixture.writePackage("test_adapter", adapter_fingerprint, adapterRoot("probe")));
+    try add(fixture.context(), try fixture.writePackage("test_second", second_adapter_fingerprint, adapterRoot("second")));
+    const added = (try fixture.read("build.zig.zon")).?;
+
+    _ = try fixture.writePackage("test_second", second_adapter_fingerprint, "pub const adapter = missing_adapter;\n");
+    try testing.expectError(error.Failed, update(fixture.context(), null));
+    const stderr = fixture.stderr.written();
+    try testing.expect(std.mem.find(u8, stderr, "zig-pkg/test_second-") != null);
+    try testing.expect(std.mem.find(u8, stderr, "missing_adapter") != null);
+    try testing.expect(std.mem.find(u8, stderr, "the packages do not all build in this config project") != null);
+    try testing.expectEqualStrings(added, (try fixture.read("build.zig.zon")).?);
+    try fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{});
 }
 
 const kosmoi_fingerprint = 0xb0c4401d1234abcd;

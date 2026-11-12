@@ -6,26 +6,30 @@ const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
 const interface = @import("kosm_interface");
 
-/// Prints what `Package` (imported as `name`) provides to stdout and returns 0, or prints why
-/// it is not a kosm package to stderr and returns 1.
-pub fn inspect(init: std.process.Init, comptime name: []const u8, comptime Package: type) !u8 {
-    const report = comptime provided(name, Package);
+/// Prints what each package provides to stdout and returns 0, or prints why one is not a kosm
+/// package to stderr and returns 1 after reporting every other. `packages` is a tuple of
+/// `.{ name, @import(name) }` pairs.
+pub fn inspect(init: std.process.Init, comptime packages: anytype) !u8 {
     var stderr_buffer: [512]u8 = undefined;
     var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
     if (!try interface.check(init.environ_map, &stderr.interface)) {
         try stderr.interface.flush();
         return 1;
     }
-    if (report.isEmpty()) {
-        try stderr.interface.print("error: package '{s}' provides no app, adapter, kosmos or base, so it is not a kosm package\n", .{name});
-        try stderr.interface.flush();
-        return 1;
-    }
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
-    try report.write(name, &stdout.interface);
+    var all_provide = true;
+    inline for (packages) |package| {
+        const name: []const u8 = package[0];
+        const report = comptime provided(name, package[1]);
+        if (report.isEmpty()) {
+            try stderr.interface.print("error: package '{s}' provides no app, adapter, kosmos or base, so it is not a kosm package\n", .{name});
+            all_provide = false;
+        } else try report.write(name, &stdout.interface);
+    }
     try stdout.interface.flush();
-    return 0;
+    try stderr.interface.flush();
+    return if (all_provide) 0 else 1;
 }
 
 /// A package's apps, adapters, kosmoi and bases, each as the user spells them.
