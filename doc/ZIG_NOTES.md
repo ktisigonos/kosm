@@ -84,6 +84,8 @@ When unsure about any std function, grep the std source for its definition befor
 - **`std.EnumSet` has no `initEmpty`:** use the decl literal `.empty` (or `.full`, `initMany`, `initOne`).
 - **`std.DynamicBitSetUnmanaged` is deprecated:** it is `std.bit_set.Dynamic` (`initEmpty(gpa, len)`, `deinit(gpa)`).
 
+- **`output.template` reads every `kosm.` in the text as a placeholder,** prose included ("written by kosm. Its" fails to compile with "unknown field"), and has no escape. Reword prose, and pass literal names that must contain `kosm.` (pref names) as fields of the template's app.
+
 ### Tests
 
 - **Tests in imported files need a reference:** a `pub const foo = @import("foo.zig")` re-export is lazily analyzed, so `foo.zig`'s tests are silently never run. Put `test { std.testing.refAllDecls(@This()); }` in the module root and check the summary counts.
