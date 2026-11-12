@@ -12,6 +12,22 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: an app (`kosm_fastfetch`) for fastfetch's `~/.config/fastfetch/config.jsonc`: the logo's colors (`logo.color.1`..`9`), keys, title, separator and output colors (`display.color.*`), from the theme's roles and wheel, in the base. Find out which of the human's existing settings it edits in place and whether it generates the file or a block; propose its fields and the Krystallos values first.
   - Done when: the human has agreed on the app, and fastfetch shows the kosmos' colors after an apply.
 
+- **16. Zen live reload** `ASK` `PLAN FIRST`
+  - Do: Zen reads `user.js` and `userChrome.css` only at startup, and nothing outside a running Firefox can set its prefs (Marionette works but marks every window as remote-controlled). Zen's mods already update live on a pref change (`@media -moz-pref(...)`, `--mod-*` variables), so only getting the prefs and CSS in is missing. Proposal: Firefox's autoconfig (two files in Zen's install directory, `/opt/zen-browser-bin`, installed once with root by the human) loads a script `kosm_zen` writes into the profile; like `kosm_blender`'s startup script it checks a file kosm writes for changes every `reload_interval`, sets the prefs it lists through `Services.prefs`, and re-registers `kosm.css` through the style sheet service, so an apply recolors a running Zen. Decide: autoconfig or not, who installs the two files, and whether `kosm.css` is then loaded by the script instead of an `@import` in `userChrome.css`.
+  - Done when: the human applies with Zen open and sees prefs and colors change without a restart.
+
+- **17. Zen's compact mode sidebar**
+  - Do: in compact mode the floating sidebar is painted by `.zen-toolbar-background` (and its `::before`/`::after`) from `--zen-main-browser-background-toolbar`, which Zen sets from the space's gradient, not from `--zen-main-browser-background` that the Transparent Zen mod overrides; so it shows the space's old color even with no dots in the picker. `kosm.css` gains a rule painting it with the theme's background (at its alpha), and the human's `userChrome.css` must load `kosm.css` (it does not today) or step 16's script loads it.
+  - Done when: the compact sidebar shows the kosmos' background in Krystallos and Everforest.
+
+- **18. A page font without Stylus** `ASK`
+  - Do: Stylus keeps its styles in the browser's storage, which kosm cannot write. The profile's own `chrome/userContent.css` applies to every page and is a plain file, so `kosm_zen` could write the global font style there (a block, keeping the human's rules) from the look's fonts, replacing the Stylus `Font` style. Decide whether to, and which elements it covers (code too, or `use_document_fonts` instead).
+  - Done when: pages show the look's font with the Stylus style turned off.
+
+- **19. Dark Reader** `ASK`
+  - Do: Dark Reader has no outside interface (no native messaging, socket or policy settings), and importing an export after each apply is not acceptable, so it is out of the human's kosmoi. Find a way for an apply to reach a running Dark Reader (e.g. step 16's script writing its extension storage, or a tiny companion extension), or drop `kosm_darkreader`.
+  - Done when: the human has a way they accept, or `kosm_darkreader` is dropped.
+
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
