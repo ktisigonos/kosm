@@ -124,10 +124,9 @@ fn check(context: Context, names: []const []const u8) Error!void {
     try arguments.append(context.arena, "build");
     for (names) |name| try arguments.append(context.arena, try context.arena.print("-Dinspect={s}", .{name}));
     if (names.len == 1) try progress(context, "checking {s}", .{names[0]}) else try progress(context, "checking {d} packages", .{names.len});
-    const build = try context.runZig(arguments.items);
-    if (!build.term.success()) {
-        if (names.len == 1) return failRun(context, build, "package '{s}' does not build in this config project", .{names[0]});
-        return failRun(context, build, "the packages do not all build in this config project; zig's errors above name the failing one's files (zig-pkg/<name>-...)", .{});
+    if (!try context.runBuild(arguments.items)) {
+        if (names.len == 1) return fail(context, "package '{s}' does not build in this config project", .{names[0]});
+        return fail(context, "the packages do not all build in this config project; zig's errors above name the failing one's files (zig-pkg/<name>-...)", .{});
     }
     const inspector = try std.Io.Dir.path.join(context.arena, &.{ context.config, inspector_path });
     const result = try context.run(&.{inspector});

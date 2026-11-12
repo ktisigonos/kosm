@@ -14,6 +14,9 @@ config: []const u8,
 environ_map: ?*const std.process.Environ.Map = null,
 /// The kosm sources `zig build` uses in place of the config's pinned kosm; null for the pinned one.
 sources: ?Sources = null,
+/// Whether `runBuild` lets `zig build` draw its progress and print its errors on the
+/// terminal; otherwise its output is collected, as tests need.
+show_build_output: bool = false,
 /// What a command did, and what packages provide.
 stdout: *std.Io.Writer,
 /// Errors, and the output of a failing `zig`.
@@ -46,6 +49,22 @@ fn forkArgument(context: Context, arguments: []const []const u8) std.mem.Allocat
     const sources = context.sources orelse return null;
     if (arguments.len == 0 or !std.mem.eql(u8, arguments[0], "build")) return null;
     return sources.forkArgument(context.io, context.arena, context.config);
+}
+
+/// Runs `zig build` with `arguments` (which start with "build") in the config directory and
+/// returns whether it succeeded. A failure's output reaches stderr either way.
+pub fn runBuild(context: Context, arguments: []const []const u8) RunError!bool {
+    if (!context.show_build_output) {
+        const result = try context.runZig(arguments);
+        if (!result.term.success()) try context.stderr.writeAll(result.stderr);
+        return result.term.success();
+    }
+    try context.stderr.flush();
+    const argv = try context.zigArguments(arguments);
+    var child = std.process.spawn(context.io, .{ .argv = argv, .cwd = .{ .path = context.config }, .environ_map = context.environ_map }) catch |err|
+        return context.fail("cannot run {s}: {s}", .{ argv[0], @errorName(err) });
+    const term = child.wait(context.io) catch |err| return context.fail("cannot wait for {s}: {s}", .{ argv[0], @errorName(err) });
+    return term.success();
 }
 
 /// Runs `argv` in the config directory and collects its output; a program that cannot start fails.

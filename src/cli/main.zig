@@ -223,7 +223,8 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
-    const context = builds.context(init, config, &stdout.interface, stderr);
+    var context = builds.context(init, config, &stdout.interface, stderr);
+    context.show_build_output = true;
     const result = switch (command) {
         .add => package_commands.add(context, config_command.argument.?),
         .remove => package_commands.remove(context, config_command.argument.?),
