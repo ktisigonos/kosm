@@ -21,15 +21,17 @@ const manifest_name = "build.zig.zon";
 /// What `addConfigProject` installs for `-Dinspect=...`.
 const inspector_path = "zig-out/bin/inspect";
 
-/// `kosm add <url>[#ref]`: fetches the package, refuses it when its name is already installed or
-/// when it provides no app, adapter, kosmos or base, and records the url and ref in packages.zon.
+/// `kosm add <url>[#ref]`: fetches the package, refuses it when packages.zon already has its name
+/// or when it provides no app, adapter, kosmos or base, and records the url and ref in
+/// packages.zon. A package installed without kosm add (say, kept only as another package's
+/// dependency) is fetched from `url` and recorded, so kosm update follows it from then on.
 pub fn add(context: Context, argument: []const u8) Error!void {
     const package = try fetchName(context, splitRef(argument));
     const original = try readManifest(context);
-    if (try isInstalled(context, original, package.name)) {
+    var packages = try loadPackages(context);
+    if (packages.find(package.name) != null) {
         return fail(context, "package '{s}' is already installed; kosm update {s} fetches it again", .{ package.name, package.name });
     }
-    var packages = try loadPackages(context);
 
     errdefer restoreManifest(context, original);
     try save(context, package);
@@ -67,7 +69,7 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
         break :blk packages.entries.items[index..][0..1];
     } else blk: {
         for (manifest.dependencyNames(context.arena, original) catch |err| return invalidManifest(context, err)) |installed| {
-            if (packages.find(installed) == null) try context.stdout.print("skipped {s}: kosm add did not install it, so {s} has no url for it\n", .{ installed, Packages.file_name });
+            if (packages.find(installed) == null) try context.stdout.print("skipped {s}: {s} has no url for it; kosm add <its url> records one\n", .{ installed, Packages.file_name });
         }
         break :blk packages.entries.items;
     };
@@ -119,11 +121,6 @@ fn check(context: Context, name: []const u8) Error!void {
         return error.Failed;
     }
     try context.stdout.writeAll(result.stdout);
-}
-
-/// Whether `name` is in `source`'s dependencies; reports a manifest it cannot read.
-fn isInstalled(context: Context, source: [:0]const u8, name: []const u8) Error!bool {
-    return manifest.hasDependency(context.arena, source, name) catch |err| invalidManifest(context, err);
 }
 
 const RunResult = std.process.RunResult;
@@ -382,6 +379,19 @@ test "add of an installed name is refused before anything is saved" {
     try testing.expectEqualStrings(installed, (try fixture.read("build.zig.zon")).?);
 }
 
+test "add of a package installed without kosm add records its url, so update follows it" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const url = try fixture.writePackage("test_adapter", adapter_fingerprint, adapterRoot("probe"));
+    try add(fixture.context(), url);
+    try fixture.tmp.dir.deleteFile(testing.io, "config/" ++ Packages.file_name);
+
+    try add(fixture.context(), url);
+    const packages = (try fixture.read(Packages.file_name)).?;
+    try testing.expect(std.mem.find(u8, packages, try fixture.arena.allocator().print(".test_adapter = .{{ .url = \"{s}\" }},", .{url})) != null);
+}
+
 test "remove takes back exactly what add wrote, and refuses kosm and unknown names" {
     var fixture: Fixture = undefined;
     try fixture.init();
@@ -407,7 +417,7 @@ test "update fetches a package again, and a failing check puts build.zig.zon bac
     _ = try fixture.writePackage("test_adapter", adapter_fingerprint, adapterRoot("changed"));
     fixture.stdout.clearRetainingCapacity();
     try update(fixture.context(), null);
-    try testing.expectEqualStrings("skipped kosm: kosm add did not install it, so packages.zon has no url for it\n" ++
+    try testing.expectEqualStrings("skipped kosm: packages.zon has no url for it; kosm add <its url> records one\n" ++
         "test_adapter provides:\n  adapter  changed\nupdated test_adapter\n", fixture.stdout.written());
     const updated = (try fixture.read("build.zig.zon")).?;
     try testing.expect(!std.mem.eql(u8, added, updated));
