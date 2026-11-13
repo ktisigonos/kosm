@@ -33,13 +33,32 @@ pub fn raw(text: []const u8) Raw {
 }
 
 /// A color from hex text known at compile time: `rgb`, `rgba`, `rrggbb` or `rrggbbaa`,
-/// with an optional `#`. Bad text is a compile error; use `Color.parseHex` at runtime.
-pub fn hex(comptime text: []const u8) Color {
+/// with an optional `#`. Bad text is a compile error; use `Color.parseHex` at runtime. The
+/// color is known at compile time too, so a list of them (`&.{ hex("000000") }`) is a constant
+/// that outlives the function writing it.
+pub inline fn hex(comptime text: []const u8) Color {
     return comptime blk: {
         // The sRGB to OKLCH math (pow, cbrt) needs far more than the default 1000 branches.
         @setEvalBranchQuota(20_000);
         break :blk Color.parseHex(text) catch @compileError("kosm.hex: \"" ++ text ++ "\" is not a hex color");
     };
+}
+
+fn blackList() []const Color {
+    return &.{hex("000000")};
+}
+
+fn overwriteStack(seed: u8) u8 {
+    var buffer: [256]u8 = @splat(seed);
+    std.mem.doNotOptimizeAway(&buffer);
+    return buffer[0];
+}
+
+test "a list of hex colors written in a function outlives it" {
+    const colors = blackList();
+    _ = overwriteStack(0xff);
+    comptime std.debug.assert(hex("ff0000").alpha == 1);
+    try std.testing.expectEqual(0, colors[0].lightness);
 }
 
 test {
