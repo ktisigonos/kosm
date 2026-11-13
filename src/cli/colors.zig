@@ -11,8 +11,8 @@ const program_path = "zig-out/bin/colors";
 /// Asks the program for colored blocks; it cannot see that kosm's stdout is a terminal.
 const blocks_argument = "--blocks";
 
-/// Prints every palette the file of `kosmos` declares; a variant (`frost.iced`) shows its
-/// file's. With `blocks`, each color is also drawn as a truecolor block.
+/// Prints every palette the file of `kosmos` declares; a variant (`frost.iced`,
+/// `frost.cold.deep`) shows its file's. With `blocks`, each color is also drawn as a truecolor block.
 pub fn colors(context: Context, kosmos: []const u8, blocks: bool) Error!void {
     const build = try context.runZig(&.{ "build", try context.arena.print("-Dcolors={s}", .{kosmos}) });
     if (!build.term.success()) {

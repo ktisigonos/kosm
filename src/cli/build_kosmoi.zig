@@ -103,12 +103,11 @@ fn select(arena: std.mem.Allocator, listed: []const Listed, selection: Settings.
     return .{ .names = names.items };
 }
 
-/// Whether `name` picks kosmos `kosmos_name`: a file name ("frost") picks it and every variant
-/// in it, a variant ("frost.iced") only itself, as `kosm list` matches.
+/// Whether `name` picks kosmos `kosmos_name`: a file ("frost") or group ("frost.cold") picks
+/// it and every kosmos in it, a variant ("frost.iced") only itself, as `kosm list` matches.
 fn matches(name: []const u8, kosmos_name: []const u8) bool {
-    if (std.mem.findScalar(u8, name, '.') != null) return std.mem.eql(u8, name, kosmos_name);
-    const file = kosmos_name[0 .. std.mem.findScalar(u8, kosmos_name, '.') orelse kosmos_name.len];
-    return std.mem.eql(u8, name, file);
+    if (!std.mem.startsWith(u8, kosmos_name, name)) return false;
+    return kosmos_name.len == name.len or kosmos_name[name.len] == '.';
 }
 
 fn isInKosmoiDirectory(kosmos: Listed) bool {

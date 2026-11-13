@@ -27,7 +27,7 @@ const interface = @import("kosm_interface");
 const usage =
     \\usage: kosm init [--config dir]
     \\       kosm new kosmos|app|adapter <name> [--config dir]
-    \\       kosm apply <kosmos>[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
+    \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
     \\       kosm list [kosmos] [--config dir]
     \\       kosm colors <kosmos> [--config dir]
     \\       kosm current

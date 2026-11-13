@@ -8,8 +8,8 @@ const std = @import("std");
 /// The kosmoi `kosm build` builds when its command line names none.
 build: Selection = .all,
 
-/// Which kosmoi a command works on. A name means a kosmos file and every variant in it
-/// ("frost"), or one variant ("frost.iced"), as `kosm list` matches them.
+/// Which kosmoi a command works on. A name means a kosmos file or group and every variant in
+/// it ("frost", "frost.cold"), or one variant ("frost.iced"), as `kosm list` matches them.
 pub const Selection = union(enum) {
     /// Every kosmos in `kosmoi/`, with its variants. Kosmoi that local apps and adapters or
     /// installed packages declare are left out.

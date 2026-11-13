@@ -15,7 +15,7 @@ there is undecided, so ask.
 - **Kosm configures the whole system,** not only its looks: settings several programs share (keyboard layouts, cursor, rounding) are set once like colors are.
 - **A minimal kosmos is tiny.** One official base holds every supported app with plain defaults; a look makes it look nice; a user's kosmos picks a base and a look and sets the few things that are personal. Every app derives the rest.
 - **Depth is opt-in, in the same file.** Any single value of any app is overridden by a plain assignment.
-- **Variants are a function call.** A variant calls its base's build function with a few changed inputs, then assigns its own tweaks.
+- **Variants are a function call.** A variant calls its base's build function with a few changed inputs, then assigns its own tweaks. Variants may be grouped in a public struct of the file (`personal.catppuccin.latte`), whose own `kosmos` is the group's name.
 - **Nothing is written twice.** No full-file template copies of configs.
 - **Anyone can support anything.** Apps and adapters are ordinary Zig packages: `kosm add <url>` and it works. Kosm's own are written exactly like third-party ones, with no private API.
 - **Never wrong silently.** If kosm can't do exactly what was asked, it errors naming the kosmos, app, file and path involved, and writes nothing.

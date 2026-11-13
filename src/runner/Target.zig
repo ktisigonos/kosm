@@ -2,13 +2,14 @@
 
 const Target = @This();
 
-/// The kosmos as `kosm apply` spells it: "frost" or "frost.iced".
+/// The kosmos as `kosm apply` spells it: "frost", "frost.iced" or "frost.cold.deep".
 name: []const u8,
 /// The kosmos file or directory for messages: "kosmoi/frost.zig" or "kosmoi/nord/".
 path: []const u8,
 /// The kosmos file's module.
 file: type,
-/// The kosmos function in `file`; "kosmos" is the file's default.
+/// The kosmos in `file`, by its name after the file's ("iced", "cold.deep"); "kosmos" is the
+/// file's default.
 function: []const u8,
 /// Every module that may export adapters: installed packages and local adapters.
 adapter_sources: []const AdapterSource,

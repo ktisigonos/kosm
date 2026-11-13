@@ -31,8 +31,8 @@ const list_module = @import("list.zig");
 /// (`[--param value]... [--set path=value]... [--diff] [--config dir]`).
 /// Returns the exit status: 0 on success, 1 after printing what went wrong.
 pub fn run(init: std.process.Init, comptime target: Target) !u8 {
-    comptime checkTarget(target);
-    const kosmos = @field(target.file, target.function);
+    const declared = comptime findTarget(target);
+    const kosmos = @field(declared.Namespace, declared.function);
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var diagnostics: kosm.Diagnostics = .{ .kosmos = target.name };
     var stdout_buffer: [4096]u8 = undefined;
@@ -79,14 +79,13 @@ const Streams = struct {
     stdout_mode: std.Io.Terminal.Mode,
 };
 
-/// Compile error unless `target.function` is a kosmos, listing the file's kosmoi.
-fn checkTarget(comptime target: Target) void {
+/// The kosmos `target.function` names, or a compile error listing the file's kosmoi.
+fn findTarget(comptime target: Target) discovery.Declared {
+    if (discovery.findKosmos(target.file, target.function)) |declared| return declared;
     const file_name = target.name[0 .. std.mem.findScalar(u8, target.name, '.') orelse target.name.len];
-    if (discovery.notKosmosReason(target.file, target.function)) |reason| {
-        const subject = if (std.mem.eql(u8, target.function, "kosmos")) "the default kosmos 'kosmos'" else "'" ++ target.function ++ "'";
-        @compileError(target.path ++ ": " ++ subject ++ " is not a kosmos: " ++ reason ++
-            ". Kosmoi in this file: " ++ discovery.kosmosList(target.file, file_name));
-    }
+    const subject = if (std.mem.eql(u8, target.function, "kosmos")) "the default kosmos 'kosmos'" else "'" ++ target.function ++ "'";
+    @compileError(target.path ++ ": " ++ subject ++ " is not a kosmos: " ++ discovery.notFoundReason(target.file, target.function) ++
+        ". Kosmoi in this file: " ++ discovery.kosmosList(target.file, file_name));
 }
 
 /// Failed; `diagnostics` says why.

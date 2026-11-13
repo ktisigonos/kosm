@@ -62,8 +62,8 @@ pub const Provided = struct {
     }
 };
 
-/// Every public app type, adapter constant, kosmos function and base function at the top of
-/// `Package`.
+/// Every public app type, adapter constant and base function at the top of `Package`, and its
+/// kosmoi, groups included.
 pub fn provided(comptime name: []const u8, comptime Package: type) Provided {
     @setEvalBranchQuota(discovery.branch_quota);
     comptime var apps: []const []const u8 = &.{};
@@ -72,9 +72,11 @@ pub fn provided(comptime name: []const u8, comptime Package: type) Provided {
     inline for (@typeInfo(Package).@"struct".decl_names) |decl| {
         const Declaration = @TypeOf(@field(Package, decl));
         if (Declaration == type and discovery.isApp(@field(Package, decl))) apps = apps ++ .{name ++ "." ++ decl};
-        if (comptime discovery.notKosmosReason(Package, decl) == null) {
-            kosmoi = kosmoi ++ .{if (comptime std.mem.eql(u8, decl, "kosmos")) name else name ++ "." ++ decl};
-        } else if (comptime isBase(Package, decl)) bases = bases ++ .{name ++ "." ++ decl};
+        if (comptime discovery.notKosmosReason(Package, decl) != null and !discovery.isGroup(Package, decl) and isBase(Package, decl))
+            bases = bases ++ .{name ++ "." ++ decl};
+    }
+    inline for (comptime discovery.declaredKosmoi(Package)) |declared| {
+        kosmoi = kosmoi ++ .{if (declared.name.len == 0) name else name ++ "." ++ declared.name};
     }
     comptime var adapters: []const []const u8 = &.{};
     inline for (comptime discovery.declaredAdapters(Package)) |adapter| adapters = adapters ++ .{adapter.name};

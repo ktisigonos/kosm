@@ -79,7 +79,7 @@ fn filterArgument(arguments: []const []const u8) error{UnexpectedArgument}!?[]co
 
 /// One kosmos function.
 pub const Kosmos = struct {
-    /// As `kosm apply` spells it: "frost" or "frost.iced".
+    /// As `kosm apply` spells it: "frost", "frost.iced" or "frost.cold.deep".
     name: []const u8,
     /// The file or package it is declared in: "frost".
     file: []const u8,
@@ -124,8 +124,8 @@ pub const Table = struct {
         }
     }
 
-    /// The kosmoi of file `name` ("frost"), or the one variant `name` names ("frost.iced"),
-    /// each with the apps its tree holds.
+    /// The kosmoi `name` picks: a file ("frost") or group ("frost.cold") with every kosmos in
+    /// it, or one variant ("frost.iced"), each with the apps its tree holds.
     pub fn writeKosmos(table: Table, name: []const u8, writer: *std.Io.Writer) (error{UnknownKosmos} || std.Io.Writer.Error)!void {
         const width = nameWidth(table.kosmoi, name);
         if (width == 0) return error.UnknownKosmos;
@@ -153,10 +153,16 @@ pub const Table = struct {
     }
 };
 
-/// A name without a dot picks every kosmos of that file; one with a dot picks that variant.
-fn matches(kosmos: Kosmos, name: []const u8) bool {
-    if (std.mem.findScalar(u8, name, '.') == null) return std.mem.eql(u8, kosmos.file, name);
-    return std.mem.eql(u8, kosmos.name, name);
+/// A name picks the kosmos of that name and every kosmos under it: a file's or a group's
+/// variants ("frost" picks "frost.iced", "frost.cold" picks "frost.cold.deep").
+pub fn matches(kosmos: Kosmos, name: []const u8) bool {
+    return picks(name, kosmos.name);
+}
+
+/// Whether `name` is `kosmos_name` or a file or group holding it.
+pub fn picks(name: []const u8, kosmos_name: []const u8) bool {
+    if (!std.mem.startsWith(u8, kosmos_name, name)) return false;
+    return kosmos_name.len == name.len or kosmos_name[name.len] == '.';
 }
 
 /// The longest name among the kosmoi `filter` picks (all of them when null); 0 when none.
@@ -182,17 +188,15 @@ pub fn collect(comptime sources: []const Source) Table {
     comptime var kosmoi: []const Kosmos = &.{};
     comptime var packages: []const Package = &.{};
     inline for (sources) |source| {
-        inline for (@typeInfo(source.module).@"struct".decl_names) |decl| {
-            if (comptime discovery.notKosmosReason(source.module, decl) == null) {
-                const Function = @typeInfo(@TypeOf(@field(source.module, decl))).@"fn";
-                const Tree = discovery.Payload(Function.return_type.?);
-                kosmoi = kosmoi ++ .{Kosmos{
-                    .name = if (comptime std.mem.eql(u8, decl, "kosmos")) source.name else source.name ++ "." ++ decl,
-                    .file = source.name,
-                    .origin = source.origin,
-                    .apps = appsIn(sources, Tree, ""),
-                }};
-            }
+        inline for (comptime discovery.declaredKosmoi(source.module)) |declared| {
+            const Function = @typeInfo(@TypeOf(@field(declared.Namespace, declared.function))).@"fn";
+            const Tree = discovery.Payload(Function.return_type.?);
+            kosmoi = kosmoi ++ .{Kosmos{
+                .name = if (declared.name.len == 0) source.name else source.name ++ "." ++ declared.name,
+                .file = source.name,
+                .origin = source.origin,
+                .apps = appsIn(sources, Tree, ""),
+            }};
         }
         if (source.kind == .package) packages = packages ++ .{Package{ .name = source.name, .provided = inspect.provided(source.name, source.module) }};
     }
@@ -250,6 +254,11 @@ const Frost = struct {
     pub fn helper(size: u8) u8 {
         return size;
     }
+    pub const cold = struct {
+        pub fn deep() Tree {
+            return .{ .terminal = .{ .kitty = null }, .editor = .{} };
+        }
+    };
 };
 
 const Base = struct {
@@ -278,9 +287,10 @@ test "list prints every kosmos with its origin, then what each package provides"
     try test_table.writeAll(&writer);
     try testing.expectEqualStrings(
         \\kosmoi:
-        \\  frost       kosmoi/frost.zig
-        \\  frost.iced  kosmoi/frost.zig
-        \\  kosm_probe  package kosm_probe
+        \\  frost            kosmoi/frost.zig
+        \\  frost.iced       kosmoi/frost.zig
+        \\  frost.cold.deep  kosmoi/frost.zig
+        \\  kosm_probe       package kosm_probe
         \\packages:
         \\  kosm_probe
         \\    app      kosm_probe.App
@@ -294,14 +304,28 @@ test "listing one kosmos file shows its variants and the apps in each tree" {
     var writer: std.Io.Writer = .fixed(&buffer);
     try test_table.writeKosmos("frost", &writer);
     try testing.expectEqualStrings(
-        \\frost       kosmoi/frost.zig
+        \\frost            kosmoi/frost.zig
         \\  terminal.kitty: ?kosm_probe.App
         \\  editor: kosm_probe.App
-        \\frost.iced  kosmoi/frost.zig
+        \\frost.iced       kosmoi/frost.zig
+        \\  terminal.kitty: ?kosm_probe.App
+        \\  editor: kosm_probe.App
+        \\frost.cold.deep  kosmoi/frost.zig
         \\  terminal.kitty: ?kosm_probe.App
         \\  editor: kosm_probe.App
         \\
     , writer.buffered());
+}
+
+test "a group picks every kosmos in it, and a name only matches whole segments" {
+    var buffer: [512]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try test_table.writeKosmos("frost.cold", &writer);
+    try testing.expect(std.mem.startsWith(u8, writer.buffered(), "frost.cold.deep  kosmoi/frost.zig\n"));
+    try testing.expect(picks("frost", "frost.cold.deep"));
+    try testing.expect(!picks("frost.co", "frost.cold.deep"));
+    try testing.expect(!picks("fro", "frost"));
+    try testing.expect(!picks("frost.cold.deep", "frost.cold"));
 }
 
 test "listing a variant shows only it, and an unknown name is an error" {

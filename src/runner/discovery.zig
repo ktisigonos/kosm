@@ -80,16 +80,77 @@ pub fn notKosmosReason(comptime File: type, comptime name: []const u8) ?[]const 
     return null;
 }
 
-/// The public kosmos functions in `File`, comma-separated, as `kosm apply` spells them
-/// (`frost, frost.iced`), or "none".
+/// One kosmos a file declares: where its function is, and its name after the file's.
+pub const Declared = struct {
+    /// `""` for the file's own `kosmos`, `iced` for a variant, `catppuccin` for a group's own
+    /// `kosmos`, `catppuccin.latte` for a variant in a group.
+    name: []const u8,
+    /// The file, or the group, declaring the function.
+    Namespace: type,
+    /// The function's name in `Namespace`.
+    function: []const u8,
+};
+
+/// Every kosmos function in `File` and in its groups, in declaration order. A group is a public
+/// struct declared in the file (not imported) holding at least one kosmos.
+pub fn declaredKosmoi(comptime File: type) []const Declared {
+    @setEvalBranchQuota(branch_quota);
+    comptime var found: []const Declared = &.{};
+    inline for (@typeInfo(File).@"struct".decl_names) |name| {
+        if (comptime notKosmosReason(File, name) == null) {
+            found = found ++ .{Declared{ .name = comptime if (std.mem.eql(u8, name, "kosmos")) "" else name, .Namespace = File, .function = name }};
+        } else if (comptime isGroup(File, name)) {
+            inline for (comptime declaredKosmoi(@field(File, name))) |inner| {
+                found = found ++ .{Declared{ .name = comptime if (inner.name.len == 0) name else name ++ "." ++ inner.name, .Namespace = inner.Namespace, .function = inner.function }};
+            }
+        }
+    }
+    const final = found[0..found.len].*;
+    return &final;
+}
+
+/// Whether `File.name` is a group of kosmoi: a public struct declared inside `File`, so a
+/// re-exported package is not one, holding at least one kosmos.
+pub fn isGroup(comptime File: type, comptime name: []const u8) bool {
+    @setEvalBranchQuota(branch_quota);
+    if (!@hasDecl(File, name) or @TypeOf(@field(File, name)) != type) return false;
+    const Group = @field(File, name);
+    if (@typeInfo(Group) != .@"struct") return false;
+    if (comptime !std.mem.eql(u8, @typeName(Group), @typeName(File) ++ "." ++ name)) return false;
+    return comptime declaredKosmoi(Group).len != 0;
+}
+
+/// The kosmos `name` (as `declaredKosmoi` names them, `kosmos` also naming the file's own) in
+/// `File`, or null.
+pub fn findKosmos(comptime File: type, comptime name: []const u8) ?Declared {
+    const wanted = comptime if (std.mem.eql(u8, name, "kosmos")) "" else name;
+    inline for (comptime declaredKosmoi(File)) |declared| {
+        if (comptime std.mem.eql(u8, declared.name, wanted)) return declared;
+    }
+    return null;
+}
+
+/// Why `name` in `File` (`kosmos`, `iced`, `catppuccin.latte`) is not a kosmos.
+pub fn notFoundReason(comptime File: type, comptime name: []const u8) []const u8 {
+    return comptime reason: {
+        const dot = std.mem.findScalar(u8, name, '.') orelse {
+            if (isGroup(File, name)) break :reason "it is a group without a kosmos of its own; add `pub fn kosmos()` to it";
+            break :reason notKosmosReason(File, name) orelse "it is not a kosmos";
+        };
+        const group = name[0..dot];
+        if (!isGroup(File, group)) break :reason "'" ++ group ++ "' is not a group of kosmoi: a public struct declared in the file holding at least one kosmos";
+        break :reason notFoundReason(@field(File, group), name[dot + 1 ..]);
+    };
+}
+
+/// The kosmoi in `File`, comma-separated, as `kosm apply` spells them (`frost, frost.iced,
+/// frost.cold.deep`), or "none".
 pub fn kosmosList(comptime File: type, comptime file_name: []const u8) []const u8 {
     @setEvalBranchQuota(branch_quota);
     comptime var list: []const u8 = "";
-    inline for (@typeInfo(File).@"struct".decl_names) |name| {
-        if (comptime notKosmosReason(File, name) == null) {
-            const spelled = if (comptime std.mem.eql(u8, name, "kosmos")) file_name else file_name ++ "." ++ name;
-            list = list ++ (if (list.len == 0) "" else ", ") ++ spelled;
-        }
+    inline for (comptime declaredKosmoi(File)) |declared| {
+        const spelled = if (declared.name.len == 0) file_name else file_name ++ "." ++ declared.name;
+        list = list ++ (if (list.len == 0) "" else ", ") ++ spelled;
     }
     return if (list.len == 0) "none" else list;
 }
@@ -200,6 +261,26 @@ const test_kosmoi = struct {
         return .{ .modifier = .{} };
     }
     pub const adapter: kosm.Adapter = .{ .name = "lines" };
+    pub const cold = struct {
+        pub fn kosmos() Tree {
+            return .{ .terminal = .{ .kitty = .{} } };
+        }
+        pub fn deep() Tree {
+            return .{ .terminal = .{ .kitty = null } };
+        }
+    };
+    pub const warm = struct {
+        pub fn mild() Tree {
+            return .{ .terminal = .{ .kitty = null } };
+        }
+    };
+    pub const imported = other_kosmoi;
+};
+
+const other_kosmoi = struct {
+    pub fn kosmos() test_kosmoi.Tree {
+        return .{ .terminal = .{ .kitty = .{} } };
+    }
 };
 
 test "an app needs exactly apply(self, *Output) !void" {
@@ -232,7 +313,21 @@ test "kosmoi are found by shape, and the rest say why not" {
     try testing.expectEqualStrings("it does not return a struct holding at least one app", notKosmosReason(test_kosmoi, "noApps").?);
     try testing.expectEqualStrings("it is not a function", notKosmosReason(test_kosmoi, "adapter").?);
     try testing.expectEqualStrings("there is no public declaration with that name", notKosmosReason(test_kosmoi, "missing").?);
-    try testing.expectEqualStrings("frost, frost.iced", kosmosList(test_kosmoi, "frost"));
+    try testing.expectEqualStrings("frost, frost.iced, frost.cold, frost.cold.deep, frost.warm.mild", kosmosList(test_kosmoi, "frost"));
+}
+
+test "groups are public structs of the file holding kosmoi, found by dotted name" {
+    try testing.expect(isGroup(test_kosmoi, "cold"));
+    try testing.expect(!isGroup(test_kosmoi, "Tree"));
+    try testing.expect(!isGroup(test_kosmoi, "imported"));
+    try testing.expect(!isGroup(test_kosmoi, "Params"));
+    try testing.expectEqualStrings("deep", comptime findKosmos(test_kosmoi, "cold.deep").?.function);
+    try testing.expectEqualStrings("kosmos", comptime findKosmos(test_kosmoi, "cold").?.function);
+    try testing.expect(comptime findKosmos(test_kosmoi, "kosmos").?.Namespace == test_kosmoi);
+    try testing.expect(comptime findKosmos(test_kosmoi, "cold.missing") == null);
+    try testing.expectEqualStrings("there is no public declaration with that name", notFoundReason(test_kosmoi, "cold.missing"));
+    try testing.expectEqualStrings("'Tree' is not a group of kosmoi: a public struct declared in the file holding at least one kosmos", notFoundReason(test_kosmoi, "Tree.x"));
+    try testing.expectEqualStrings("it is a group without a kosmos of its own; add `pub fn kosmos()` to it", notFoundReason(test_kosmoi, "warm"));
 }
 
 test "adapters are collected from every source" {
