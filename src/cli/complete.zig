@@ -49,6 +49,11 @@ const apply_flags = [_]Candidate{
     config_flag,
 };
 
+const build_flags = [_]Candidate{
+    .{ .text = "--except", .description = "build every kosmos but the ones named after it" },
+    .{ .text = "--all", .description = "build every kosmos in kosmoi/, whatever kosm.zon says" },
+};
+
 /// What `addConfigProject` installs for `-Dkosmos=...` and `-Dlist`.
 const runner_path = "zig-out/bin/kosmos";
 const lister_path = "zig-out/bin/list";
@@ -71,6 +76,7 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
     // A file, which each shell completes itself.
     if (std.mem.eql(u8, command, "relay")) return;
     if (std.mem.eql(u8, command, "apply")) return completeApply(context, before, previous, current);
+    if (std.mem.eql(u8, command, "build")) return completeBuild(context, before, current);
 
     if (std.mem.startsWith(u8, current, "-")) return writeAll(context.stdout, &.{config_flag});
     if (firstPositional(before) != null) return;
@@ -94,6 +100,16 @@ fn completeApply(context: Context, before: []const []const u8, previous: []const
     if (std.mem.startsWith(u8, previous, "--") and !std.mem.eql(u8, previous, "--diff")) return;
     try writeAll(context.stdout, &apply_flags);
     try writeKosmosCandidates(context, kosmos, .parameters);
+}
+
+/// `kosm build`: any number of kosmoi, after `--except` too; `--all` takes none.
+fn completeBuild(context: Context, before: []const []const u8, current: []const u8) Error!void {
+    for (before) |word| {
+        if (std.mem.eql(u8, word, "--all")) return;
+    }
+    if (!std.mem.startsWith(u8, current, "-")) return writeKosmoi(context);
+    if (before.len == 0) try writeAll(context.stdout, &build_flags);
+    try writeAll(context.stdout, &.{config_flag});
 }
 
 /// The first word that is neither a flag nor `--config`'s directory.
@@ -227,6 +243,9 @@ test "a directory after --config is left to the shell, and a flag being typed ge
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "apply", "--config", "" }));
     try testing.expectEqualStrings("--config\tthe config project's directory\n", try testComplete(arena.allocator(), config, &.{ "list", "--" }));
     try testing.expectEqualStrings("--config\tthe config project's directory\n", try testComplete(arena.allocator(), config, &.{ "apply", "-" }));
+    try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "build", "-" }), "--except\t");
+    try testing.expectEqualStrings("--config\tthe config project's directory\n", try testComplete(arena.allocator(), config, &.{ "build", "frost", "-" }));
+    try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "build", "--all", "" }));
 }
 
 test "remove and update complete to the config's packages, and a second name to nothing" {

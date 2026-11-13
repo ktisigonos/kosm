@@ -21,6 +21,7 @@ const new_command = @import("new.zig");
 const source_command = @import("source.zig");
 const relay_command = @import("relay.zig");
 const Sources = @import("Sources.zig");
+const Settings = @import("Settings.zig");
 const interface = @import("kosm_interface");
 
 const usage =
@@ -35,7 +36,7 @@ const usage =
     \\       kosm remove <name> [--config dir]
     \\       kosm update [name] [--config dir]
     \\       kosm clean [--config dir]
-    \\       kosm build [--config dir]
+    \\       kosm build [<kosmos>... | --except <kosmos>... | --all] [--config dir]
     \\       kosm completions fish|bash|zsh
     \\       kosm relay <file>
     \\
@@ -80,7 +81,8 @@ pub fn main(init: std.process.Init) !u8 {
         .apply => |apply| return runApply(init, builds, apply, &stderr.interface),
         .init => |init_arguments| return runInit(init, builds, init_arguments, &stderr.interface),
         .new => |new| return runNew(init, builds, new, &stderr.interface),
-        .add, .remove, .update, .clean, .build, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
+        .build => |build_arguments| return runBuildCommand(init, builds, build_arguments, &stderr.interface),
+        .add, .remove, .update, .clean, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
         .complete => |words| return runComplete(init, builds, words),
         .current, .source, .completions, .relay => unreachable, // Handled above.
     }
@@ -122,6 +124,7 @@ fn expectedArguments(command: []const u8) []const u8 {
     if (std.mem.eql(u8, command, "remove")) return "one package name, e.g. kosm remove kosm_kitty";
     if (std.mem.eql(u8, command, "update")) return "at most one package name";
     if (std.mem.eql(u8, command, "list")) return "at most one kosmos, e.g. kosm list frost";
+    if (std.mem.eql(u8, command, "build")) return "kosmoi, --except and kosmoi, or --all, e.g. kosm build frost nord";
     if (std.mem.eql(u8, command, "colors")) return "one kosmos, e.g. kosm colors frost";
     if (std.mem.eql(u8, command, "completions")) return "one shell: fish, bash or zsh";
     if (std.mem.eql(u8, command, "new")) return "a kind and a name, e.g. kosm new app my_bar";
@@ -219,8 +222,8 @@ fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, c
     return true;
 }
 
-/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm clean`, `kosm build`, `kosm list` or
-/// `kosm colors` against the config project.
+/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm clean`, `kosm list` or `kosm colors`
+/// against the config project.
 fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, config_command: ConfigCommand, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, config_command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
@@ -233,11 +236,10 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .remove => package_commands.remove(context, config_command.argument.?),
         .update => package_commands.update(context, config_command.argument),
         .clean => clean_command.clean(context),
-        .build => build_command.build(context),
         .list => list_command.list(context, config_command.argument),
         // Blocks only where they can be drawn: a pipe or a file gets plain text.
         .colors => colors_command.colors(context, config_command.argument.?, try std.Io.File.stdout().isTty(init.io)),
-        .apply, .current, .init, .new, .source, .completions, .complete, .relay => unreachable, // main passes only the seven above.
+        .apply, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the six above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -336,9 +338,9 @@ const Command = union(enum) {
     remove: ConfigCommand,
     update: ConfigCommand,
     clean: ConfigCommand,
-    build: ConfigCommand,
+    build: Build,
 
-    const ParseError = Apply.ParseError || New.ParseError || error{ConfigNotRead};
+    const ParseError = Apply.ParseError || New.ParseError || Build.ParseError || error{ConfigNotRead};
 
     /// Reads the arguments without the program name.
     fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Command {
@@ -379,16 +381,16 @@ const Command = union(enum) {
         if (std.mem.eql(u8, arguments[0], "remove")) return .{ .remove = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "update")) return .{ .update = try .parse(arguments[1..], .optional) };
         if (std.mem.eql(u8, arguments[0], "clean")) return .{ .clean = try .parse(arguments[1..], .none) };
-        if (std.mem.eql(u8, arguments[0], "build")) return .{ .build = try .parse(arguments[1..], .none) };
+        if (std.mem.eql(u8, arguments[0], "build")) return .{ .build = try .parse(arena, arguments[1..]) };
         return .{ .apply = try Apply.parse(arena, arguments) };
     }
 };
 
 /// A command working on a config project, with at most one argument and `--config`:
-/// `init`, `list`, `add`, `remove`, `update`, `clean` or `build`.
+/// `init`, `list`, `add`, `remove`, `update` or `clean`.
 const ConfigCommand = struct {
     /// add: the url and ref; remove: the name; update: the name, or null for every package;
-    /// list: the kosmos, or null for everything; colors: the kosmos; init, clean and build: always null.
+    /// list: the kosmos, or null for everything; colors: the kosmos; init and clean: always null.
     argument: ?[]const u8,
     /// The `--config` directory, or null for the default.
     config: ?[]const u8,
@@ -447,6 +449,62 @@ const New = struct {
     }
 };
 
+/// `kosm build [<kosmos>... | --except <kosmos>... | --all] [--config dir]`.
+const Build = struct {
+    /// What the command line picks, or null for `kosm.zon`'s choice.
+    selection: ?Settings.Selection,
+    /// The `--config` directory, or null for the default.
+    config: ?[]const u8,
+
+    const ParseError = ConfigCommand.ParseError || error{OutOfMemory};
+
+    /// Reads the arguments after `build`. `--config dir` may appear anywhere; `--except` comes
+    /// before the kosmoi it leaves out, and `--all` stands alone.
+    fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Build {
+        var names: std.ArrayList([]const u8) = .empty;
+        var except = false;
+        var all = false;
+        var config: ?[]const u8 = null;
+        var index: usize = 0;
+        while (index < arguments.len) : (index += 1) {
+            const argument = arguments[index];
+            if (std.mem.eql(u8, argument, "--config")) {
+                index += 1;
+                if (index == arguments.len) return error.MissingConfigDirectory;
+                config = arguments[index];
+            } else if (std.mem.eql(u8, argument, "--except")) {
+                if (except or all or names.items.len != 0) return error.UnexpectedArgument;
+                except = true;
+            } else if (std.mem.eql(u8, argument, "--all")) {
+                if (except or all or names.items.len != 0) return error.UnexpectedArgument;
+                all = true;
+            } else if (all or std.mem.startsWith(u8, argument, "-")) {
+                return error.UnexpectedArgument;
+            } else try names.append(arena, argument);
+        }
+        const selection: ?Settings.Selection = if (all) .all else if (except) blk: {
+            if (names.items.len == 0) return error.MissingArgument;
+            break :blk .{ .except = names.items };
+        } else if (names.items.len != 0) .{ .only = names.items } else null;
+        return .{ .selection = selection, .config = config };
+    }
+};
+
+/// Compiles the kosmoi the command line or `kosm.zon` picks.
+fn runBuildCommand(init: std.process.Init, builds: Builds, command: Build, stderr: *std.Io.Writer) !u8 {
+    const config = try configPath(init, command.config, stderr) orelse return 1;
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    defer stdout.interface.flush() catch {};
+    var context = builds.context(init, config, &stdout.interface, stderr);
+    context.show_build_output = true;
+    build_command.build(context, command.selection) catch |err| switch (err) {
+        error.Failed => return 1,
+        else => |other| return other,
+    };
+    return 0;
+}
+
 /// `kosm apply` with its arguments sorted: kosm's own, and the ones the kosmos gets.
 const Apply = struct {
     /// As typed: "frost" or "frost.iced".
@@ -503,6 +561,7 @@ test {
     std.testing.refAllDecls(relay_command);
     std.testing.refAllDecls(new_command);
     std.testing.refAllDecls(Sources);
+    std.testing.refAllDecls(Settings);
 }
 
 const testing = std.testing;
@@ -599,6 +658,28 @@ test "package commands with a missing, extra or unknown argument are errors" {
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "remove", "a", "b" }));
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "update", "--diff" }));
     try testing.expectError(error.MissingConfigDirectory, Command.parse(arena.allocator(), &.{ "update", "--config" }));
+}
+
+test "build takes kosmoi, --except and kosmoi, or --all, and --config anywhere" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const parse = struct {
+        fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Build {
+            return (try Command.parse(allocator, arguments)).build;
+        }
+    }.parse;
+    const allocator = arena.allocator();
+    try testing.expectEqual(null, (try parse(allocator, &.{"build"})).selection);
+    const only = try parse(allocator, &.{ "build", "frost", "--config", "/c", "nord.iced" });
+    try testing.expectEqualStrings("nord.iced", only.selection.?.only[1]);
+    try testing.expectEqualStrings("/c", only.config.?);
+    try testing.expectEqualStrings("frost", (try parse(allocator, &.{ "build", "--except", "frost" })).selection.?.except[0]);
+    try testing.expectEqual(.all, (try parse(allocator, &.{ "build", "--all" })).selection.?);
+    try testing.expectError(error.MissingArgument, parse(allocator, &.{ "build", "--except" }));
+    try testing.expectError(error.UnexpectedArgument, parse(allocator, &.{ "build", "frost", "--except", "nord" }));
+    try testing.expectError(error.UnexpectedArgument, parse(allocator, &.{ "build", "--all", "frost" }));
+    try testing.expectError(error.UnexpectedArgument, parse(allocator, &.{ "build", "--except", "--all" }));
+    try testing.expectError(error.UnexpectedArgument, parse(allocator, &.{ "build", "--diff" }));
 }
 
 test "apply without a kosmos, a dangling --config or another command is an error" {
