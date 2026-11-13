@@ -12,14 +12,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: done; the config's `personal` sets the current wallpaper and `--diff` shows it. Left: the human applies.
   - Done when: an apply changes the wallpaper on the human's machine.
 
-- **18a. Zen's new tab page in the theme** `PLAN FIRST`
-  - Do: the new tab page (Firefox's built-in `about:newtab`) is a page, which Zen mods cannot style: only the profile's `userContent.css` reaches it. `kosm_zen` writes its own stylesheet into each profile's `chrome` folder: the page transparent, its search box in `--kosm-button`, and Zen's logo replaced by the `logo` app's SVG; the human's `userContent.css` imports it. Propose the file, the import and how a missing import is reported first.
-  - Done when: on the human's machine the new tab page shows the window's background, a themed search box and the themed logo.
-
-- **18f. Hyprlang for Hypr's side programs** `ASK`
-  - Do: a `kosm_hyprlang` adapter, written by hand (no grammar: `key = value`, `name { ... }` blocks, `#` comments, `$variables`), so apps can edit config files the user also writes, like hyprlock's and hypridle's. Hyprland itself stays on Lua. Ask which programs first; `kosm_hyprpaper` keeps writing its file whole.
-  - Done when: the human has named the programs and one of them is themed through the adapter.
-
 - **18b. Vicinae reads kosm's own settings file**
   - Do: `kosm_vicinae` writes `~/.config/vicinae/kosm.json` whole (the theme under both `theme.dark` and `theme.light`, the icon theme, font and opacity) and makes sure `settings.json`'s `imports` lists it. Agreed design change: an app may add one key or list entry it names itself (Vicinae's `imports`); paths matching nothing still fail everywhere else, `--set` included; update the non-goal in `DESIGN.md`. The JSON adapter gains adding a key or list entry, keeping comments and formatting. Then remove `font`, `theme` and `launcher_window.opacity` from the human's `settings.json` (keep `client_side_decorations`), as `settings.json` overrides its imports.
   - Done when: a light and a dark kosmos both apply on a `settings.json` without theme keys, and Vicinae shows the kosmos' theme.
@@ -35,6 +27,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **18e. Neovim highlight groups from kosm**
   - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
   - Done when: the human's Neovim shows kosm's colors without nvim-base16.
+
+- **18f. Hyprlang adapter, for hyprpaper**
+  - Do: a `kosm_hyprlang` adapter, written by hand (no grammar: `key = value`, `name { ... }` blocks, `#` comments, `$variables`). `kosm_hyprpaper` edits the user's own `hyprpaper.conf` through it instead of writing the file whole. Hyprland itself stays on Lua; other Hypr programs (hyprlock, hypridle) later, when the human asks.
+  - Done when: an apply sets the wallpaper by editing a hand-written `hyprpaper.conf`, keeping its comments and other keys.
 
 - **17. A kosm browser extension** (waits on the human)
   - Do: done and checked in headless scratch Zen profiles (an apply changed page colors, the page font and `--kosm-*` at once, a site toggled off stayed off after a restart, no relay ran after Zen closed): `kosm relay`, `output.verbatim` with executable files, the new package `kosm_firefox` (Kosm and Kosm Live from one source tree; Kosm Live and its three prefs go into every Zen profile), `kosm_zen`'s `profile.live` (prefs to `kosm-live.json`), `kosm_base`'s `firefox` replacing `darkreader` (pages get the look's fonts, Zen's prefs go live). `kosm_darkreader` is no longer official.
@@ -96,3 +92,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **19. COSMIC desktop** `ASK` (down the line)
   - Do: find out how COSMIC reads its theme, icons, fonts and settings (its RON files under `~/.config/cosmic`, live reload) and propose `kosm_cosmic` from it, with its fields and the Krystallos values; it reads `kosm_icons`' theme like GTK and KDE.
   - Done when: the human has agreed on the app, and COSMIC takes the kosmos' colors and icons.
+
+- **18a. Zen's new tab page in the theme** `PLAN FIRST` (backlog: the human does not use it)
+  - Do: the new tab page (Firefox's built-in `about:newtab`) is a page, which Zen mods cannot style: only the profile's `userContent.css` reaches it. `kosm_zen` writes its own stylesheet into each profile's `chrome` folder: the page transparent, its search box in `--kosm-button`, and Zen's logo replaced by the `logo` app's SVG; the human's `userContent.css` imports it. Propose the file, the import and how a missing import is reported first; drop the step if it makes setup harder for users.
+  - Done when: on the human's machine the new tab page shows the window's background, a themed search box and the themed logo.
