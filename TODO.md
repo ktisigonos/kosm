@@ -8,9 +8,25 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **18. Wallpaper with hyprpaper** `ASK` `PLAN FIRST`
-  - Do: an app (`kosm_hyprpaper`) that sets the wallpaper, per monitor or for all, as plain fields; the wallpaper path is personal, so the base leaves it null. `~/.config/hypr/hyprpaper.conf` uses hyprlang blocks (`wallpaper { monitor = ... path = ... }`), which the human does not want supported as a format: propose how kosm writes it (`kosm_ini` dialect, a file kosm owns whole, or hyprpaper's IPC) and how a running hyprpaper picks up the change.
-  - Done when: the human has agreed on the plan and an apply changes the wallpaper on their machine.
+- **18. Wallpaper with hyprpaper** (waits on the human)
+  - Do: done (`kosm_hyprpaper` writes `~/.config/hypr/hyprpaper.conf` whole, one `wallpaper` block per wallpaper, and sets each live with `hyprctl hyprpaper wallpaper "mon,path,fit_mode"`; `kosm_base` has `hyprpaper`, from the theme with no wallpaper, so nothing is written until a kosmos sets one; looks ship no wallpaper for now). Left: the human creates and pushes the `kosm_hyprpaper` repository; then push `kosm_base`, `kosm update` the config, and set `apps.hyprpaper.?.wallpapers` in the config's `personal` to the current wallpaper.
+  - Done when: an apply changes the wallpaper on the human's machine.
+
+- **18b. Vicinae reads kosm's own settings file**
+  - Do: `kosm_vicinae` writes `~/.config/vicinae/kosm.json` whole (the theme under both `theme.dark` and `theme.light`, the icon theme, font and opacity) and makes sure `settings.json`'s `imports` lists it. Agreed design change: an app may add one key or list entry it names itself (Vicinae's `imports`); paths matching nothing still fail everywhere else, `--set` included; update the non-goal in `DESIGN.md`. The JSON adapter gains adding a key or list entry, keeping comments and formatting. Then remove `font`, `theme` and `launcher_window.opacity` from the human's `settings.json` (keep `client_side_decorations`), as `settings.json` overrides its imports.
+  - Done when: a light and a dark kosmos both apply on a `settings.json` without theme keys, and Vicinae shows the kosmos' theme.
+
+- **18c. Variants grouped by look**
+  - Do: a kosmos file may group variants in a public struct (`pub const catppuccin = struct { pub fn kosmos() ...; pub fn latte() ... }`), applied as `kosm apply personal.catppuccin.latte`; `kosm list`, completions, `kosm colors` and `--set` follow. Then rename the config's `personal` variants to match (`personal.catppuccin.latte`, `personal.everforest.light_hard`, `personal.light` stays). Check for downsides first (name clashes between a group and a function, lazy analysis hiding a group's errors) and report them before building.
+  - Done when: every variant applies by its grouped name and `kosm list` shows the groups.
+
+- **18d. wlr-which-key colors and font** `ASK`
+  - Do: wlr-which-key's `~/.config/wlr-which-key/config.yaml` is YAML; kosm edits only its style keys (`font`, `background`, `color`, `border`, `border_width`, `corner_r`) and leaves the menu alone. Needs a `kosm_yaml` adapter on the tree-sitter YAML grammar (`tree-sitter-grammars/tree-sitter-yaml`): ask for the dependency first.
+  - Done when: the human has approved the grammar and an apply sets wlr-which-key's colors and font.
+
+- **18e. Neovim highlight groups from kosm**
+  - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
+  - Done when: the human's Neovim shows kosm's colors without nvim-base16.
 
 - **17. A kosm browser extension** (waits on the human)
   - Do: done and checked in headless scratch Zen profiles (an apply changed page colors, the page font and `--kosm-*` at once, a site toggled off stayed off after a restart, no relay ran after Zen closed): `kosm relay`, `output.verbatim` with executable files, the new package `kosm_firefox` (Kosm and Kosm Live from one source tree; Kosm Live and its three prefs go into every Zen profile), `kosm_zen`'s `profile.live` (prefs to `kosm-live.json`), `kosm_base`'s `firefox` replacing `darkreader` (pages get the look's fonts, Zen's prefs go live). `kosm_darkreader` is no longer official.
