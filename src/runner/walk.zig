@@ -66,12 +66,14 @@ fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void
 
 /// Calls `reload` on every app in `tree` that has one, in field order. A failure is a warning
 /// on `warnings` naming `kosmos` and the app, and the rest still reload.
-pub fn reloadTree(tree: anytype, io: std.Io, kosmos: []const u8, warnings: *std.Io.Writer) std.Io.Writer.Error!void {
-    try reloadNode(tree, "", .{ .io = io, .kosmos = kosmos, .warnings = warnings });
+/// `home` is what `~/` in a reload command's arguments expands to.
+pub fn reloadTree(tree: anytype, io: std.Io, home: []const u8, kosmos: []const u8, warnings: *std.Io.Writer) std.Io.Writer.Error!void {
+    try reloadNode(tree, "", .{ .io = io, .home = home, .kosmos = kosmos, .warnings = warnings });
 }
 
 const ReloadContext = struct {
     io: std.Io,
+    home: []const u8,
     kosmos: []const u8,
     warnings: *std.Io.Writer,
 };
@@ -85,7 +87,7 @@ fn reloadNode(node: anytype, comptime path: []const u8, context: ReloadContext) 
     }
     if (comptime discovery.isApp(Node)) {
         if (comptime !discovery.hasReload(Node)) return;
-        var reloader: kosm.Reloader = .{ .io = context.io };
+        var reloader: kosm.Reloader = .{ .io = context.io, .home = context.home };
         node.reload(&reloader) catch |err| {
             const reason = if (reloader.failure().len != 0) reloader.failure() else @errorName(err);
             try report.reloadFailed(context.warnings, context.kosmos, path, reason);
@@ -209,7 +211,7 @@ test "every app with reload reloads, and a failing one is a warning while the re
     };
     var buffer: [256]u8 = undefined;
     var warnings: std.Io.Writer = .fixed(&buffer);
-    try reloadTree(tree, testing.io, "frost", &warnings);
+    try reloadTree(tree, testing.io, "/home/test", "frost", &warnings);
     try testing.expectEqual(2, reloads);
     try testing.expectEqualStrings("warning: kosmos 'frost', app 'terminal.kitty': reload failed: 'false' exited with code 1\n", warnings.buffered());
 }

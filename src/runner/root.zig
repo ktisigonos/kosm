@@ -114,6 +114,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.A
         .gpa = init.gpa,
         .arena = arena,
         .io = init.io,
+        .home = home,
         .diff = arguments.diff,
         .recording = try recording(arena, init.environ_map, diagnostics.kosmos, arguments),
         .diagnostics = diagnostics,
@@ -150,6 +151,8 @@ const Delivery = struct {
     /// Outlives the plan, so a failure's app and file can still be printed after it is freed.
     arena: std.mem.Allocator,
     io: std.Io,
+    /// The home directory a reload's `~/` arguments expand to.
+    home: []const u8,
     diff: bool,
     /// Saved after a successful commit; null records nothing.
     recording: ?Recording,
@@ -189,7 +192,7 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
     }
     // The written files are reported before any reload's own output or warning.
     try stdout.flush();
-    try walk.reloadTree(tree, delivery.io, delivery.diagnostics.kosmos, delivery.streams.stderr);
+    try walk.reloadTree(tree, delivery.io, delivery.home, delivery.diagnostics.kosmos, delivery.streams.stderr);
 }
 
 /// The app planning the file shown as `display_path`, or empty.
@@ -280,6 +283,7 @@ fn planAndRecord(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u
         .gpa = testing.allocator,
         .arena = arena.allocator(),
         .io = testing.io,
+        .home = home,
         .diff = diff,
         .recording = recorded,
         .diagnostics = diagnostics,
