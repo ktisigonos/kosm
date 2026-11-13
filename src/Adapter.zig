@@ -24,6 +24,10 @@ parser: ?*const fn (allocator: std.mem.Allocator, source: []const u8, context: *
 serialize: ?*const fn (writer: *std.Io.Writer, root: Value, context: *Context) Error!void = null,
 /// How this language writes a comment on a line of its own; enables `block`.
 comment: ?Comment = null,
+/// Spells a new entry at the end of the parsed table or list `parent`: `key` and the value
+/// `format` already wrote, or no key for a list element. Returns the changes, which keep the
+/// file's comments and layout; enables `Selection.insert` and `Selection.append`.
+insert: ?*const fn (allocator: std.mem.Allocator, source: []const u8, parent: *const Node, key: ?[]const u8, value: []const u8, context: *Context) InsertError![]const Insertion = null,
 
 /// What a capability gets besides its input: the file's format and a place to explain
 /// a failure.
@@ -45,6 +49,12 @@ pub const Error = std.Io.Writer.Error || error{UnsupportedValue};
 
 /// Errors a `parser` may return. Return `InvalidSyntax` through `Context.invalidSyntax`.
 pub const ParseError = std.mem.Allocator.Error || error{InvalidSyntax};
+
+/// Errors `insert` may return. Return `UnsupportedValue` through `Context.unsupported`.
+pub const InsertError = std.mem.Allocator.Error || error{UnsupportedValue};
+
+/// One change `insert` makes.
+pub const Insertion = @import("Adapter/Insertion.zig");
 
 /// One entry of a parsed file.
 pub const Node = @import("Adapter/Node.zig");

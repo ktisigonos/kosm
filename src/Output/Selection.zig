@@ -113,6 +113,46 @@ pub fn replace(selection: *Selection, match: Match, value: anytype) Error!void {
     try selection.write(match, try selection.formatValue(about, value));
 }
 
+/// Adds `key` with `value` at the end of table `match`, from `nodes` (`""` is each file's top
+/// level), keeping the file's comments and layout. Only for an entry an app needs the program
+/// to have, such as its include; settings are set with `set`. Fails when the table has `key`.
+pub fn insert(selection: *Selection, match: Match, key: []const u8, value: anytype) Error!void {
+    if (match.kind != .table)
+        return planning.fail(selection.output, error.NotATable, match.file, "the value on line {d} is a {s}, not a table to add '{s}' to", .{ match.line, @tagName(match.kind), key });
+    const path: Path = .{ .segments = &.{.{ .key = key }} };
+    if ((try path.find(selection.output.allocator, match.node)).len != 0)
+        return planning.fail(selection.output, error.KeyExists, match.file, "the table on line {d} already has '{s}'; set it instead", .{ match.line, key });
+    const about = try selection.output.allocator.print("'{s}' added to the table on line {d}", .{ key, match.line });
+    try selection.add(match, key, try selection.formatValue(about, value));
+}
+
+/// Adds `value` at the end of list `match`, from `nodes` or `elements`, keeping the file's
+/// comments and layout. Only for an entry an app needs the program to have, such as its include.
+pub fn append(selection: *Selection, match: Match, value: anytype) Error!void {
+    if (match.kind != .list)
+        return planning.fail(selection.output, error.NotAList, match.file, "the value on line {d} is a {s}, not a list to add to", .{ match.line, @tagName(match.kind) });
+    const about = try selection.output.allocator.print("the element added to the list on line {d}", .{match.line});
+    try selection.add(match, null, try selection.formatValue(about, value));
+}
+
+/// Plans the adapter's changes adding `key` (none for a list element) with `text` to `match`.
+fn add(selection: *Selection, match: Match, key: ?[]const u8, text: []const u8) Error!void {
+    const insert_entry = selection.adapter.insert orelse
+        return planning.fail(selection.output, error.MissingCapability, match.file, "adapter '{s}' cannot add entries (it has no insert)", .{selection.adapter.name});
+    if (match.value == null)
+        return planning.fail(selection.output, error.NoValue, match.file, "line {d}: this table has no bytes of its own to add to, since headers or dotted keys spell it", .{match.line});
+    const file = selection.files[match.file_index];
+    var context: Adapter.Context = .{ .format = selection.format };
+    const insertions = insert_entry(selection.output.allocator, file.source, match.node, key, text, &context) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnsupportedValue => return planning.fail(selection.output, error.UnsupportedValue, match.file, "line {d}: adapter '{s}': {s}", .{ match.line, selection.adapter.name, context.message() }),
+    };
+    const planned = selection.output.plan.load(file.path, file.display_path) catch |err| return planning.failRead(selection.output, file.display_path, err);
+    for (insertions) |insertion| {
+        try planning.addEdit(selection.output, planned, .{ .target = .value, .start = insertion.start, .end = insertion.end, .content = insertion.content, .owner = selection.output.app });
+    }
+}
+
 fn parsePath(selection: *Selection, path: anytype) Error!Path {
     var failure: Path.Failure = .{};
     return Path.fromAny(selection.output.allocator, path, &failure) catch |err| switch (err) {

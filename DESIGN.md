@@ -66,7 +66,7 @@ there is undecided, so ask.
 - A program's separate opacity setting follows its background's alpha; the background is one color with alpha, never a color plus an opacity value.
 - Every app has `extra` for settings it doesn't cover, written after its own and failing if one overlaps a set setting.
 - An app may write a whole folder it owns (an icon theme), its symbolic links included; diffs and reports show such a folder as one line. A link replaces only a link, never a file.
-- An app writes its own file that the program includes, rather than the program's main config. Making the program read it is the user's job, except for an app's own visible include block, which the user can turn off. Kosm never creates backups.
+- An app writes its own file that the program includes, rather than the program's main config. Making the program read it is the user's job, except for an app's own visible include block, or the one entry an app adds to a program's list of includes (Vicinae's `imports`), both of which the user can turn off. Kosm never creates backups.
 - Each written file has a `kosm.Format` (color spelling, booleans, float precision) layered from the user's assignment, the app's default, the adapter's and kosm's.
 - An app may reload its program after a successful apply, and set there what a program keeps outside files (gsettings); a failure is a warning.
 - A browser extension reaches a running browser through `kosm relay <file>`, a native messaging host the browser starts and stops: it sends the file an app wrote whenever it changes. Kosm runs nothing while the browser is closed.
@@ -76,7 +76,8 @@ there is undecided, so ask.
 
 - An adapter declares only what it can do (`serialize`, `parser`, `format`, `comment`); kosm says clearly when an app needs a capability an adapter lacks.
 - Edits are byte-preserving: only a value's own bytes change, and unchanged files are not rewritten. Two apps writing the same bytes is an error.
-- A path that matches nothing is an error; kosm never inserts keys. A path matching several values must say which (`setFirst`, `setAll`, `setNth`).
+- A path that matches nothing is an error; setting a value never inserts its key. A path matching several values must say which (`setFirst`, `setAll`, `setNth`).
+- An app may add a key or list entry it names itself, only so the program reads the app's own file (an include), keeping the file's comments and layout.
 - Kosm core owns the tree-sitter runtime; an adapter ships only its grammar. A grammar is a dependency like any library. Simple formats are hand-written instead.
 
 ## Packages and the config project
@@ -93,7 +94,7 @@ there is undecided, so ask.
 
 ## Non-goals
 
-- Inserting missing keys, or include lines outside an app's include block.
+- Inserting the keys a path names (`set`, `--set`), or includes beyond an app's include block or its own include entry.
 - Backup files.
 - Checking package versions against the user's kosm.
 - `**`, predicates or regex in paths.

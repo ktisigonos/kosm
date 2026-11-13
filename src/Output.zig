@@ -77,6 +77,8 @@ pub const Error = error{
     IndexOutOfRange,
     InvalidIndices,
     NotAList,
+    NotATable,
+    KeyExists,
     NoValue,
     /// `kosmos` is empty and a name needed it.
     NoKosmosName,
