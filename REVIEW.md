@@ -378,3 +378,37 @@ fields.
   and hyprtoolkit. A tweak switching `icons` to a system theme after `from` must set the
   others' names too.
 - `kosm_kde` gained `icon_theme` (`[Icons] Theme` in its kdeglobals block).
+
+## 18b. Vicinae's own settings file (2026-11-13, while you were out)
+
+- Core: `Selection.insert(match, key, value)` adds a key at the end of a table (`nodes("")`
+  is the top level) and `Selection.append(match, value)` an element at the end of a list.
+  Both need the adapter's new `insert` capability, refuse a key that exists (`KeyExists`) or
+  the wrong kind of value, and are meant only for an app's own include entry; `set` and
+  `--set` still never insert. `DESIGN.md` says so in its rules and non-goals.
+- JSON (both adapters): the new entry goes on its own line after the last one, indented like
+  it; a comment after the last entry stays on its line (the comma goes before it); a trailing
+  comma is kept; an empty `{}` becomes `{"key": value}`, and a list holding only comments
+  gets the entry first, one level deeper.
+- `kosm_vicinae`: new field `kosm_settings` (default `~/.config/vicinae/kosm.json`), written
+  whole with the theme under both `theme.dark` and `theme.light`, plus the icon theme, font
+  and opacity when set. `settings` now only gets `"kosm.json"` into `imports` (by file name
+  when both files share a folder, as Vicinae reads relative paths from there; `./kosm.json`
+  already listed counts). Keys in `settings.json` that override `kosm.json` give one warning
+  naming them. The old "missing key, pick it in Vicinae once" warnings are gone.
+- Your `settings.json`: `font`, `theme` and `launcher_window.opacity` removed,
+  `client_side_decorations` kept.
+
+## 18c. Grouped variants (2026-11-13, while you were out)
+
+- A group is a public struct declared in the kosmos file holding at least one kosmos, at any
+  depth; a struct the file re-exports (`pub const x = @import("x")`) is not one, so a
+  package's variants never show up as yours. The group's own `kosmos` is applied by the
+  group's name (`personal.catppuccin` is Mocha).
+- A name picks itself and everything under it, whole segments only, in `kosm list`,
+  `kosm build` and `kosm.zon`'s selection (`personal.catppuccin` picks all four flavors).
+- A group without its own `kosmos` lists its variants, and applying the group alone fails
+  saying to add one.
+- Your `personal`: `everforest` and `catppuccin` are groups now (`personal.everforest.light_hard`,
+  `personal.catppuccin.latte`); `personal.light` stays. `kosm current` may still name an old
+  variant until the next apply.
