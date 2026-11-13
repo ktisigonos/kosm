@@ -4,6 +4,8 @@ const std = @import("std");
 pub const addConfigProject = @import("build/config_project.zig").addConfigProject;
 /// The whole build of a directory package: `@import("kosm").package(b)`.
 pub const package = package_build.package;
+/// `package`, returning the module so the package can add to it; null when the build failed.
+pub const packageModule = package_build.packageModule;
 
 const package_build = @import("build/package.zig");
 

@@ -11,11 +11,17 @@ const max_manifest_size = 1024 * 1024;
 /// every dependency by its name, and adds a `test` step running its tests. The package's own
 /// copy of kosm and of every package it lists is the one its dependencies use too.
 pub fn package(b: *std.Build) void {
+    _ = packageModule(b);
+}
+
+/// `package`, returning the module so a package's `build.zig` can add to it (build options
+/// naming a dependency's files); null when the build already failed.
+pub fn packageModule(b: *std.Build) ?*std.Build.Module {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const name = manifestName(b) catch |err| {
         b.getInstallStep().dependOn(&b.addFail(b.fmt("cannot read .name from build.zig.zon: {s}", .{@errorName(err)})).step);
-        return;
+        return null;
     };
 
     var imports: std.ArrayList(std.Build.Module.Import) = .empty;
@@ -33,7 +39,7 @@ pub fn package(b: *std.Build) void {
     }
     if (unify(b, imports.items)) |conflict| {
         b.getInstallStep().dependOn(&b.addFail(b.fmt("dependencies '{s}' and '{s}' pin different copies of package '{s}'; add '{s}' to build.zig.zon, and both use that one", .{ conflict.first_importer, conflict.second_importer, conflict.package, conflict.package })).step);
-        return;
+        return null;
     }
     const module = b.addModule(name, .{
         .root_source_file = b.path("root.zig"),
@@ -44,6 +50,7 @@ pub fn package(b: *std.Build) void {
     for (grammars.items) |grammar| addGrammar(b, module, grammar);
     const tests = b.addTest(.{ .root_module = module });
     b.step("test", "Run the package's tests").dependOn(&b.addRunArtifact(tests).step);
+    return module;
 }
 
 /// Whether `dependency` is a tree-sitter grammar: it holds a generated `src/parser.c`.
