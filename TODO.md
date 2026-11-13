@@ -9,8 +9,16 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 ---
 
 - **18. Wallpaper with hyprpaper** (waits on the human)
-  - Do: done (`kosm_hyprpaper` writes `~/.config/hypr/hyprpaper.conf` whole, one `wallpaper` block per wallpaper, and sets each live with `hyprctl hyprpaper wallpaper "mon,path,fit_mode"`; `kosm_base` has `hyprpaper`, from the theme with no wallpaper, so nothing is written until a kosmos sets one; looks ship no wallpaper for now). Left: the human creates and pushes the `kosm_hyprpaper` repository; then push `kosm_base`, `kosm update` the config, and set `apps.hyprpaper.?.wallpapers` in the config's `personal` to the current wallpaper.
+  - Do: done; the config's `personal` sets the current wallpaper and `--diff` shows it. Left: the human applies.
   - Done when: an apply changes the wallpaper on the human's machine.
+
+- **18a. Zen's new tab page in the theme** `PLAN FIRST`
+  - Do: the new tab page (Firefox's built-in `about:newtab`) is a page, which Zen mods cannot style: only the profile's `userContent.css` reaches it. `kosm_zen` writes its own stylesheet into each profile's `chrome` folder: the page transparent, its search box in `--kosm-button`, and Zen's logo replaced by the `logo` app's SVG; the human's `userContent.css` imports it. Propose the file, the import and how a missing import is reported first.
+  - Done when: on the human's machine the new tab page shows the window's background, a themed search box and the themed logo.
+
+- **18f. Hyprlang for Hypr's side programs** `ASK`
+  - Do: a `kosm_hyprlang` adapter, written by hand (no grammar: `key = value`, `name { ... }` blocks, `#` comments, `$variables`), so apps can edit config files the user also writes, like hyprlock's and hypridle's. Hyprland itself stays on Lua. Ask which programs first; `kosm_hyprpaper` keeps writing its file whole.
+  - Done when: the human has named the programs and one of them is themed through the adapter.
 
 - **18b. Vicinae reads kosm's own settings file**
   - Do: `kosm_vicinae` writes `~/.config/vicinae/kosm.json` whole (the theme under both `theme.dark` and `theme.light`, the icon theme, font and opacity) and makes sure `settings.json`'s `imports` lists it. Agreed design change: an app may add one key or list entry it names itself (Vicinae's `imports`); paths matching nothing still fail everywhere else, `--set` included; update the non-goal in `DESIGN.md`. The JSON adapter gains adding a key or list entry, keeping comments and formatting. Then remove `font`, `theme` and `launcher_window.opacity` from the human's `settings.json` (keep `client_side_decorations`), as `settings.json` overrides its imports.
