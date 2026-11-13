@@ -8,6 +8,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
+- **18. Wallpaper with hyprpaper** `ASK` `PLAN FIRST`
+  - Do: an app (`kosm_hyprpaper`) that sets the wallpaper, per monitor or for all, as plain fields; the wallpaper path is personal, so the base leaves it null. `~/.config/hypr/hyprpaper.conf` uses hyprlang blocks (`wallpaper { monitor = ... path = ... }`), which the human does not want supported as a format: propose how kosm writes it (`kosm_ini` dialect, a file kosm owns whole, or hyprpaper's IPC) and how a running hyprpaper picks up the change.
+  - Done when: the human has agreed on the plan and an apply changes the wallpaper on their machine.
+
 - **17. A kosm browser extension** (waits on the human)
   - Do: done and checked in headless scratch Zen profiles (an apply changed page colors, the page font and `--kosm-*` at once, a site toggled off stayed off after a restart, no relay ran after Zen closed): `kosm relay`, `output.verbatim` with executable files, the new package `kosm_firefox` (Kosm and Kosm Live from one source tree; Kosm Live and its three prefs go into every Zen profile), `kosm_zen`'s `profile.live` (prefs to `kosm-live.json`), `kosm_base`'s `firefox` replacing `darkreader` (pages get the look's fonts, Zen's prefs go live). `kosm_darkreader` is no longer official.
   - Left for the human: the initial push of `kosm_firefox` and a push of kosm; in the config, `kosm remove kosm_darkreader`, `kosm add git+https://git.nnstdios.com/ktisigonos/kosm_firefox`, `kosm update`, and `.darkreader` out of the `except` lists of krystallos and everforest; apply, remove Dark Reader, Stylus and Transparent Zen from Zen, and restart Zen once.
@@ -41,8 +45,11 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the human has a short answer on what reloads and how, and has chosen whether `kosm_kde` and `kosm_qtct` gain a reloader.
 
 - **13r. Icons generated from the palette** `ASK` `PLAN FIRST`
-  - Do: an app (`kosm_icons`) that generates an icon theme from the theme's colors, so icons follow the kosmos like everything else. The official base set is a minimalistic SVG icon theme, recolored; the human picks which one (license must allow modified copies). Propose how the recoloring works (which SVG colors map to which palette colors), where the theme is written (`~/.local/share/icons/<name>`), and any dependency, then wire its name into `kosm_gtk`'s `gtk_icon_theme_name` and `kosm_kde`'s icons.
-  - Done when: the human has picked the icon set and seen apps use the generated theme in the kosmos' colors.
+  - Do: an app (`kosm_icons`, not part of `kosm_gtk`: KDE, COSMIC and others read icon themes too) that writes an icon theme in the theme's colors to `~/.local/share/icons/<name>`. Its one field picks the icons as a tagged union: an official preset (each with a settings struct of its own, filled by `from(theme)`, mapping that set's SVG colors exactly to theme colors) or any installed theme by name.
+  - Do: a theme picked by name is applied as is (its name is set wherever icons are set); recoloring it is opt-in, by a generic rule (each color to the nearest palette hue, keeping its lightness) to be proposed in the plan.
+  - Do: the official sets are fetched as pinned Zig dependencies (approved by the human; name the exact `zig fetch` in the plan). Outline style is wanted. Candidates: BeautyLine (outline, GPL-3.0, maintained by Garuda on GitLab, the GitHub copy is stale) and Candy icons (gradient glyphs, GPL-3.0, apps only beyond devices/mimetypes/places). The human picks which ship first.
+  - Do: icons named `-symbolic` are left alone (toolkits color them). Refresh the icon cache after an apply. Wire the name into `kosm_gtk`'s `gtk_icon_theme_name` and `kosm_kde`'s icons.
+  - Done when: the human has picked the set and seen apps use the generated theme in the kosmos' colors, and a system theme picked by name applies with and without recoloring.
 
 - **13s. Cursors generated from the palette** `ASK` `PLAN FIRST`
   - Do: an app (`kosm_cursor`) that builds a cursor theme (XCursor, and hyprcursor) in the theme's colors. Default: Bibata Modern Ice's SVG sources recolored (fill, outline, shadow from the palette). Later maybe a cursor of kosm's own. Make it easy for users to rice their own cursors: their own SVGs, colors and size as plain fields. Propose how SVGs become cursors (rendering and the XCursor/hyprcursor formats, written ourselves or a dependency), where the theme is written, and how `kosm_gtk`'s cursor settings and Hyprland's `XCURSOR_*`/`HYPRCURSOR_*` pick it up.
@@ -59,3 +66,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13w. Commet theme** `ASK`
   - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
+
+- **19. COSMIC desktop** `ASK` (down the line)
+  - Do: find out how COSMIC reads its theme, icons, fonts and settings (its RON files under `~/.config/cosmic`, live reload) and propose `kosm_cosmic` from it, with its fields and the Krystallos values; it reads `kosm_icons`' theme like GTK and KDE.
+  - Done when: the human has agreed on the app, and COSMIC takes the kosmos' colors and icons.
