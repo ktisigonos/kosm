@@ -9,17 +9,32 @@ const context_lines = 3;
 /// changed middle as removed and re-added, which keeps memory bounded (Myers needs D^2).
 const max_edit_distance = 2000;
 
-/// Prints every file the plan would change, in plan order. Unchanged files print nothing.
-/// `terminal.mode` decides whether lines are colored like git's.
+/// Prints every file the plan would change, in plan order, then every link, then one line per
+/// group of files and links. Unchanged ones print nothing. `terminal.mode` decides whether lines
+/// are colored like git's.
 pub fn writePlan(allocator: std.mem.Allocator, terminal: std.Io.Terminal, plan: *const Plan) !void {
     for (plan.files.items) |file| {
-        if (!file.changed()) continue;
+        if (!file.changed() or file.group != null) continue;
         if (file.executable and !file.was_executable) {
             try terminal.setColor(.bold);
             try terminal.writer.print("chmod +x {s}", .{file.display_path});
             try endLine(terminal);
         }
         try writeFile(allocator, terminal, file.display_path, file.old, file.new);
+    }
+    for (plan.links.items) |link| {
+        if (!link.changed() or link.group != null) continue;
+        try terminal.setColor(.bold);
+        try terminal.writer.print("link {s} -> {s}", .{ link.display_path, link.target });
+        if (link.old_target) |old_target| try terminal.writer.print(" (was {s})", .{old_target});
+        try endLine(terminal);
+    }
+    const groups = try plan.changedGroups(allocator);
+    defer allocator.free(groups);
+    for (groups) |count| {
+        try terminal.setColor(.bold);
+        try terminal.writer.print("{f} change, not shown", .{count});
+        try endLine(terminal);
     }
 }
 
@@ -416,4 +431,19 @@ test "a file that only becomes executable says so, with no hunks" {
     defer output.deinit();
     try writePlan(testing.allocator, .{ .writer = &output.writer, .mode = .no_color }, &plan);
     try testing.expectEqualStrings("chmod +x ~/run.sh\n--- ~/run.sh\n+++ ~/run.sh\n", output.written());
+}
+
+test "links print one line each, and a group of files and links one line in all" {
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    try plan.addLink("/nonexistent/kosm-test/a.svg", "~/a.svg", "icons", "b.svg", null);
+    try plan.addLink("/nonexistent/kosm-test/icons/c.svg", "~/icons/c.svg", "icons", "d.svg", "~/icons");
+    try plan.addLink("/nonexistent/kosm-test/icons/e.svg", "~/icons/e.svg", "icons", "d.svg", "~/icons");
+    const file = try plan.load("/nonexistent/kosm-test/icons/d.svg", "~/icons/d.svg");
+    try plan.addEdit(file, .{ .target = .whole_file, .start = 0, .end = 0, .content = "<svg/>", .owner = "icons" });
+    try plan.setGroup(file, "~/icons");
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+    try writePlan(testing.allocator, .{ .writer = &output.writer, .mode = .no_color }, &plan);
+    try testing.expectEqualStrings("link ~/a.svg -> b.svg\n~/icons: 1 file and 2 links change, not shown\n", output.written());
 }

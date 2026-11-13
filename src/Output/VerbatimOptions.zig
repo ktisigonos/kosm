@@ -6,3 +6,6 @@ file: []const u8,
 content: []const u8,
 /// Whether the file can be run, as a script; its other permission bits are kept. Default: false.
 executable: bool = false,
+/// The folder diffs and reports show the file under, one line for every file and link there
+/// (an icon theme of thousands of files). Default: null, the file is shown itself.
+group: ?[]const u8 = null,

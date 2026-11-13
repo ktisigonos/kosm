@@ -1,10 +1,21 @@
 //! What the runner tells the user after a successful apply. All of its wording lives here.
 
 const std = @import("std");
+const kosm = @import("kosm");
 
 /// A file the commit wrote, as the app named it (`~/.config/kitty/kosm.conf`).
 pub fn wrote(writer: *std.Io.Writer, path: []const u8) std.Io.Writer.Error!void {
     try writer.print("wrote {s}\n", .{path});
+}
+
+/// A link the commit made, as the app named it, and what it points to.
+pub fn linked(writer: *std.Io.Writer, path: []const u8, target: []const u8) std.Io.Writer.Error!void {
+    try writer.print("linked {s} -> {s}\n", .{ path, target });
+}
+
+/// The files and links the commit wrote in one group, counted.
+pub fn wroteGroup(writer: *std.Io.Writer, count: kosm.Plan.GroupCount) std.Io.Writer.Error!void {
+    try writer.print("wrote {f}\n", .{count});
 }
 
 /// The plan matches the disk, so nothing was (or would be) written.

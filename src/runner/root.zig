@@ -174,8 +174,14 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
             return error.Reported;
         };
         for (plan.files.items) |file| {
-            if (file.changed()) try report.wrote(stdout, file.display_path);
+            if (file.changed() and file.group == null) try report.wrote(stdout, file.display_path);
         }
+        for (plan.links.items) |link| {
+            if (link.changed() and link.group == null) try report.linked(stdout, link.display_path, link.target);
+        }
+        const groups = try plan.changedGroups(delivery.gpa);
+        defer delivery.gpa.free(groups);
+        for (groups) |count| try report.wroteGroup(stdout, count);
     } else try report.nothingToChange(stdout);
     if (delivery.recording) |recorded| {
         recorded.record.save(delivery.io, recorded.path) catch |err|
@@ -190,6 +196,9 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
 fn ownerOf(plan: *const kosm.Plan, display_path: []const u8) []const u8 {
     for (plan.files.items) |file| {
         if (std.mem.eql(u8, file.display_path, display_path)) return file.owner();
+    }
+    for (plan.links.items) |link| {
+        if (std.mem.eql(u8, link.display_path, display_path)) return link.owner;
     }
     return "";
 }

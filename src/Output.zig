@@ -42,6 +42,10 @@ pub const GenerateOptions = @import("Output/GenerateOptions.zig");
 pub const BlockOptions = @import("Output/BlockOptions.zig");
 /// Options for `verbatim`.
 pub const VerbatimOptions = @import("Output/VerbatimOptions.zig");
+/// Options for `link`.
+pub const LinkOptions = @import("Output/LinkOptions.zig");
+/// One file or link `tree` found.
+pub const TreeEntry = @import("Output/TreeEntry.zig");
 /// Options for `edit`.
 pub const EditOptions = @import("Output/EditOptions.zig");
 /// Options for `find`.
@@ -78,6 +82,8 @@ pub const Error = error{
     NoKosmosName,
     /// An app called `fail`.
     AppFailed,
+    /// `link` found a file or folder where the link goes.
+    NotALink,
     OutOfMemory,
 };
 
@@ -134,10 +140,79 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
 pub fn verbatim(output: *Output, options: VerbatimOptions) Error!void {
     const path = try output.resolvePath(options.file);
     try output.addFile(options.file, path, options.content);
-    if (options.executable) {
+    if (options.executable or options.group != null) {
         const planned = output.plan.load(path, options.file) catch |err| return output.failRead(options.file, err);
-        planned.executable = true;
+        if (options.executable) planned.executable = true;
+        if (options.group) |group| try output.plan.setGroup(planned, group);
     }
+}
+
+/// Makes `options.file` a symbolic link to `options.target`. Only a link is ever replaced: a
+/// file or folder where the link goes is an error, and so is a path another call writes.
+pub fn link(output: *Output, options: LinkOptions) Error!void {
+    const path = try output.resolvePath(options.file);
+    output.plan.addLink(path, options.file, output.app, options.target, options.group) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.NotALink => return planning.fail(output, error.NotALink, options.file, "is not a link; kosm replaces only links, so move it away first", .{}),
+        error.AlreadyPlanned => return output.failPlannedTwice(options.file, path),
+        else => return planning.fail(output, error.ReadFailed, options.file, "cannot read the link: {s}", .{@errorName(err)}),
+    };
+}
+
+/// The contents of the existing file `file` (`~/...` or absolute) as it is on disk now, for
+/// building files from others (an installed icon theme, recolored). Nothing planned is seen. A
+/// missing file is an error.
+pub fn read(output: *Output, file: []const u8) Error![]const u8 {
+    const path = try output.resolvePath(file);
+    return std.Io.Dir.cwd().readFileAlloc(output.plan.io, path, output.allocator, .limited(Plan.max_file_size)) catch |err|
+        output.failRead(file, err);
+}
+
+/// Every file and link below the folder `directory` (`~/...` or absolute), at any depth, sorted
+/// by path. Folders are not listed and links are not followed; anything else (a socket) is an
+/// error.
+pub fn tree(output: *Output, directory: []const u8) Error![]const TreeEntry {
+    const path = try output.resolvePath(directory);
+    const io = output.plan.io;
+    var folder = std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true }) catch |err|
+        return planning.fail(output, error.ReadFailed, directory, "cannot open the folder: {s}", .{@errorName(err)});
+    defer folder.close(io);
+    var walker = try folder.walk(output.allocator);
+    defer walker.deinit();
+    var entries: std.ArrayList(TreeEntry) = .empty;
+    while (true) {
+        const entry = walker.next(io) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return planning.fail(output, error.ReadFailed, directory, "cannot read the folder: {s}", .{@errorName(err)}),
+        } orelse break;
+        const target: ?[]const u8 = switch (entry.kind) {
+            .directory => continue,
+            .file => null,
+            .sym_link => blk: {
+                var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+                const length = entry.dir.readLink(io, entry.basename, &buffer) catch |err|
+                    return planning.fail(output, error.ReadFailed, directory, "cannot read the link {s}: {s}", .{ entry.path, @errorName(err) });
+                break :blk try output.allocator.dupe(u8, buffer[0..length]);
+            },
+            else => return planning.fail(output, error.ReadFailed, directory, "{s} is neither a file, a link nor a folder", .{entry.path}),
+        };
+        try entries.append(output.allocator, .{ .path = try output.allocator.dupe(u8, entry.path), .target = target });
+    }
+    std.mem.sort(TreeEntry, entries.items, {}, pathBefore);
+    return entries.items;
+}
+
+fn pathBefore(_: void, left: TreeEntry, right: TreeEntry) bool {
+    return std.mem.lessThan(u8, left.path, right.path);
+}
+
+/// Fails for a path planned both as a link and as a file, or twice as a link, naming the app
+/// planning it first.
+fn failPlannedTwice(output: *Output, file: []const u8, path: []const u8) Error {
+    if (output.plan.findLink(path)) |planned|
+        return planning.fail(output, error.EditsOverlap, file, "app '{s}' makes this path a link; two apps cannot write the same path", .{planned.owner});
+    const owner = if (output.plan.find(path)) |planned| planned.owner() else "";
+    return planning.fail(output, error.EditsOverlap, file, "app '{s}' writes this file; two apps cannot write the same path", .{owner});
 }
 
 /// Writes `values`, serialized like `generate`'s, as block `options.id` of a file the user
@@ -437,6 +512,7 @@ fn checkFormat(output: *Output, file: []const u8, format: Format.Resolved) Error
 
 /// Plans `content` as the whole file.
 fn addFile(output: *Output, file: []const u8, path: []const u8, content: []const u8) Error!void {
+    if (output.plan.findLink(path) != null) return output.failPlannedTwice(file, path);
     const planned = output.plan.load(path, file) catch |err| return output.failRead(file, err);
     try output.addEdit(planned, .{ .target = .whole_file, .start = 0, .end = planned.current().len, .content = content, .owner = output.app });
 }
@@ -869,4 +945,51 @@ test "templateBlock errors name the block" {
     try testing.expectError(error.InvalidBlock, output.templateBlock(app, .{ .file = "~/a.lines", .id = "two words", .text = "a" }));
     try testing.expectError(error.InvalidBlock, output.templateBlock(app, .{ .file = "~/a.lines", .id = "theme", .text = "# kosm:end\n" }));
     try testing.expectEqual(0, fixture.plan.files.items.len);
+}
+
+test "tree lists files and links below a folder in path order, without following links" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    try fixture.tmp.dir.createDirPath(testing.io, "theme/apps/scalable");
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "theme/index.theme", .data = "[Icon Theme]\n" });
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "theme/apps/scalable/b.svg", .data = "<svg/>" });
+    try fixture.tmp.dir.symLink(testing.io, "b.svg", "theme/apps/scalable/a.svg", .{});
+    try fixture.tmp.dir.symLink(testing.io, "apps", "theme/linked", .{});
+    var output = try fixture.output("icons", &.{});
+
+    const entries = try output.tree("~/theme");
+    try testing.expectEqual(4, entries.len);
+    try testing.expectEqualStrings("apps/scalable/a.svg", entries[0].path);
+    try testing.expectEqualStrings("b.svg", entries[0].target.?);
+    try testing.expectEqualStrings("apps/scalable/b.svg", entries[1].path);
+    try testing.expectEqual(null, entries[1].target);
+    try testing.expectEqualStrings("index.theme", entries[2].path);
+    try testing.expectEqualStrings("linked", entries[3].path);
+    try testing.expectEqualStrings("apps", entries[3].target.?);
+    try testing.expectEqualStrings("<svg/>", try output.read("~/theme/apps/scalable/a.svg"));
+
+    try testing.expectError(error.ReadFailed, output.tree("~/missing"));
+    try testing.expectEqualStrings("~/missing", fixture.diagnostics.file);
+    try testing.expectError(error.ReadFailed, output.read("~/theme/missing.svg"));
+    try testing.expectEqualStrings("cannot read it: FileNotFound", fixture.diagnostics.message());
+}
+
+test "link plans a link, and a path written twice as link or file names the first app" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "taken.svg", .data = "<svg/>" });
+    var output = try fixture.output("icons", &.{});
+
+    try output.link(.{ .file = "~/icons/a.svg", .target = "b.svg", .group = "~/icons" });
+    try testing.expectEqualStrings("~/icons", fixture.plan.links.items[0].group.?);
+    try testing.expectError(error.EditsOverlap, output.verbatim(.{ .file = "~/icons/a.svg", .content = "" }));
+    try testing.expectEqualStrings("app 'icons' makes this path a link; two apps cannot write the same path", fixture.diagnostics.message());
+    try output.verbatim(.{ .file = "~/icons/b.svg", .content = "<svg/>", .group = "~/icons" });
+    try testing.expectEqualStrings("~/icons", fixture.plan.files.items[0].group.?);
+    try testing.expectError(error.EditsOverlap, output.link(.{ .file = "~/icons/b.svg", .target = "a.svg" }));
+    try testing.expectEqualStrings("app 'icons' writes this file; two apps cannot write the same path", fixture.diagnostics.message());
+    try testing.expectError(error.NotALink, output.link(.{ .file = "~/taken.svg", .target = "a.svg" }));
+    try testing.expectEqualStrings("~/taken.svg", fixture.diagnostics.file);
 }

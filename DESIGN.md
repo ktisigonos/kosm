@@ -41,7 +41,7 @@ there is undecided, so ask.
  what the rice is   ->   what a program needs  ->   how bytes reach a file
 ```
 
-- The layers never mix. Core data (colors, modifiers, the theme) knows nothing about apps or files. An app never parses and never does file IO; it only tells its `output` what to write. An adapter never knows about any app. The build enforces this where it can.
+- The layers never mix. Core data (colors, modifiers, the theme) knows nothing about apps or files. An app never parses a config and never does file IO; it only tells its `output` what to write, and reads files it builds others from (an installed icon theme) through it too. An adapter never knows about any app. The build enforces this where it can.
 - **Inputs before `from`, tweaks after.** `from(inputs)` derives a complete struct of plain fields; any field can be assigned afterwards. To make a change flow into everything derived from it, change the input and call `from` again.
 - **Nothing is written until kosm says so.** User code only builds values. Kosm calls every app's `apply`, plans every edit in memory, and commits all or nothing. `--diff` prints the plan and writes nothing.
 
@@ -65,6 +65,7 @@ there is undecided, so ask.
 - `from(theme)` fills fields from the theme; an `App{}` without `from` writes nothing. Fields derived from another field of the same app (an inactive color from the active one) are null until `apply`, so assigning the source still flows into them and assigning the derived one still wins.
 - A program's separate opacity setting follows its background's alpha; the background is one color with alpha, never a color plus an opacity value.
 - Every app has `extra` for settings it doesn't cover, written after its own and failing if one overlaps a set setting.
+- An app may write a whole folder it owns (an icon theme), its symbolic links included; diffs and reports show such a folder as one line. A link replaces only a link, never a file.
 - An app writes its own file that the program includes, rather than the program's main config. Making the program read it is the user's job, except for an app's own visible include block, which the user can turn off. Kosm never creates backups.
 - Each written file has a `kosm.Format` (color spelling, booleans, float precision) layered from the user's assignment, the app's default, the adapter's and kosm's.
 - An app may reload its program after a successful apply, and set there what a program keeps outside files (gsettings); a failure is a warning.

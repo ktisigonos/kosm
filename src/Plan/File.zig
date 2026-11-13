@@ -20,6 +20,9 @@ new: []const u8 = "",
 executable: bool = false,
 /// Whether the file on disk is executable now; false when it does not exist.
 was_executable: bool = false,
+/// The folder diffs and reports show this file under, as one line with the others there, or
+/// null to show the file itself.
+group: ?[]const u8 = null,
 
 /// The contents edits are ranges of: `old`, or empty for a missing file.
 pub fn current(file: File) []const u8 {
