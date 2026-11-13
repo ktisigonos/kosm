@@ -32,6 +32,7 @@ const official_packages = [_][]const u8{
     "kosm_hyprland",
     "kosm_hyprmouse",
     "kosm_hyprtoolkit",
+    "kosm_icons",
     "kosm_ini",
     "kosm_json",
     "kosm_kde",
