@@ -12,8 +12,8 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: done; the config's `personal` sets the current wallpaper and `--diff` shows it. Left: the human applies.
   - Done when: an apply changes the wallpaper on the human's machine.
 
-- **18b. Vicinae reads kosm's own settings file**
-  - Do: `kosm_vicinae` writes `~/.config/vicinae/kosm.json` whole (the theme under both `theme.dark` and `theme.light`, the icon theme, font and opacity) and makes sure `settings.json`'s `imports` lists it. Agreed design change: an app may add one key or list entry it names itself (Vicinae's `imports`); paths matching nothing still fail everywhere else, `--set` included; update the non-goal in `DESIGN.md`. The JSON adapter gains adding a key or list entry, keeping comments and formatting. Then remove `font`, `theme` and `launcher_window.opacity` from the human's `settings.json` (keep `client_side_decorations`), as `settings.json` overrides its imports.
+- **18b. Vicinae reads kosm's own settings file** (waits on the human)
+  - Do: done (`Selection.insert` and `append` with the adapters' `insert`, the JSON adapters adding entries, `kosm_vicinae` writing `~/.config/vicinae/kosm.json` and keeping it in `settings.json`'s `imports`, warning about keys there that override it; the overridden keys are removed from the human's `settings.json`, a copy of the old one is in the session's scratch folder). `--diff` of `personal` and `personal.light` shows no warning. Left: the human pushes kosm, applies, and checks Vicinae.
   - Done when: a light and a dark kosmos both apply on a `settings.json` without theme keys, and Vicinae shows the kosmos' theme.
 
 - **18c. Variants grouped by look**
