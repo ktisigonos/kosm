@@ -16,10 +16,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: done (`Selection.insert` and `append` with the adapters' `insert`, the JSON adapters adding entries, `kosm_vicinae` writing `~/.config/vicinae/kosm.json` and keeping it in `settings.json`'s `imports`, warning about keys there that override it; the overridden keys are removed from the human's `settings.json`, a copy of the old one is in the session's scratch folder). `--diff` of `personal` and `personal.light` shows no warning. Left: the human pushes kosm, applies, and checks Vicinae.
   - Done when: a light and a dark kosmos both apply on a `settings.json` without theme keys, and Vicinae shows the kosmos' theme.
 
-- **18c. Variants grouped by look**
-  - Do: a kosmos file may group variants in a public struct (`pub const catppuccin = struct { pub fn kosmos() ...; pub fn latte() ... }`), applied as `kosm apply personal.catppuccin.latte`; `kosm list`, completions, `kosm colors` and `--set` follow. Then rename the config's `personal` variants to match (`personal.catppuccin.latte`, `personal.everforest.light_hard`, `personal.light` stays). Check for downsides first (name clashes between a group and a function, lazy analysis hiding a group's errors) and report them before building.
-  - Done when: every variant applies by its grouped name and `kosm list` shows the groups.
-
 - **18d. wlr-which-key colors and font** `ASK`
   - Do: wlr-which-key's `~/.config/wlr-which-key/config.yaml` is YAML; kosm edits only its style keys (`font`, `background`, `color`, `border`, `border_width`, `corner_r`) and leaves the menu alone. Needs a `kosm_yaml` adapter on the tree-sitter YAML grammar (`tree-sitter-grammars/tree-sitter-yaml`): ask for the dependency first.
   - Done when: the human has approved the grammar and an apply sets wlr-which-key's colors and font.
