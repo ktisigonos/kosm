@@ -29,6 +29,17 @@ warning: Color,
 /// The roles a kosmos sets itself, each optional.
 pub const Overrides = @import("Roles/Overrides.zig");
 
+/// A role by name, for lists that pick roles: `&.{ .accent, .secondary }` is a constant, so it
+/// stays valid wherever it is written.
+pub const Name = enum { background, foreground, accent, secondary, link, success, warning, @"error" };
+
+/// The color of the role `name`.
+pub fn get(roles: Roles, name: Name) Color {
+    return switch (name) {
+        inline else => |tag| @field(roles, @tagName(tag)),
+    };
+}
+
 /// Every role `overrides` leaves null from `palette`, background and foreground following
 /// `mode`, and the link following the accent.
 pub fn from(palette: Palette.Resolved, mode: Mode, overrides: Overrides) Roles {
@@ -49,6 +60,13 @@ pub fn from(palette: Palette.Resolved, mode: Mode, overrides: Overrides) Roles {
         .warning = overrides.warning orelse palette.yellow,
         .@"error" = overrides.@"error" orelse palette.red,
     };
+}
+
+test "every role has a name" {
+    try std.testing.expectEqualDeep(
+        std.meta.fieldNames(Roles),
+        std.meta.fieldNames(Name),
+    );
 }
 
 test "every role can be overridden" {
