@@ -17,58 +17,56 @@ pub const Failure = struct {
 pub fn writePlan(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, failure: *Failure) !void {
     var arena: std.heap.ArenaAllocator = .init(allocator);
     defer arena.deinit();
-    var pending: std.ArrayList(std.Io.File.Atomic) = .empty;
-    defer for (pending.items) |*atomic| atomic.deinit(io);
-    var pending_links: std.ArrayList(PendingLink) = .empty;
-    defer for (pending_links.items) |link| link.discard(io);
+    // Temp files are closed once written: a plan may hold thousands, more than the open file limit.
+    var pending: std.ArrayList(Pending) = .empty;
+    defer for (pending.items) |item| item.discard(io);
 
     for (plan.files.items) |file| {
         if (!file.changed()) continue;
         failure.path = file.display_path;
-        var atomic = try createTemp(arena.allocator(), io, file.path, file.old != null, file.executable);
-        errdefer atomic.deinit(io);
-        try writeContents(io, &atomic, file.new);
-        try pending.append(arena.allocator(), atomic);
+        try pending.ensureUnusedCapacity(arena.allocator(), 1);
+        pending.appendAssumeCapacity(try createTempFile(arena.allocator(), io, &file));
     }
     for (plan.links.items) |*link| {
         if (!link.changed()) continue;
         failure.path = link.display_path;
-        try pending_links.ensureUnusedCapacity(arena.allocator(), 1);
-        pending_links.appendAssumeCapacity(try createTempLink(arena.allocator(), io, link));
+        try pending.ensureUnusedCapacity(arena.allocator(), 1);
+        pending.appendAssumeCapacity(try createTempLink(arena.allocator(), io, link));
     }
-    for (pending.items, 0..) |*atomic, index| {
-        failure.path = changedFile(plan, index).display_path;
-        try atomic.replace(io);
-    }
-    for (pending_links.items) |*link| {
-        failure.path = link.planned.display_path;
-        try std.Io.Dir.renameAbsolute(link.temp_path, link.planned.path, io);
-        link.renamed = true;
+    for (pending.items) |*item| {
+        failure.path = item.display_path;
+        try std.Io.Dir.renameAbsolute(item.temp_path, item.path, io);
+        item.renamed = true;
     }
     failure.path = "";
 }
 
-/// A link made under a temp name next to its final path, waiting to be renamed there.
-const PendingLink = struct {
-    planned: *const Plan.Link,
+/// A file or link written under a temp name next to its final path, waiting to be renamed there.
+const Pending = struct {
+    path: []const u8,
+    display_path: []const u8,
     temp_path: []const u8,
     renamed: bool = false,
 
-    /// Deletes the temp link unless it was renamed into place.
-    fn discard(link: PendingLink, io: std.Io) void {
-        if (!link.renamed) std.Io.Dir.deleteFileAbsolute(io, link.temp_path) catch {};
+    /// Deletes the temp file or link unless it was renamed into place.
+    fn discard(item: Pending, io: std.Io) void {
+        if (!item.renamed) std.Io.Dir.deleteFileAbsolute(io, item.temp_path) catch {};
     }
 };
 
-fn createTempLink(allocator: std.mem.Allocator, io: std.Io, link: *const Plan.Link) !PendingLink {
+fn tempPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
+    var random: u64 = undefined;
+    io.random(std.mem.asBytes(&random));
+    return allocator.print("{s}.kosm-{s}", .{ path, &std.fmt.hex(random) });
+}
+
+fn createTempLink(allocator: std.mem.Allocator, io: std.Io, link: *const Plan.Link) !Pending {
     const folder = std.Io.Dir.path.dirname(link.path) orelse return error.FileNotFound;
     try std.Io.Dir.cwd().createDirPath(io, folder);
     while (true) {
-        var random: u64 = undefined;
-        io.random(std.mem.asBytes(&random));
-        const temp_path = try allocator.print("{s}.kosm-{s}", .{ link.path, &std.fmt.hex(random) });
+        const temp_path = try tempPath(allocator, io, link.path);
         if (std.Io.Dir.cwd().symLink(io, link.target, temp_path, .{})) {
-            return .{ .planned = link, .temp_path = temp_path };
+            return .{ .path = link.path, .display_path = link.display_path, .temp_path = temp_path };
         } else |err| switch (err) {
             error.PathAlreadyExists => continue,
             else => return err,
@@ -76,35 +74,42 @@ fn createTempLink(allocator: std.mem.Allocator, io: std.Io, link: *const Plan.Li
     }
 }
 
-fn createTemp(allocator: std.mem.Allocator, io: std.Io, path: []const u8, exists: bool, executable: bool) !std.Io.File.Atomic {
+fn createTempFile(allocator: std.mem.Allocator, io: std.Io, file: *const Plan.File) !Pending {
     const cwd = std.Io.Dir.cwd();
-    var target = path;
+    var target = file.path;
     var permissions: std.Io.File.Permissions = .default_file;
-    if (exists) {
+    if (file.old != null) {
         // Replacing a symlink with a file would cut it loose from the dotfiles it points into.
-        target = try cwd.realPathFileAlloc(io, path, allocator);
+        target = try cwd.realPathFileAlloc(io, file.path, allocator);
         permissions = (try cwd.statFile(io, target, .{})).permissions;
     }
     // Whoever may read the file may run it, as `chmod +x` under a umask does.
-    if (executable) permissions = .fromMode(permissions.toMode() | ((permissions.toMode() & 0o444) >> 2));
-    return cwd.createFileAtomic(io, target, .{ .permissions = permissions, .make_path = true, .replace = true });
+    if (file.executable) permissions = .fromMode(permissions.toMode() | ((permissions.toMode() & 0o444) >> 2));
+    const folder = std.Io.Dir.path.dirname(target) orelse return error.FileNotFound;
+    try cwd.createDirPath(io, folder);
+    while (true) {
+        const temp_path = try tempPath(allocator, io, target);
+        const flags: std.Io.Dir.CreateFileOptions = .{ .exclusive = true, .permissions = permissions };
+        var temp = cwd.createFile(io, temp_path, flags) catch |err| switch (err) {
+            error.PathAlreadyExists => continue,
+            else => return err,
+        };
+        const pending: Pending = .{ .path = target, .display_path = file.display_path, .temp_path = temp_path };
+        writeContents(io, temp, file.new) catch |err| {
+            temp.close(io);
+            pending.discard(io);
+            return err;
+        };
+        temp.close(io);
+        return pending;
+    }
 }
 
-fn writeContents(io: std.Io, atomic: *std.Io.File.Atomic, contents: []const u8) !void {
+fn writeContents(io: std.Io, file: std.Io.File, contents: []const u8) !void {
     var buffer: [4096]u8 = undefined;
-    var file_writer = atomic.file.writer(io, &buffer);
+    var file_writer = file.writer(io, &buffer);
     file_writer.interface.writeAll(contents) catch return file_writer.err orelse error.WriteFailed;
     file_writer.interface.flush() catch return file_writer.err orelse error.WriteFailed;
-}
-
-fn changedFile(plan: *const Plan, changed_index: usize) *const Plan.File {
-    var seen: usize = 0;
-    for (plan.files.items) |*file| {
-        if (!file.changed()) continue;
-        if (seen == changed_index) return file;
-        seen += 1;
-    }
-    unreachable; // writePlan created exactly one temp file per changed file.
 }
 
 const testing = std.testing;
@@ -335,4 +340,30 @@ test "a link never replaces a file, and a failed commit leaves no temp link" {
     var count: usize = 0;
     while (try iterator.next(testing.io)) |_| count += 1;
     try testing.expectEqual(2, count); // file.svg and locked, no link or temp link
+}
+
+test "a plan with more files than the open file limit is written" {
+    const limits = try std.posix.getrlimit(.NOFILE);
+    try std.posix.setrlimit(.NOFILE, .{ .cur = @min(limits.cur, 64), .max = limits.max });
+    defer std.posix.setrlimit(.NOFILE, limits) catch {};
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var root_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try tmpPath(&tmp, &root_buffer);
+
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    for (0..200) |index| {
+        var name_buffer: [32]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buffer, "icons/{d}.svg", .{index});
+        const path = try std.Io.Dir.path.join(testing.allocator, &.{ root, name });
+        defer testing.allocator.free(path);
+        try plan.add(path, name, "icons", "<svg/>");
+    }
+    var failure: Failure = .{};
+    try writePlan(testing.allocator, testing.io, &plan, &failure);
+
+    const last = try readTmp(&tmp, "icons/199.svg");
+    defer testing.allocator.free(last);
+    try testing.expectEqualStrings("<svg/>", last);
 }
