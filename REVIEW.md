@@ -356,3 +356,25 @@ fields.
   that needs it then fails with `NoKosmosName` instead of writing `.colors` files with no name.
 - Your config is re-pinned and Krystallos sets `theme.name = "Krystallos"`. Checked with
   `--diff` only: it changes just KDE's `Name`, tuios' `display_name` and Vicinae's `name`.
+
+## 13r. Icons (`kosm_icons`, a new repository beside kosm, not pushed)
+
+- Core: `output.read`, `output.tree` and `output.link` (links are planned and committed like
+  files and replace only links), `group` on `verbatim` and `link` so a diff and the apply's
+  report show a folder as one line, a plan indexed by path (15k entries planned in about 1 s),
+  `packageModule` for packages adding build options, and `~/` in reload commands.
+- The generated theme is always `~/.local/share/icons/kosm` (`directory`), whatever
+  `Theme.files` says: one 16 MB copy per kosmos was too much, and the name must be known in
+  `from`. Files an older apply wrote there and this one doesn't are left.
+- BeautyLine's 16 most used gradients map to 13 fields (pairs sharing a hue pair share one),
+  named after the hues they go between, each defaulting to two exact palette colors; that is
+  about 64% of its gradients. Everything else follows `rest`, the `.palette` rule.
+- The `.palette` rule matches a color to the wheel position whose pure sRGB color (`#ff0000`,
+  `#ff8000`, ...) is nearest in OKLCH hue, not to the palette's own hues, so a muted palette
+  still gets BeautyLine's blues as its blue.
+- Named colors other than `white` and `black` are left as they are (BeautyLine uses only
+  `white`).
+- The base's `icon_theme` value, when null, becomes the icons app's theme name for GTK, KDE
+  and hyprtoolkit. A tweak switching `icons` to a system theme after `from` must set the
+  others' names too.
+- `kosm_kde` gained `icon_theme` (`[Icons] Theme` in its kdeglobals block).

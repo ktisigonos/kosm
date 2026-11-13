@@ -50,6 +50,8 @@ When unsure about any std function, grep the std source for its definition befor
 - **Result locations alias the target:** `node = .{ .key = key, .children = try dupe(Node, &.{node}) };` writes `.key` into `node` before `dupe` reads it, so the copy holds the new key. Compute the right-hand values into a `const` first.
 - **`@floatCast` from f64 to f32 never traps:** out-of-range values become +/-inf, so check `std.math.isFinite` after narrowing. A widened f32 keeps its exact binary value (`6.4` prints as `6.400000095367432`).
 - **`Union.tag` is the tag enum, not a union value:** `FontStyle.disabled` passed to an `anytype` parameter has the type `@typeInfo(FontStyle).@"union".tag_type`, so code checking for the union never sees it. Coerce first: `@as(FontStyle, .disabled)` (a typed field does this for you).
+- **`x catch @compileError(...)` in a comptime-only helper still fails:** unless the call is forced to comptime, the error branch is analyzed and fires for valid input. Write `comptime (f(x) catch @compileError(...))`.
+- **A `switch` expression statement cannot take `catch` directly:** `switch (s) { ... } catch return e;` is "expected statement, found 'catch'"; bind it first: `const printed = switch (s) { ... }; printed catch return e;`.
 - **`{t}` prints an enum's tag name:** `writer.print("{t}", .{direction})` writes `up`, no `@tagName` needed.
 - **`type` is a plain field name, `error` is not:** `zig fmt` turns `@"type": Color` and `.@"type"` into `type: Color` and `.type`, but `error` still needs `@"error"`.
 
