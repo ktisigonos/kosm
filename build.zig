@@ -30,6 +30,7 @@ const official_packages = [_][]const u8{
     "kosm_glsl",
     "kosm_gtk",
     "kosm_hyprland",
+    "kosm_hyprlang",
     "kosm_hyprmouse",
     "kosm_hyprtoolkit",
     "kosm_icons",

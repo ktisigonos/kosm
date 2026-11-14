@@ -24,8 +24,8 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
   - Done when: the human's Neovim shows kosm's colors without nvim-base16.
 
-- **18f. Hyprlang adapter, for hyprpaper**
-  - Do: a `kosm_hyprlang` adapter, written by hand (no grammar: `key = value`, `name { ... }` blocks, `#` comments, `$variables`). `kosm_hyprpaper` edits the user's own `hyprpaper.conf` through it instead of writing the file whole. Hyprland itself stays on Lua; other Hypr programs (hyprlock, hypridle) later, when the human asks.
+- **18f. Hyprlang adapter, for hyprpaper** (waits on the human)
+  - Do: done (the new package `kosm_hyprlang`, an official package that claims no extension; `kosm_hyprpaper`'s `owned`, true by default, false to only set `splash` and each wallpaper's `path` and `fit_mode` in the user's own file, failing naming the monitor when a block or key is missing; `kosm_base` re-pinned and pushed). Checked with `--diff` of a scratch copy of the config: with `owned = false` only the path's bytes change in the real `hyprpaper.conf`, and a monitor without a block fails naming it. Left for the human: the initial push of `kosm_hyprlang`, a push of kosm; in the config, `kosm add git+https://git.nnstdios.com/ktisigonos/kosm_hyprlang` and `kosm update`, then `apps.hyprpaper.?.owned = false` in `personal` if wanted, and apply. Hyprland itself stays on Lua; other Hypr programs (hyprlock, hypridle) later, when the human asks.
   - Done when: an apply sets the wallpaper by editing a hand-written `hyprpaper.conf`, keeping its comments and other keys.
 
 - **18g. A kosmos from an image** `ASK` `PLAN FIRST`
