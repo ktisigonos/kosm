@@ -8,6 +8,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
+- **17a. Zen repaints after an apply** (waits on the human)
+  - Do: done (`kosm_firefox` `0f81ec4`, not pushed: Kosm Live sets each Zen window's opacity to 0.999 for two frames a second after an apply changes prefs, so a page turning translucent is not left drawn opaque until a refocus). Left for the human: pin `kosm_firefox` to `0f81ec4` in the config (Zig's cache already holds it), apply, restart Zen once, then switch between an opaque and a translucent theme with Zen open. If it does not help, put the old pin `7f20d67` back and revert the commit. Once it works and the git server is back: push `kosm_firefox` and re-pin it in `kosm_base`.
+  - Done when: going from an opaque to a translucent theme with Zen open shows the page translucent without refocusing.
+
 - **18d. wlr-which-key colors and font** (waits on the human)
   - Do: wlr-which-key's `~/.config/wlr-which-key/config.yaml` is YAML; kosm edits only its style keys (`font`, `background`, `color`, `border`, `border_width`, `corner_r`) and leaves the menu alone. Needs a `kosm_yaml` adapter on the tree-sitter YAML grammar (`tree-sitter-grammars/tree-sitter-yaml`), which the human has approved. Do not start until the human says so: their git server is down, so the new package cannot be pushed.
   - Done when: an apply sets wlr-which-key's colors and font.
