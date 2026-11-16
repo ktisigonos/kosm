@@ -19,6 +19,8 @@ pub const hex8: ColorFormat = .init("#{}", &.{.hex8});
 pub const hex_upper: ColorFormat = .init("#{}", &.{.hex_upper});
 /// `#RRGGBBAA`, clipped to the gamut.
 pub const hex8_upper: ColorFormat = .init("#{}", &.{.hex8_upper});
+/// `#aarrggbb`, alpha first as Qt spells it, clipped to the gamut.
+pub const hex8_argb: ColorFormat = .init("#{}", &.{.hex8_argb});
 
 /// A format whose template and components are checked at compile time, like `Color.format`.
 pub fn init(comptime template: []const u8, comptime components: []const Color.Component) ColorFormat {

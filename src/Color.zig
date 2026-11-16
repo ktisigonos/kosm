@@ -152,6 +152,8 @@ pub const Component = enum {
     hex_upper,
     /// `RRGGBBAA`, uppercase, clipped to the gamut. No `#`.
     hex8_upper,
+    /// `aarrggbb`, lowercase, alpha first as Qt spells it, clipped to the gamut. No `#`.
+    hex8_argb,
     /// OKLCH lightness as a float, nominally 0..1.
     lightness,
     /// OKLCH chroma as a float.
@@ -246,7 +248,7 @@ fn clipsRgb(rgb: Rgb, component: Component) bool {
         .blue_255 => clipsByte(rgb.blue),
         .alpha_255 => clipsByte(rgb.alpha),
         .hex, .hex_upper => clipsByte(rgb.red) or clipsByte(rgb.green) or clipsByte(rgb.blue),
-        .hex8, .hex8_upper => clipsByte(rgb.red) or clipsByte(rgb.green) or clipsByte(rgb.blue) or clipsByte(rgb.alpha),
+        .hex8, .hex8_upper, .hex8_argb => clipsByte(rgb.red) or clipsByte(rgb.green) or clipsByte(rgb.blue) or clipsByte(rgb.alpha),
         .red_01, .green_01, .blue_01, .alpha_01, .lightness, .chroma, .hue => false,
     };
 }
@@ -271,6 +273,12 @@ fn appendComponent(color: Color, rgb: Rgb, component: Component, decimals: u8, t
             formatByte(rgb.green, "{x:0>2}", text);
             formatByte(rgb.blue, "{x:0>2}", text);
             if (component == .hex8) formatByte(rgb.alpha, "{x:0>2}", text);
+        },
+        .hex8_argb => {
+            formatByte(rgb.alpha, "{x:0>2}", text);
+            formatByte(rgb.red, "{x:0>2}", text);
+            formatByte(rgb.green, "{x:0>2}", text);
+            formatByte(rgb.blue, "{x:0>2}", text);
         },
         .hex_upper, .hex8_upper => {
             formatByte(rgb.red, "{X:0>2}", text);
@@ -498,6 +506,14 @@ test "uppercase hex and float components with a chosen precision" {
     try testing.expectEqualStrings("1", color.formatComponent(.alpha_01, 0).slice());
     try testing.expectEqualStrings("0.50196078431", color.formatComponent(.alpha_01, 11).slice());
     try testing.expectEqualStrings("5E81AC", color.formatComponent(.hex_upper, 0).slice());
+}
+
+test "Qt's argb hex puts alpha first, and clips like hex8" {
+    const color = try parseHex("#5e81ac80");
+    try testing.expectEqualStrings("#805e81ac", color.format("#{}", &.{.hex8_argb}).slice());
+    try testing.expectEqualStrings("ff5e81ac", (try parseHex("#5e81ac")).formatComponent(.hex8_argb, 0).slice());
+    const vivid: Color = .{ .lightness = 0.7, .chroma = 0.4, .hue = 145 };
+    try testing.expectEqual(vivid.clips(.hex8), vivid.clips(.hex8_argb));
 }
 
 test "roundDecimals trims float noise and keeps what it cannot scale" {
