@@ -17,12 +17,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: an apply sets wlr-which-key's colors and font.
 
 
-- **13w. Commet theme** (waits on the human)
-  - Do: done (`kosm_commet` `168a4c9`, `kosm_base` `cc996b1`, `kosm_zen` `c3c8383`, none pushed; the config pins them already). Left for the human: create the `kosm_commet` repository and push it with `kosm_base` and `kosm_zen` once the git server is back; quit Commet, apply, start Commet.
-  - Do: later, maybe: test whether a fully transparent `foundation` image with `glass` makes Commet's panels translucent.
-  - Done when: Commet shows the kosmos' colors after a restart.
-
-
 - **13z. A tertiary role** `ASK`
   - Do: apps wanting a third highlight (Commet's Material `tertiary`) take a fixed role, hardcoded in `kosm_commet`'s `from` (the warning role, as Commet's own Dark uses yellow); propose a theme-wide setting for it instead (a role beside `secondary`, or something else) and use it in every app that has such a color.
   - Done when: the human has agreed on the setting and `kosm_commet` reads it.
@@ -58,6 +52,8 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
+  - Do: once the git server is back: the first push of `kosm_commet`, then push `kosm_base` and `kosm_zen`; the config pins their local commits (`kosm_commet` `168a4c9`, `kosm_base` `cc996b1`, `kosm_zen` `c3c8383`).
+  - Do: maybe: test whether a fully transparent `foundation` image with `glass` makes Commet's panels translucent (translucent panel colors are drawn over black).
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
