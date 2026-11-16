@@ -45,9 +45,14 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
 
 
-- **13q. Live reload for Qt and KDE apps** `ASK`
-  - Found (tested with a Qt 6 probe on a private session bus, Hyprland, Wayland): with `QT_QPA_PLATFORMTHEME=kde` the palette reloads on the D-Bus signal `/KGlobalSettings org.kde.KGlobalSettings.notifyChange(0, 0)` (what `plasma-apply-colorscheme` sends), the widget style on `notifyChange(2, 0)`; a plain write or `kwriteconfig6 --notify` does nothing; fonts did not reload any way tried (the plugin takes them from the portal's `SettingChanged`, and the KDE portal did not send it). qt6ct reloads by itself about 3 s after `qt6ct.conf` is replaced by a rename (it watches its folder, not `colors/`), but kosm leaves an unchanged `qt6ct.conf` alone, so a shared scheme never reloads. Kvantum, Darkly and Union were not tested (only Union is installed).
-  - Do: once the human has chosen: a `kosm_kde` reloader sending `notifyChange` for palette, style and icons, and/or a `kosm_qtct` reloader that replaces `qt6ct.conf` by a rename.
+- **13q. Live reload and translucency for Qt and KDE apps** `ASK`
+  - Found (tested with Qt 5 and Qt 6 probes drawing a real window off-screen, on a private session bus):
+    - qt6ct and qt5ct reload colors and fonts by themselves about 3 s after `qt6ct.conf`/`qt5ct.conf` is replaced by a rename; they do not watch `colors/`, and kosm leaves an unchanged config alone, which is why an apply does nothing today. qt6ct passes the colors' alpha on to apps.
+    - `QT_QPA_PLATFORMTHEME=kde`: the palette reloads on `/KGlobalSettings org.kde.KGlobalSettings.notifyChange(0, 0)`, the style on `(2, 0)`; fonts did not reload any way tried. The human rejects this route for that.
+    - Kvantum ignores the platform theme's palette (its colors come from the theme's kvconfig and SVG), has no file watcher, and did not reload a changed theme even when qt6ct reapplied its settings. Its translucent windows did not turn on in headless runs (off-screen, hidden on Wayland, a headless KWin), cause not found; the human can check in their session with `XDG_CONFIG_HOME=<scratch>/cfg7 QT_STYLE_OVERRIDE=kvantum`.
+    - Union never makes a Qt Widgets window translucent and has no reload but KDE's config watcher.
+    - Darkly (AUR `darkly`, Qt 5 and 6, maintained) makes windows translucent when the palette's window color has alpha below 255, treats Wayland as composited, and re-reads on palette changes; not installed, so untested.
+  - Do: once the human has chosen: likely a `kosm_qtct` reloader that replaces `qt6ct.conf`/`qt5ct.conf` by a rename after an apply (and fonts written by kosm), with Darkly as the style if it tests well.
   - Done when: the human has chosen, and an apply recolors a running Qt app on the human's machine.
 
 - **13x. Lists built from run-time values** `ASK`
