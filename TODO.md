@@ -18,7 +18,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 
 - **13w. Commet theme** (waits on the human)
-  - Do: done (`kosm_commet` `4d7574d`, `kosm_base` `ff8901a`, `kosm_zen` `c3c8383`, none pushed; the config pins them already). Left for the human: create the `kosm_commet` repository and push it with `kosm_base` and `kosm_zen` once the git server is back; quit Commet, apply, start Commet.
+  - Do: done (`kosm_commet` `168a4c9`, `kosm_base` `cc996b1`, `kosm_zen` `c3c8383`, none pushed; the config pins them already). Left for the human: create the `kosm_commet` repository and push it with `kosm_base` and `kosm_zen` once the git server is back; quit Commet, apply, start Commet.
   - Do: later, maybe: test whether a fully transparent `foundation` image with `glass` makes Commet's panels translucent.
   - Done when: Commet shows the kosmos' colors after a restart.
 
