@@ -17,6 +17,7 @@ const official_packages = [_][]const u8{
     "kosm_adwsteamgtk",
     "kosm_base",
     "kosm_blender",
+    "kosm_commet",
     "kosm_counter_strike",
     "kosm_counter_strike_2",
     "kosm_css",

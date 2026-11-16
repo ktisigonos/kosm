@@ -17,9 +17,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: an apply sets wlr-which-key's colors and font.
 
 
-- **13w. Commet theme** `ASK`
-  - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
-  - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
+- **13w. Commet theme** (waits on the human)
+  - Do: done (`kosm_commet` `1a039a4`, `kosm_base` `e917c06` adding it and moving its kosm pin to `12c064d`; neither pushed). Left for the human: create the `kosm_commet` repository and push it with `kosm_base`; pin `kosm_base` to `e917c06` and add `kosm_commet` (`1a039a4`) in the config (Zig's cache already holds both); quit Commet, apply, start Commet.
+  - Do: later, maybe: test whether a fully transparent `foundation` image with `glass` makes Commet's panels translucent.
+  - Done when: Commet shows the kosmos' colors after a restart.
 
 
 - **18h. Equibop theme** `ASK`
