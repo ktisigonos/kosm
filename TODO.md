@@ -18,13 +18,13 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 
 - **13w. Commet theme** (waits on the human)
-  - Do: done (`kosm_commet` `1a039a4`, `kosm_base` `a0a9b90`, `kosm_zen` `c3c8383`, none pushed; the config pins them already). Left for the human: create the `kosm_commet` repository and push it with `kosm_base` and `kosm_zen` once the git server is back; quit Commet, apply, start Commet.
+  - Do: done (`kosm_commet` `8930098`, `kosm_base` `cc8abb8`, `kosm_zen` `c3c8383`, none pushed; the config pins them already). Left for the human: create the `kosm_commet` repository and push it with `kosm_base` and `kosm_zen` once the git server is back; quit Commet, apply, start Commet.
   - Do: later, maybe: test whether a fully transparent `foundation` image with `glass` makes Commet's panels translucent.
   - Done when: Commet shows the kosmos' colors after a restart.
 
 
 - **13z. A tertiary role** `ASK`
-  - Do: apps wanting a third highlight (Commet's Material `tertiary`) take the palette's purple, hardcoded in `kosm_commet`'s `from`; propose a theme-wide setting for it instead (a role beside `secondary`, or something else) and use it in every app that has such a color.
+  - Do: apps wanting a third highlight (Commet's Material `tertiary`) take a fixed role, hardcoded in `kosm_commet`'s `from` (the warning role, as Commet's own Dark uses yellow); propose a theme-wide setting for it instead (a role beside `secondary`, or something else) and use it in every app that has such a color.
   - Done when: the human has agreed on the setting and `kosm_commet` reads it.
 
 
