@@ -17,6 +17,29 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: an apply sets wlr-which-key's colors and font.
 
 
+- **13w. Commet theme** `ASK`
+  - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
+  - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
+
+
+- **18h. Equibop theme** `ASK`
+  - Do: find out how Equibop (the Vesktop-based Discord client) takes a theme (Vencord's QuickCSS or a CSS file in its themes folder, Discord's CSS variables, live reload) and propose `kosm_equibop` from it, with its fields and the Krystallos values.
+  - Done when: the human has agreed on the app, and Equibop takes the kosmos' colors and fonts.
+
+
+- **13q. A Qt style that looks right: Kvantum or our own** `ASK` `PLAN FIRST`
+  - Do: Darkly is rejected (it looks wrong in many apps and misses colors). Already built: kosm `12c064d` (`hex8_argb`), `kosm_qtct` `dc481be` (`#aarrggbb` colors, `translucent` and `style` per program, alpha lowered for Darkly's double paint, a `touch -c` reload); the config pins these and `personal` sets qt6ct to Darkly and translucent until this step replaces it. Undo the double-paint lowering if the chosen style does not paint twice.
+  - Do: give Kvantum an honest try: kosm generates a Kvantum theme (its `.kvconfig` and the `.svg` its colors live in) from the theme's roles, then compare it with the real apps (qt6ct, OpenRGB, Dolphin, KDE Connect, Mumble through Qt 5) in a headless KWin with screenshots over a checker backdrop. Weigh it against writing our own Qt style (a C++ QStyle plugin, or Zig behind a thin C++ shim) that draws from the platform palette, skips inner panel backgrounds so translucency is one layer, and reloads live. If our own style is less work for a result that works across the board, propose it instead. Also check whether COSMIC's way of styling Qt apps (step 19) can serve.
+  - Found so far (headless KWin, real apps): Qt Widgets apps paint each container in the window color, so a translucent window color stacks into near-opaque layers; a stylesheet clearing inner backgrounds barely helped. Darkly paints the window twice on top of that. Bundled Kvantum themes at 50% opacity: Dolphin with KvantumAlt shows one clean see-through layer in its file view (sidebar and toolbar solid), qt6ct and OpenRGB only at the window edges with solid gray panels; Kvantum ignores the platform palette (colors come from the theme's SVG) and does not reload live. KDE Connect's window is QML (Kirigami), which neither style makes translucent; it shows a greenish tint from alpha on an opaque surface. KDE apps force Breeze unless kdeglobals' `[KDE] widgetStyle` names a style, and take their palette from `kosm_kde`'s scheme, so they recolor only on restart; under `QT_QPA_PLATFORMTHEME=kde` colors are live but fonts never reload outside Plasma (the KDE portal announces no setting changes there). Plain Qt apps recolor and change fonts live through qt6ct/qt5ct.
+  - Left for the human: when the git server is back, push kosm and kosm_qtct and re-pin kosm_qtct in kosm_base.
+  - Done when: the human has picked Kvantum or our own style from screenshots of their apps, and Qt and KDE apps wear it in the kosmos' colors.
+
+
+- **19. COSMIC desktop and apps** `ASK`
+  - Do: find out how COSMIC reads its theme, icons, fonts and settings (its RON files under `~/.config/cosmic`, live reload) and propose `kosm_cosmic` from it, with its fields and the Krystallos values; it reads `kosm_icons`' theme like GTK and KDE. Cover COSMIC's own apps (Files, Terminal, Edit and so on) run under Hyprland, and find out how COSMIC styles Qt apps and whether that works outside COSMIC, for step 13q.
+  - Done when: the human has agreed on the app, and COSMIC and its apps take the kosmos' colors and icons, and step 13q knows whether COSMIC's Qt styling can serve.
+
+
 - **18e. Neovim highlight groups from kosm**
   - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
   - Done when: the human's Neovim shows kosm's colors without nvim-base16.
@@ -45,12 +68,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
 
 
-- **13q. Live Qt apps and Darkly** (waits on the human)
-  - Do: done for plain Qt apps (kosm `12c064d`: the `hex8_argb` format; `kosm_qtct` `dc481be`: `#aarrggbb` colors, `translucent` and `style` per program, alpha lowered for Darkly's double paint, a `touch -c` reload). The config pins kosm, kosm_qtct and kosm_firefox (`0f81ec4`) to these, and `personal` sets qt6ct to Darkly and translucent; checked with `--diff` only.
-  - Found with the real apps in a headless KWin (screenshots with alpha): plain Qt apps (qt6ct, OpenRGB, Mumble through qt5ct) recolor and change fonts live through qt6ct. Darkly paints a window's background twice, and every panel an app paints adds a layer, so a 0.5 alpha looked opaque (alpha about 250 in qt6ct); lowered to show 0.5 after two layers, qt6ct and OpenRGB are clearly see-through. KDE apps (Dolphin, the KDE Connect app) force Breeze unless kdeglobals' `[KDE] widgetStyle` names a style, and set their palette themselves from `dolphinrc`'s `[UiSettings] ColorScheme` (written by kosm_kde) or Breeze's light default, never from qt6ct, so they recolor only on restart. Under `QT_QPA_PLATFORMTHEME=kde` without that entry they recolor live on `notifyChange`, but fonts never reload outside Plasma: the KDE portal announces no setting changes there, even with the session marked KDE, and apps take that announcement only from the portal. Darkly is Qt 6 only here; qt5ct stays Breeze.
-  - Left for the human: apply `personal`, restart Qt apps started before Darkly was installed (kdeconnectd and openrgb run from boot with Breeze), check qt6ct and OpenRGB are see-through and recolor on the next apply; decide whether `kosm_kde` gets a `widget_style` (Darkly in KDE apps) and the same alpha lowering. When the git server is back: push kosm and kosm_qtct, re-pin kosm_qtct in kosm_base.
-  - Done when: plain Qt apps show the background's alpha with Darkly and recolor live on the human's machine, and the human has chosen how KDE apps are handled.
-
 - **13x. Lists built from run-time values** `ASK`
   - Do: a list field (`Recolor.colors.only`, but also keyboard layouts, font families and any other `[]const`) set inside a function to `&.{ ... }` of run-time values points into that function's stack, which is reused once it returns: the app later reads garbage, silently (icons came out white instead of black). Zig cannot avoid the `&`: checked on 0.17, `[N]?Color` wants exactly N elements, tuple fields cannot default to run-time null, and a struct with numbered fields does not take list syntax; an `anytype` helper breaks the user-facing rules. `kosm.hex` is inline, so lists of hex colors are constants already. Run-time values remain: the theme handed to a look's `tweak` or to a kosmos' own functions (known at compile time unless `Params`/`--set` change it, which rules out evaluating the whole kosmos at compile time), and `Params` themselves. Options to weigh: pass the theme as `comptime` where it is known, so `&.{ theme.palette.blue }` is constant (the config's `personal/icons.zig` does this already: `wearing` hands its icon functions `comptime theme`; a look's `tweak` cannot, as `Look.tweak` is a run-time function pointer); have kosm copy every slice of the app tree into its arena right after the kosmos function returns (too late: the frames are gone, so this only works if the kosmos builds everything in one frame); a `.of(&.{ ... })` copy into a fixed buffer per list field; or document the rule ("lists of run-time values are top-level constants") in kosm_icons' README and the kosmos docs. Ask the human which.
   - Done when: writing `.only = &.{ theme.palette.blue }` in a look's tweak or a kosmos function either works or cannot compile, and the human has seen the chosen form.
@@ -68,16 +85,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13u. Flatpak GTK apps** (waits on the human)
   - Do: Flatpak apps still load the old theme: the human's Flatpak overrides set `GTK_THEME` (`oomox-Ricer` per user, `Nordic-darker-v40` system-wide), so libadwaita Flatpaks (Blanket) get Oomox drawn over them and plain GTK 4 ones (Nicotine+) draw Oomox. Without it, Flatpaks take the theme name kosm sets in gsettings, but see themes only in `~/.local/share/themes` (not `/usr/share/themes`), so plain GTK 4 Flatpaks need adw-gtk3 there; with it they follow kosm's colors (checked off-screen with a plain GTK 4 window). Setting `GTK_THEME=adw-gtk3-dark` instead would also force adw-gtk3's copy of libadwaita's stylesheet over every libadwaita app's own. Left: the human unsets `GTK_THEME` (`flatpak override --user --unset-env=GTK_THEME`) and makes adw-gtk3 visible to Flatpaks (a copy in `~/.local/share/themes`, which pacman does not update); then decide whether `kosm_gtk` keeps that copy current or unsets the override itself, after an apply.
   - Done when: Nicotine+ and Blanket take kosm's colors like native GTK apps.
-
-
-- **13w. Commet theme** `ASK`
-  - Do: find out how Commet (commet.chat, a Matrix client) reads its colors (a theme or config file, its format, live reload) and propose `kosm_commet` from it, with its fields and the Krystallos values.
-  - Done when: the human has agreed on the app, and Commet takes the kosmos' colors.
-
-
-- **19. COSMIC desktop** `ASK` (down the line)
-  - Do: find out how COSMIC reads its theme, icons, fonts and settings (its RON files under `~/.config/cosmic`, live reload) and propose `kosm_cosmic` from it, with its fields and the Krystallos values; it reads `kosm_icons`' theme like GTK and KDE.
-  - Done when: the human has agreed on the app, and COSMIC takes the kosmos' colors and icons.
 
 
 - **18a. Zen's new tab page in the theme** `PLAN FIRST` (backlog: the human does not use it)
