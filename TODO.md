@@ -26,14 +26,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the human has agreed on the app, and COSMIC and its apps take the kosmos' colors and icons, and step 13q knows whether COSMIC's Qt styling can serve.
 
 
-- **18e. Neovim highlight groups from kosm**
-  - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
-  - Do: info diagnostics take the info role; diff and git-sign groups (`DiffAdd`, `DiffChange`, `DiffDelete`, `Added`, `Changed`, `Removed`) take the theme's diff colors.
-  - Done: `kosm_nvim` writes the colors to `lua/kosm/theme.lua` (`background`, `colorscheme`, `highlights` by Neovim's name, the kosmos' `groups`, `terminal`) and its own plugin beside them (`lua/kosm/init.lua`, `plugin/kosm.lua`, `colors/kosm.lua`), all in Neovim's site folder (`~/.local/share/nvim/site`), which Neovim and lazy.nvim load by themselves; the plugin applies the colors live through a file watcher, and a kosmos may name another colorscheme. `kosm_nvim` `c53e902`, pinned in `kosm_base` `f94a034`, both pushed. The config's pins, the `personal` kosmos' groups and the human's nvim config (committed there, not pushed) are updated.
-  - Left for the human: `kosm apply personal`, then check Neovim.
-  - Done when: the human's Neovim shows kosm's colors without nvim-base16.
-
-
 - **18o. A list that outlives its function crashes instead of failing**
   - Do: `kosm apply --diff` segfaulted in `runner/lifetime.zig` (`findDeadList` walking into the list) on a kosmos that set `app.groups = &.{ ... }` holding a run-time color, instead of refusing it with the list's path. Likely the walk reads the dead list's items, which lie on the kosmos' own stack after it is freed; check the list's address without dereferencing it. Reproduce with a test kosmos.
   - Done when: such a kosmos fails with the path of the list and writes nothing, under a test.
