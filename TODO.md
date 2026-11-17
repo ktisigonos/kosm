@@ -58,10 +58,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the human has agreed on it and it builds a palette.
 
 
-- **13a. Kosm's packages in their own repositories**
-  - Do: every package is a pushed repository beside kosm, and the config pins each by url.
+- **13a. kosm_json's clip warning tests**
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
-  - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
+  - Done when: `kosm_json`'s tests pass without them, pinned on the new kosm.
 
 
 - **13l. CS2's fonts.conf** (paused: the human has disabled it for now)
