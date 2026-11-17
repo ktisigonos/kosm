@@ -9,7 +9,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 ---
 
 - **18d. wlr-which-key colors and font** (waits on the human)
-  - Do: done: `kosm_yaml` `b13014a` (the `yaml` adapter, on kosm `deb5cf9`, whose tree-sitter specs see through wrapper nodes), `kosm_wlr_which_key` `61ca8e6` (`font`, `background`, `color`, `border`, `border_width`, `corner_r` set in `~/.config/wlr-which-key/config.yaml`), `kosm_base` `497deef` (pushed; the look's fonts as one Pango font, `border_size` and `rounding`); the config pins them all. Left for the human: create the `kosm_yaml` and `kosm_wlr_which_key` repositories on the forge and push them, push kosm, then apply.
+  - Do: done: `kosm_yaml` `b13014a` (the `yaml` adapter, on kosm `deb5cf9`, whose tree-sitter specs see through wrapper nodes), `kosm_wlr_which_key` `61ca8e6` (`font`, `background`, `color`, `border`, `border_width`, `corner_r` set in `~/.config/wlr-which-key/config.yaml`), `kosm_base` `497deef` (pushed; the look's fonts as one Pango font, `border_size` and `rounding`); the config pins them all, and every repository is pushed. Left for the human: apply.
   - Done when: an apply sets wlr-which-key's colors and font.
 
 - **18i. Every Vicinae setting**
@@ -64,13 +64,13 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 - **13a. Kosm's packages in their own repositories**
   - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
-  - Do: once the git server is back: the first push of `kosm_commet`, then push `kosm_base` and `kosm_zen`; the config pins their local commits (`kosm_commet` `168a4c9`, `kosm_base` `cc996b1`, `kosm_zen` `c3c8383`).
+  - Do: `kosm_commet`, `kosm_base` and `kosm_zen` are pushed; when the human asks, re-pin them in the config by url instead of the local commits it pins (`kosm_commet` `168a4c9`, `kosm_base` `cc996b1`, `kosm_zen` `c3c8383`).
   - Do: maybe: test whether a fully transparent `foundation` image with `glass` makes Commet's panels translucent (translucent panel colors are drawn over black).
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
 
-- **13l. CS2's fonts.conf** (waits on the human)
+- **13l. CS2's fonts.conf** (paused: the human has disabled it for now)
   - Do: the game's `fonts.conf` is stock again (Ricer's "Custom fonts" section is gone, likely restored by Steam) and `kosm_counter_strike_2` writes `42-repl-global.conf`, which that file says still applies. Left: the human checks the font in game; if it shows, delete this step, otherwise the human describes the cleanup still needed.
   - Done when: the human has seen the font in game, or the described cleanup is tested without touching the game's real files.
 
@@ -86,11 +86,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13y. `kosm install` for styles and themes apps need** `PLAN FIRST`
   - Do: `kosm install` (short `kosm i`) installs what an app needs to look as configured (styles, themes such as Darkly or adw-gtk3), never the programs themselves; it is optional, and users may install these by hand instead. Each app declares its needs, with a package name per distro (Arch first, Fedora later). A need in the distro's official repositories is installed with its package manager, showing the exact command and running it only once the user confirms; kosm never updates it, the package manager does. Otherwise kosm installs it per user (under `~/.local`, no root) from source pinned by commit and content hash, showing the install script before it runs; `kosm update` shows the new commits and the diff of the build and install files, and moves the pin only once the user accepts. Propose how apps declare needs, the per-distro names, the source build and where files go first.
   - Done when: the human has agreed on the plan, and `kosm install` installs Darkly on the human's machine the chosen way.
-
-- **13s. Cursors generated from the palette** (waits on the human)
-  - Do: done: `kosm_cursor` `d45865a` (pushed; Bibata's SVGs recolored, drawn by resvg into XCursor files and zipped as hyprcursor SVGs into `~/.local/share/icons/kosm_cursor`; `rest` takes a `kosm_icons.Recolor` for the spinner), `kosm_icons` `c7efd52` (pushed; exports `svg`), `kosm_base` `66ca146` (pushed; the `cursor` app, whose theme GTK and Hyprland pick when the look sets no cursor name). The config pins them all, and Krystallos and OG Steam leave `cursor.name` null. Left for the human: apply, then check the cursor.
-  - Done when: the human has seen the generated cursor in GTK, Qt and Hyprland, in the kosmos' colors.
-
 
 - **13u. Flatpak GTK apps** (waits on the human)
   - Do: Flatpak apps still load the old theme: the human's Flatpak overrides set `GTK_THEME` (`oomox-Ricer` per user, `Nordic-darker-v40` system-wide), so libadwaita Flatpaks (Blanket) get Oomox drawn over them and plain GTK 4 ones (Nicotine+) draw Oomox. Without it, Flatpaks take the theme name kosm sets in gsettings, but see themes only in `~/.local/share/themes` (not `/usr/share/themes`), so plain GTK 4 Flatpaks need adw-gtk3 there; with it they follow kosm's colors (checked off-screen with a plain GTK 4 window). Setting `GTK_THEME=adw-gtk3-dark` instead would also force adw-gtk3's copy of libadwaita's stylesheet over every libadwaita app's own. Left: the human unsets `GTK_THEME` (`flatpak override --user --unset-env=GTK_THEME`) and makes adw-gtk3 visible to Flatpaks (a copy in `~/.local/share/themes`, which pacman does not update); then decide whether `kosm_gtk` keeps that copy current or unsets the override itself, after an apply.
