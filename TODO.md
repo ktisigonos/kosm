@@ -8,10 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **18i. Every Vicinae setting**
-  - Do: `kosm_vicinae` covers only the theme, font, icon theme and the launcher window's opacity, rounding, material, border width and shadow; give it every setting of `vicinae config default` (the rest of `launcher_window`: size, compact mode, layer shell, clock; shortcuts, favorites, providers and so on) as fields with Vicinae's names, written into `kosm.json`, and add each to the keys `settings.json` is warned about overriding.
-  - Done when: every option of `vicinae config default` has a field, and the README's field list matches.
-
 - **18j. Every dunst setting**
   - Do: `kosm_dunst` covers only the font, separator, frame width, corner radius and urgency colors, the rest going through `extra`; give it every option of dunst's `dunstrc` (`man 5 dunst`: geometry, timeouts, icons, rules and so on) as fields with dunst's names.
   - Done when: every documented `[global]` and urgency option has a field, and the README's field list matches.
