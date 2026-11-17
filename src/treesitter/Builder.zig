@@ -52,7 +52,7 @@ fn soleValue(builder: *const Builder, root: c.TSNode) ?c.TSNode {
         }
         if (!c.ts_tree_cursor_goto_next_sibling(&cursor)) break;
     }
-    const value = found orelse return null;
+    const value = builder.unwrap(found orelse return null);
     const kind = nodeType(value);
     if (contains(builder.spec.nest, kind) or contains(builder.spec.list, kind)) return value;
     return null;
@@ -148,9 +148,10 @@ fn pairNode(builder: *Builder, pair: c.TSNode, depth: usize) Adapter.ParseError!
     return node;
 }
 
-fn valueNode(builder: *Builder, value: c.TSNode, depth: usize) Adapter.ParseError!Node {
+fn valueNode(builder: *Builder, wrapped: c.TSNode, depth: usize) Adapter.ParseError!Node {
+    const value = builder.unwrap(wrapped);
     const kind = nodeType(value);
-    const range: Adapter.Range = .{ .start = c.ts_node_start_byte(value), .end = c.ts_node_end_byte(value) };
+    const range = builder.trimmedRange(value);
     var node: Node = .{ .key = null, .kind = .scalar, .position = range.start, .value = range };
     if (contains(builder.spec.nest, kind) and contains(builder.spec.list, kind)) {
         node.children = try builder.mixedEntries(value, try builder.deeper(value, depth));
@@ -210,7 +211,8 @@ fn listElements(builder: *Builder, list: c.TSNode, depth: usize) Adapter.ParseEr
     return elements.items;
 }
 
-fn keyText(builder: *const Builder, key: c.TSNode) []const u8 {
+fn keyText(builder: *const Builder, wrapped: c.TSNode) []const u8 {
+    const key = builder.unwrap(wrapped);
     const text = builder.source[c.ts_node_start_byte(key)..c.ts_node_end_byte(key)];
     if (contains(builder.spec.quoted_key, nodeType(key)) and text.len >= 2) return text[1 .. text.len - 1];
     return text;
@@ -222,6 +224,33 @@ fn deeper(builder: *Builder, node: c.TSNode, depth: usize) Adapter.ParseError!us
         return builder.context.invalidSyntax("line {d}: values nest deeper than {d} levels", .{ point.row + 1, max_depth });
     }
     return depth + 1;
+}
+
+/// `node`'s bytes without trailing whitespace, which some grammars (YAML's block sequences)
+/// include and a replaced value must not swallow.
+fn trimmedRange(builder: *const Builder, node: c.TSNode) Adapter.Range {
+    const start = c.ts_node_start_byte(node);
+    var end = c.ts_node_end_byte(node);
+    while (end > start and std.ascii.isWhitespace(builder.source[end - 1])) end -= 1;
+    return .{ .start = start, .end = end };
+}
+
+/// The node a chain of `spec.wrapper` nodes stands for: each one's last entry, or the wrapper
+/// itself when it holds none.
+fn unwrap(builder: *const Builder, node: c.TSNode) c.TSNode {
+    var current = node;
+    while (contains(builder.spec.wrapper, nodeType(current))) current = lastEntry(current) orelse return current;
+    return current;
+}
+
+fn lastEntry(node: c.TSNode) ?c.TSNode {
+    var index = c.ts_node_named_child_count(node);
+    while (index > 0) {
+        index -= 1;
+        const child = c.ts_node_named_child(node, index);
+        if (!c.ts_node_is_extra(child)) return child;
+    }
+    return null;
 }
 
 /// Named nodes that are not comments or other extras.

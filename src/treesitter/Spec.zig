@@ -20,6 +20,10 @@ quoted_key: []const []const u8 = &.{},
 /// Node types paths see through: the entries inside count as the enclosing table's, so
 /// `hl.config({ general = {...} })` holds `general`. Anything else is invisible.
 transparent: []const []const u8 = &.{},
+/// Node types standing for the value they end with (YAML's `block_node` around a mapping, or
+/// `flow_node` around a scalar): keys and values are read from that last named child, so tags
+/// and anchors before it are kept when the value is set.
+wrapper: []const []const u8 = &.{},
 /// Statements that assign values to keys (`M.blur.enabled = true`); null when the
 /// language has none.
 assign: ?Assign = null,
