@@ -17,8 +17,15 @@ foreground: Color,
 accent: Color,
 /// A second highlight beside the accent. Default: blue.
 secondary: Color,
+/// A third highlight beside the accent and secondary, such as Material's tertiary.
+/// Default: magenta.
+tertiary: Color,
 /// Links. Default: the accent.
 link: Color,
+/// Visited links. Default: purple.
+visited: Color,
+/// Neutral information, such as info diagnostics and notifications. Default: blue.
+info: Color,
 /// Successful actions and states. Default: green.
 success: Color,
 /// Warnings and caution. Default: yellow.
@@ -31,7 +38,7 @@ pub const Overrides = @import("Roles/Overrides.zig");
 
 /// A role by name, for lists that pick roles: `&.{ .accent, .secondary }` is a constant, so it
 /// stays valid wherever it is written.
-pub const Name = enum { background, foreground, accent, secondary, link, success, warning, @"error" };
+pub const Name = enum { background, foreground, accent, secondary, tertiary, link, visited, info, success, warning, @"error" };
 
 /// The color of the role `name`.
 pub fn get(roles: Roles, name: Name) Color {
@@ -55,7 +62,10 @@ pub fn from(palette: Palette.Resolved, mode: Mode, overrides: Overrides) Roles {
         },
         .accent = accent,
         .secondary = overrides.secondary orelse palette.blue,
+        .tertiary = overrides.tertiary orelse palette.magenta,
         .link = overrides.link orelse accent,
+        .visited = overrides.visited orelse palette.purple,
+        .info = overrides.info orelse palette.blue,
         .success = overrides.success orelse palette.green,
         .warning = overrides.warning orelse palette.yellow,
         .@"error" = overrides.@"error" orelse palette.red,

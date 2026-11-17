@@ -22,10 +22,11 @@ mode: ?Mode = null,
 /// With `mode` null, the average lightness above which the image gets a light theme.
 /// Default: 0.6.
 light_above: f64 = 0.6,
-/// How the accent and secondary roles are picked among the image's hues. Default: `.vivid`.
+/// How the accent, secondary and tertiary roles are picked among the image's hues.
+/// Default: `.vivid`.
 accent_by: AccentBy = .vivid,
-/// How far apart on the wheel the secondary role's hue is from the accent's, in degrees.
-/// Default: 60.
+/// How far apart on the wheel the secondary role's hue is from the accent's, and the tertiary's
+/// from both, in degrees. Default: 60.
 secondary_distance: f64 = 60,
 /// Black is the color this share of the image's pixels is darker than, so a few stray dark
 /// pixels do not decide it. Default: 0.01.
@@ -87,7 +88,7 @@ pub const Tone = enum {
     uniform,
 };
 
-/// How the image's hues score for the accent and secondary roles.
+/// How the image's hues score for the accent, secondary and tertiary roles.
 pub const AccentBy = enum {
     /// A hue's share of the pixels times its chroma, so a small bright area can beat a large
     /// dull one.

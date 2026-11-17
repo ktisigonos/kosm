@@ -10,8 +10,15 @@ foreground: ?Color = null,
 accent: ?Color = null,
 /// A second highlight beside the accent. null: blue.
 secondary: ?Color = null,
+/// A third highlight beside the accent and secondary, such as Material's tertiary.
+/// null: magenta.
+tertiary: ?Color = null,
 /// Links. null: the accent.
 link: ?Color = null,
+/// Visited links. null: purple.
+visited: ?Color = null,
+/// Neutral information, such as info diagnostics and notifications. null: blue.
+info: ?Color = null,
 /// Successful actions and states. null: green.
 success: ?Color = null,
 /// Warnings and caution. null: yellow.

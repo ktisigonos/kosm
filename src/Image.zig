@@ -23,7 +23,7 @@ pixels: []const Color = &.{},
 pub const Options = @import("Image/Options.zig");
 /// How colors are taken from the image: readable (the default), literal, vivid or muted.
 pub const Style = Options.Style;
-/// How the image's hues score for the accent and secondary roles.
+/// How the image's hues score for the accent, secondary and tertiary roles.
 pub const AccentBy = Options.AccentBy;
 /// What the hues the image lacks become: left to mixing, made up for the roles, or all made up.
 pub const Fill = Options.Fill;
@@ -49,21 +49,23 @@ pub fn palette(image: Image, options: Options) Error!Palette {
     return paletteFrom(analysis, options, modeOf(analysis, options));
 }
 
-/// What `Theme.from` takes: the image's palette, its mode, and the accent and secondary roles
-/// from its best-scoring hues (by `Options.accent_by`). Roles with no hue to take stay null,
-/// so they default from the palette.
+/// What `Theme.from` takes: the image's palette, its mode, and the accent, secondary and
+/// tertiary roles from its best-scoring hues (by `Options.accent_by`). Roles with no hue to take
+/// stay null, so they default from the palette.
 pub fn themeInput(image: Image, options: Options) Error!Theme.Input {
     const analysis = try image.analyse(options);
     const mode = modeOf(analysis, options);
     const result = paletteFrom(analysis, options, mode);
-    const accent = bestHue(analysis, options, null);
-    const secondary = if (accent) |position| bestHue(analysis, options, position) else null;
+    const accent = bestHue(analysis, options, &.{});
+    const secondary = if (accent) |first| bestHue(analysis, options, &.{first}) else null;
+    const tertiary = if (secondary) |second| bestHue(analysis, options, &.{ accent.?, second }) else null;
     return .{
         .palette = result,
         .mode = mode,
         .roles = .{
             .accent = if (accent) |position| hueOf(result, position) else null,
             .secondary = if (secondary) |position| hueOf(result, position) else null,
+            .tertiary = if (tertiary) |position| hueOf(result, position) else null,
         },
     };
 }
@@ -167,7 +169,7 @@ fn fallbackTone(analysis: Analysis, options: Options) MadeUpTone {
 fn tintedHue(analysis: Analysis, position: usize, options: Options) f64 {
     const reference = Analysis.referenceHues()[position];
     if (options.tint == 0) return reference;
-    const accent = analysis.hues[bestHue(analysis, options, null) orelse return reference].?;
+    const accent = analysis.hues[bestHue(analysis, options, &.{}) orelse return reference].?;
     var turn = Color.wrapHue(accent.hue - reference);
     if (turn > 180) turn -= 360;
     return Color.wrapHue(reference + turn * std.math.clamp(options.tint, 0, 1));
@@ -179,15 +181,15 @@ fn hueOf(result: Palette, position: usize) ?Color {
     };
 }
 
-/// The set hue scoring best, at least `Options.secondary_distance` away from `away_from` on
-/// the wheel; null when none is.
-fn bestHue(analysis: Analysis, options: Options, away_from: ?usize) ?usize {
+/// The set hue scoring best, at least `Options.secondary_distance` away from each of
+/// `away_from` on the wheel; null when none is.
+fn bestHue(analysis: Analysis, options: Options, away_from: []const usize) ?usize {
     var best: ?usize = null;
     var best_score: f64 = 0;
-    for (analysis.hues, analysis.shares, 0..) |hue, share, position| {
+    candidates: for (analysis.hues, analysis.shares, 0..) |hue, share, position| {
         const color = hue orelse continue;
-        if (away_from) |other| {
-            if (Analysis.hueDistance(wheelDegrees(position), wheelDegrees(other)) < options.secondary_distance) continue;
+        for (away_from) |other| {
+            if (Analysis.hueDistance(wheelDegrees(position), wheelDegrees(other)) < options.secondary_distance) continue :candidates;
         }
         const score = switch (options.accent_by) {
             .vivid => share * color.chroma,
@@ -392,6 +394,19 @@ test "the secondary role keeps its distance from the accent" {
     try testing.expectEqual(null, input.roles.secondary);
     const near = try image.themeInput(.{ .style = .literal, .secondary_distance = 30 });
     try testing.expectApproxEqAbs(Analysis.referenceHues()[9], near.roles.secondary.?.hue, 1e-9);
+}
+
+test "the tertiary role keeps its distance from both the accent and the secondary" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..30]) |*pixel| pixel.* = wheelPixel(0, 0.5, 0.15);
+    for (pixels[30..50]) |*pixel| pixel.* = wheelPixel(4, 0.5, 0.15);
+    for (pixels[50..65]) |*pixel| pixel.* = wheelPixel(5, 0.5, 0.15);
+    for (pixels[65..75]) |*pixel| pixel.* = wheelPixel(8, 0.5, 0.15);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const input = try image.themeInput(.{ .style = .literal });
+    try testing.expectApproxEqAbs(Analysis.referenceHues()[0], input.roles.accent.?.hue, 1e-9);
+    try testing.expectApproxEqAbs(Analysis.referenceHues()[4], input.roles.secondary.?.hue, 1e-9);
+    try testing.expectApproxEqAbs(Analysis.referenceHues()[8], input.roles.tertiary.?.hue, 1e-9);
 }
 
 test "an image with no hues leaves the accent to the palette" {

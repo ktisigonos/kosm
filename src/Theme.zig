@@ -155,7 +155,10 @@ test "roles default from the palette and the mode flips background and foregroun
     try testing.expectEqual(dark.palette.white, dark.roles.foreground);
     try testing.expectEqual(dark.palette.cyan, dark.roles.accent);
     try testing.expectEqual(dark.palette.blue, dark.roles.secondary);
+    try testing.expectEqual(dark.palette.magenta, dark.roles.tertiary);
     try testing.expectEqual(dark.palette.cyan, dark.roles.link);
+    try testing.expectEqual(dark.palette.purple, dark.roles.visited);
+    try testing.expectEqual(dark.palette.blue, dark.roles.info);
     try testing.expectEqual(dark.palette.green, dark.roles.success);
     try testing.expectEqual(dark.palette.yellow, dark.roles.warning);
     try testing.expectEqual(dark.palette.red, dark.roles.@"error");
