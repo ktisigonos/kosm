@@ -84,7 +84,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the human has agreed on the plan, and `kosm install` installs Darkly on the human's machine the chosen way.
 
 - **13s. Cursors generated from the palette** (waits on the human)
-  - Do: done: `kosm_cursor` `d45865a` (Bibata's SVGs recolored, drawn by resvg into XCursor files and zipped as hyprcursor SVGs into `~/.local/share/icons/kosm_cursor`; `rest` takes a `kosm_icons.Recolor` for the spinner), `kosm_icons` `c7efd52` (pushed; exports `svg`), `kosm_base` `8ab51c6` (pushed; the `cursor` app, whose theme GTK and Hyprland pick when the look sets no cursor name). Left for the human: create the `kosm_cursor` repository and push it; in the config pin `kosm_base` `8ab51c6`, `kosm_icons` `c7efd52` and `kosm_cursor`, add it to `packages.zon`, and set Krystallos' `cursor.name` to null; then apply.
+  - Do: done: `kosm_cursor` `d45865a` (pushed; Bibata's SVGs recolored, drawn by resvg into XCursor files and zipped as hyprcursor SVGs into `~/.local/share/icons/kosm_cursor`; `rest` takes a `kosm_icons.Recolor` for the spinner), `kosm_icons` `c7efd52` (pushed; exports `svg`), `kosm_base` `8ab51c6` (pushed; the `cursor` app, whose theme GTK and Hyprland pick when the look sets no cursor name). The config pins them all, and Krystallos and OG Steam leave `cursor.name` null. Left for the human: apply, then check the cursor.
   - Done when: the human has seen the generated cursor in GTK, Qt and Hyprland, in the kosmos' colors.
 
 
