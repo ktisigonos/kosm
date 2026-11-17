@@ -37,20 +37,65 @@ pub fn fill(comptime Params: type, params_value: *Params, context: Context) Erro
     inline for (fields.field_names, fields.field_types) |name, Field| {
         if (comptime !params.isImage(Field)) continue;
         if (Field == kosm.Image) {
-            const image = &@field(params_value, name);
-            image.pixels = try load(context, name, image.path);
+            try load(context, name, &@field(params_value, name));
         } else if (@field(params_value, name)) |*image| {
-            image.pixels = try load(context, name, image.path);
+            try load(context, name, image);
         }
     }
 }
 
-fn load(context: Context, comptime name: []const u8, path: []const u8) Error![]const kosm.Color {
-    const full_path = try resolve(context, name, path);
-    const stat = std.Io.Dir.cwd().statFile(context.io, full_path, .{}) catch |err|
-        return fail(context, name, path, "cannot read the image: {s}", .{@errorName(err)});
-    if (stat.kind != .file) return fail(context, name, path, "the image is not a file", .{});
+/// Loads `image`'s pixels. A folder is first replaced by a random picture in it.
+fn load(context: Context, comptime name: []const u8, image: *kosm.Image) Error!void {
+    var full_path = try resolve(context, name, image.path);
+    var stat = std.Io.Dir.cwd().statFile(context.io, full_path, .{}) catch |err|
+        return fail(context, name, image.path, "cannot read the image: {s}", .{@errorName(err)});
+    if (stat.kind == .directory) {
+        const picked = try pickPicture(context, name, image.path, full_path);
+        image.path = try std.Io.Dir.path.join(context.arena, &.{ image.path, picked });
+        full_path = try std.Io.Dir.path.join(context.arena, &.{ full_path, picked });
+        stat = std.Io.Dir.cwd().statFile(context.io, full_path, .{}) catch |err|
+            return fail(context, name, image.path, "cannot read the image: {s}", .{@errorName(err)});
+    }
+    if (stat.kind != .file) return fail(context, name, image.path, "the image is neither a file nor a folder", .{});
+    image.pixels = try loadFile(context, name, image.path, full_path, stat);
+}
 
+/// File extensions of the pictures a folder is picked from, lowercase.
+const picture_extensions = [_][]const u8{ ".jxl", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif", ".bmp", ".tif", ".tiff", ".ppm" };
+
+/// A random picture in the folder `full_path` or its subfolders, as a path inside it.
+fn pickPicture(context: Context, comptime name: []const u8, path: []const u8, full_path: []const u8) Error![]const u8 {
+    var folder = std.Io.Dir.cwd().openDir(context.io, full_path, .{ .iterate = true }) catch |err|
+        return fail(context, name, path, "cannot open the folder: {s}", .{@errorName(err)});
+    defer folder.close(context.io);
+    var walker = try folder.walk(context.arena);
+    defer walker.deinit();
+    var pictures: std.ArrayList([]const u8) = .empty;
+    while (walker.next(context.io) catch |err| return fail(context, name, path, "cannot read the folder: {s}", .{@errorName(err)})) |entry| {
+        if (entry.kind != .file or !isPicture(entry.basename)) continue;
+        try pictures.append(context.arena, try context.arena.dupe(u8, entry.path));
+    }
+    if (pictures.items.len == 0) return fail(context, name, path, "the folder holds no pictures ({s})", .{comptime extensionList()});
+    var bytes: [8]u8 = undefined;
+    context.io.random(&bytes);
+    return pictures.items[std.mem.readInt(u64, &bytes, .little) % pictures.items.len];
+}
+
+fn isPicture(basename: []const u8) bool {
+    const extension = std.Io.Dir.path.extension(basename);
+    for (picture_extensions) |picture_extension| {
+        if (std.ascii.eqlIgnoreCase(extension, picture_extension)) return true;
+    }
+    return false;
+}
+
+fn extensionList() []const u8 {
+    var list: []const u8 = "";
+    for (picture_extensions, 0..) |extension, index| list = list ++ (if (index == 0) "" else ", ") ++ extension;
+    return list;
+}
+
+fn loadFile(context: Context, comptime name: []const u8, path: []const u8, full_path: []const u8, stat: std.Io.File.Stat) Error![]const kosm.Color {
     const cache_path = if (context.cache) |folder| try cachePath(context.arena, folder, full_path, stat) else null;
     if (cache_path) |cached| {
         // The cache is only a shortcut: a missing or unreadable entry is decoded again.
@@ -284,4 +329,29 @@ test "a missing image, a relative path and an image ImageMagick cannot read name
     var broken: Params = .{ .wallpaper = .{ .path = "~/broken.png" } };
     try testing.expectError(error.Reported, fill(Params, &broken, fixture.context(null)));
     try testing.expect(std.mem.startsWith(u8, fixture.diagnostics.message(), "Params.wallpaper: ImageMagick cannot decode the image: "));
+}
+
+test "a folder gives a random picture in it or its subfolders, whose path the image then holds" {
+    if (!hasMagick()) return error.SkipZigTest;
+    var fixture: Fixture = try .init();
+    defer fixture.deinit();
+    try fixture.tmp.dir.createDirPath(testing.io, "pictures/nested");
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "pictures/nested/red.ppm", .data = "P6 1 1 255 \xff\x00\x00" });
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "pictures/notes.txt", .data = "not a picture" });
+    const Params = struct { wallpaper: kosm.Image = .{ .path = "~/pictures" } };
+    var params_value: Params = .{};
+    try fill(Params, &params_value, fixture.context(null));
+    try testing.expectEqualStrings("~/pictures/nested/red.ppm", params_value.wallpaper.path);
+    try testing.expectEqualStrings("#ff0000", params_value.wallpaper.pixels[0].hex().slice());
+}
+
+test "a folder without pictures is an error naming the extensions" {
+    var fixture: Fixture = try .init();
+    defer fixture.deinit();
+    try fixture.tmp.dir.createDirPath(testing.io, "empty");
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "empty/notes.txt", .data = "not a picture" });
+    const Params = struct { wallpaper: kosm.Image = .{ .path = "~/empty" } };
+    var params_value: Params = .{};
+    try testing.expectError(error.Reported, fill(Params, &params_value, fixture.context(null)));
+    try testing.expect(std.mem.startsWith(u8, fixture.diagnostics.message(), "Params.wallpaper: the folder holds no pictures (.jxl, .png"));
 }
