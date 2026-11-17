@@ -48,9 +48,28 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Done when: the human's Neovim shows kosm's colors without nvim-base16.
 
 
-- **18g. A kosmos from an image** `ASK` `PLAN FIRST`
-  - Do: like pywal: `kosm new kosmos <name>` takes an image and writes the usual kosmos scaffold with a palette taken from it (black and white from its darkest and lightest colors, each hue from the image's colors nearest it on the wheel, hues it lacks left out to be mixed), and the image as the wallpaper. Decoding PNG, JPEG and JPEG XL needs libraries: propose them (or which formats to write ourselves) and the command's flags first.
-  - Done when: the human has approved the decoders, and a kosmos made from one of their wallpapers builds and applies with colors that match the image.
+- **18g. Palettes from an image: the math** `PLAN FIRST`
+  - Do: `kosm.Image` in core: a path plus a summary of the image's pixels in OKLCH (filled by kosm, step 18k), and plain functions `palette(options)` and `theme(options)` on it, no file IO. Black and white from the 1st and 99th lightness percentile; each wheel hue gets the image's pixels whose OKLCH hue is nearest its reference hue (that of the fully saturated sRGB color at its wheel position, so red is `#ff0000`'s hue), pixels below a chroma threshold ignored; a hue holding under a minimum share of pixels is left out, to be mixed; a set hue is the most common color among its pixels (biggest bin of a coarse OKLab histogram), not their average.
+  - Do: a style: `.readable` (default: hues keep hue and chroma, lightness moves until a minimum contrast ratio against the background, black and white pushed apart if too close), `.literal` (the image's colors exactly), `.vivid` and `.muted` (readable with chroma raised or lowered). Roles: the accent is the best-scoring hue and the secondary the best one at least 60 deg away; how hues score is an option (`.vivid`: share * chroma, the default, so a small bright campfire beats a large dull forest; `.dominant`: share alone). Thresholds, contrast and amounts are option fields with defaults, each with a `///` comment. Maybe: a `.auto` mode, dark or light from the image's average lightness.
+  - Do: test on synthetic pixels: hue binning across 0/360 deg, gray pixels ignored, sparse hues left out, most common color beating the average, both accent scorings, contrast lifting, literal staying exact.
+  - Done when: the human has agreed on the API, and the tests pass.
+
+- **18k. Kosm loads the images a kosmos takes**
+  - Do: the runner fills each `kosm.Image` field of a kosmos' `Params` before calling it, from its default path or `--<field> <path>`: `magick <image> -sample '256x256>' -colorspace sRGB -depth 8 ppm:-` (ImageMagick is approved, run time only), its PPM read by kosm. The summary is cached in the config's cache keyed by path, size and modification time, so only the first apply of an image pays for decoding (measured uncached: 0.3 s for an 8000x5339 JPEG XL with `-sample`, 0.64 s with `-resize`). A missing image, unreadable output or missing `magick` fails naming the kosmos, the parameter and the file.
+  - Do: test PPM parsing (bad header, maxval 255 and 65535, output cut short), the cache's invalidation, and `Params` with an image.
+  - Done when: a kosmos taking `wallpaper: kosm.Image` diffs with colors from one of the human's wallpapers, and `--wallpaper <other>` changes them; a second run is not measurably slower than one without an image.
+
+- **18l. Image commands** (optional)
+  - Do: `kosm palette <image> [style options]` prints the palette (and roles) as Zig source to paste into a kosmos, for a palette frozen from an image. `kosm new kosmos <name> --image <path>` scaffolds a kosmos on `kosm_base` taking the image as its `Params` default, with its palette and hyprpaper's wallpaper from it; it fails if the config lacks `kosm_base`.
+  - Done when: both commands work on one of the human's wallpapers and the scaffold builds.
+
+- **18m. Re-apply the current kosmos with other arguments** `ASK`
+  - Do: propose how to re-apply the kosmos `kosm current` records with changed arguments (`kosm apply --current --wallpaper <path>`), merging with or replacing the recorded ones.
+  - Done when: the human has agreed on the form and it works.
+
+- **18n. A palette generator** `ASK`
+  - Do: the human wants a palette generator besides images; ask what it generates from (a seed color, a few hues, a scheme like Material's) and propose its API beside `kosm.Image`'s.
+  - Done when: the human has agreed on it and it builds a palette.
 
 
 - **13a. Kosm's packages in their own repositories**

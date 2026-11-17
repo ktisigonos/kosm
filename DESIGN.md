@@ -56,6 +56,7 @@ there is undecided, so ask.
 - **Background alpha:** one alpha every app gives its own background, so a single value makes terminals, browser and editors translucent together.
 - **Name:** the name programs show for the kosmos, falling back to the name kosm applies it under. One switch names the files a program picks by name: `kosm` for every kosmos, or after the kosmos so each keeps its own. Files a program includes by path are always `kosm`.
 - **Built in levels:** a theme is built from its input (palette, mode, and the roles and code colors the kosmos sets), in order: palette, roles, code colors. A level's defaults come from the levels before it, and updating a level after changing the input redoes it and every level after it.
+- **From an image:** a kosmos may take its palette and roles from an image named in its `Params`. Kosm loads the image (and caches what it read), so the kosmos only computes from it in plain code; a style says how colors are taken, readable against the background by default or exactly as in the image.
 - **Variations:** named color transforms in families (lightness, emphasis, state, surface, line, contrast, alpha), tweaked once on the theme for every app.
 - Colors are OKLCH in f64. Modifiers also work in HSV, HSL, RGB and CMYK. A color outside sRGB is clipped when printed; `kosm colors` marks the palette colors that are.
 
@@ -99,6 +100,5 @@ there is undecided, so ask.
 - Checking package versions against the user's kosm.
 - `**`, predicates or regex in paths.
 - `.with` / `.override` patch APIs.
-- Wallpaper -> palette generation (could be a package later).
 - Any custom configuration language.
 - LSP integration.
