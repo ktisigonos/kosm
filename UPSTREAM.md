@@ -18,3 +18,7 @@ Bugs found in dependencies, to report to their projects. Group them under `## <p
 ## commet (commetchat/commet)
 
 - [ ] A custom theme keeps the base theme's colors wherever Flutter derives them from the color scheme: `ThemeJsonConverter.fromJson` (`tiamat/lib/config/style/theme_json_converter.dart`) returns `defaultTheme.copyWith(colorScheme: ...)`, which swaps the scheme but leaves what `ThemeBase.theme(scheme)` computed from the old one: `canvasColor`, `iconTheme`, `dividerTheme`, `dividerColor`, the slider's track and the bottom sheet's background. With `"base": "dark"` and `"surface": "#ff041c26"`, space icons whose image has transparent corners still show Dark's `#2b2e31` behind them (an `ImageButton` with no `backgroundColor` paints `canvasColor`), at commit `5a87e83`. Fix: build the theme with `ThemeBase.theme(colorScheme)` and then apply the extensions. Workaround: none; a theme file cannot set these.
+
+## dunst (dunst-project/dunst)
+
+- [ ] `monitor = "DP-1"` logs `WARNING: 'DP-1': No digits found.` although naming a monitor is documented and works: `string_parse_maybe_int` (`src/option_parser.c`) tries the value as a number through `safe_string_to_int`, which warns, before keeping it as a name (v1.13.2). Workaround: none; the README says the warning is harmless.
