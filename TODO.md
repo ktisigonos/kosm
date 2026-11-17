@@ -28,6 +28,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 - **18e. Neovim highlight groups from kosm**
   - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
+  - Do: info diagnostics take the info role; diff and git-sign groups (`DiffAdd`, `DiffChange`, `DiffDelete`, `Added`, `Changed`, `Removed`) take the theme's diff colors.
   - Done when: the human's Neovim shows kosm's colors without nvim-base16.
 
 
