@@ -5,6 +5,11 @@ const Mode = @import("../Theme.zig").Mode;
 
 /// How colors are taken from the image. Default: `.readable`.
 style: Style = .readable,
+/// What the hues the image lacks become. Default: `.semantic`.
+fill: Fill = .semantic,
+/// With a fill making hues up and an image with no hues at all, the chroma they get; their
+/// lightness is halfway between black's and white's. Default: 0.12.
+fallback_chroma: f64 = 0.12,
 /// Dark or light. null: light when the image's average lightness is above `light_above`,
 /// else dark.
 mode: ?Mode = null,
@@ -49,6 +54,21 @@ pub const Style = enum {
     vivid,
     /// Readable, with the hues' chroma lowered by `muted_chroma`.
     muted,
+};
+
+/// What the hues the image lacks become. A made-up hue is the wheel position's reference hue
+/// (that of the saturated sRGB color there) at the lightness and chroma of the image's hues
+/// beside it, mixed by wheel position, so it fits them; the style then applies to it too.
+pub const Fill = enum {
+    /// Only the image's own hues are set; the rest are left to `Palette.resolve`, which mixes
+    /// them from their neighbours, so a blue image gets a bluish red.
+    extracted,
+    /// The image's own hues, plus red, yellow and green made up when the image lacks them, so
+    /// the error, warning and success roles they default to stay recognizable; the rest are
+    /// left to mixing.
+    semantic,
+    /// Every hue the image lacks is made up.
+    complete,
 };
 
 /// How the image's hues score for the accent and secondary roles.

@@ -23,19 +23,23 @@ pub const Options = @import("Image/Options.zig");
 pub const Style = Options.Style;
 /// How the image's hues score for the accent and secondary roles.
 pub const AccentBy = Options.AccentBy;
+/// What the hues the image lacks become: left to mixing, made up for the roles, or all made up.
+pub const Fill = Options.Fill;
 
 pub const Error = error{
     /// The image has no pixels: kosm loads only the images a kosmos names in its `Params`.
     ImageNotLoaded,
 };
 
+const hue_count = @typeInfo(Palette.Hue).@"enum".field_names.len;
+
 /// Steps of the searches for a lightness or chroma; each halves the error, so 32 is far
 /// below what a printed color shows.
 const search_steps = 32;
 
 /// The image's palette: black and white from its darkest and lightest colors, and each wheel
-/// hue from the image's most common color near it. Hues the image barely has are left out, to
-/// be mixed from their neighbours.
+/// hue from the image's most common color near it. The hues the image barely has follow
+/// `Options.fill`.
 pub fn palette(image: Image, options: Options) Error!Palette {
     const analysis = try image.analyse(options);
     return paletteFrom(analysis, options, modeOf(analysis, options));
@@ -73,12 +77,56 @@ fn paletteFrom(analysis: Analysis, options: Options, mode: Theme.Mode) Palette {
     var black = analysis.black;
     var white = analysis.white;
     if (options.style != .literal) moveApart(&black, &white, options.foreground_contrast);
+    const hues = filled(analysis, options);
     var result: Palette = .{ .black = black, .white = white };
     const background = if (mode == .dark) black else white;
     inline for (@typeInfo(Palette.Hue).@"enum".field_names, 0..) |name, position| {
-        if (analysis.hues[position]) |color| @field(result, name) = styled(color, background, options);
+        if (hues[position]) |color| @field(result, name) = styled(color, background, options);
     }
     return result;
+}
+
+/// The hues the role defaults read, which `.semantic` makes up when the image lacks them.
+const semantic_hues = [_]Palette.Hue{ .red, .yellow, .green };
+
+/// The image's hues, plus those `Options.fill` makes up.
+fn filled(analysis: Analysis, options: Options) [hue_count]?Color {
+    var hues = analysis.hues;
+    switch (options.fill) {
+        .extracted => {},
+        .semantic => for (semantic_hues) |hue| {
+            const position = @backingInt(hue);
+            if (hues[position] == null) hues[position] = madeUp(analysis, position, options);
+        },
+        .complete => for (&hues, 0..) |*hue, position| {
+            if (hue.* == null) hue.* = madeUp(analysis, position, options);
+        },
+    }
+    return hues;
+}
+
+/// The reference hue at `position`, at the lightness and chroma of the nearest image hues on
+/// either side, mixed by wheel position; with none, at `Options.fallback_chroma` halfway
+/// between black and white.
+fn madeUp(analysis: Analysis, position: usize, options: Options) Color {
+    const hue = Analysis.referenceHues()[position];
+    for (1..hue_count) |previous_distance| {
+        const previous = analysis.hues[(position + hue_count - previous_distance) % hue_count] orelse continue;
+        for (1..hue_count) |next_distance| {
+            const next = analysis.hues[(position + next_distance) % hue_count] orelse continue;
+            const amount = @as(f64, @floatFromInt(previous_distance)) / @as(f64, @floatFromInt(previous_distance + next_distance));
+            return withinGamut(.{
+                .lightness = std.math.lerp(previous.lightness, next.lightness, amount),
+                .chroma = std.math.lerp(previous.chroma, next.chroma, amount),
+                .hue = hue,
+            });
+        }
+    }
+    return withinGamut(.{
+        .lightness = std.math.lerp(analysis.black.lightness, analysis.white.lightness, 0.5),
+        .chroma = options.fallback_chroma,
+        .hue = hue,
+    });
 }
 
 fn hueOf(result: Palette, position: usize) ?Color {
@@ -206,7 +254,7 @@ test "literal takes the image's colors exactly" {
     for (pixels[50..]) |*pixel| pixel.* = gray(0.25);
     for (pixels[0..10]) |*pixel| pixel.* = wheelPixel(8, 0.2, 0.08);
     const image: Image = .{ .path = "/a.png", .pixels = &pixels };
-    const result = try image.palette(.{ .style = .literal, .mode = .dark });
+    const result = try image.palette(.{ .style = .literal, .fill = .extracted, .mode = .dark });
     try testing.expectApproxEqAbs(0.1, result.black.lightness, 1e-9);
     try testing.expectApproxEqAbs(0.25, result.white.lightness, 1e-9);
     try testing.expectApproxEqAbs(0.2, result.blue.?.lightness, 1e-9);
@@ -308,6 +356,65 @@ test "an image with no hues leaves the accent to the palette" {
     const input = try image.themeInput(.{});
     try testing.expectEqual(null, input.roles.accent);
     _ = Theme.from(input);
+}
+
+test "extracted leaves the hues the image lacks to mixing" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(8, 0.6, 0.1);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const result = try image.palette(.{ .style = .literal, .fill = .extracted });
+    try testing.expectEqual(null, result.red);
+    try testing.expectEqual(null, result.green);
+}
+
+test "semantic makes up only red, yellow and green, at the image's lightness and chroma" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(8, 0.6, 0.1);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const result = try image.palette(.{ .style = .literal });
+    const references = Analysis.referenceHues();
+    for ([_]?Color{ result.red, result.yellow, result.green }, [_]usize{ 0, 2, 4 }) |hue, position| {
+        try testing.expectApproxEqAbs(0.6, hue.?.lightness, 1e-9);
+        try testing.expectApproxEqAbs(0.1, hue.?.chroma, 1e-9);
+        try testing.expectApproxEqAbs(references[position], hue.?.hue, 1e-9);
+    }
+    try testing.expectEqual(null, result.orange);
+    try testing.expectEqual(null, result.purple);
+}
+
+test "complete makes up every hue from its neighbours by wheel position" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(4, 0.5, 0.1);
+    for (pixels[20..40]) |*pixel| pixel.* = wheelPixel(8, 0.7, 0.06);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const result = try image.palette(.{ .style = .literal, .fill = .complete });
+    const cyan = result.cyan.?;
+    try testing.expectApproxEqAbs(0.6, cyan.lightness, 1e-9);
+    try testing.expectApproxEqAbs(0.08, cyan.chroma, 1e-9);
+    try testing.expectApproxEqAbs(Analysis.referenceHues()[6], cyan.hue, 1e-9);
+    inline for (@typeInfo(Palette.Hue).@"enum".field_names) |name| {
+        try testing.expect(!@field(result, name).?.clips(.hex));
+    }
+}
+
+test "made-up hues of a gray image take the fallback chroma, and are made readable" {
+    var pixels: [100]Color = @splat(gray(0.1));
+    for (pixels[50..]) |*pixel| pixel.* = gray(0.9);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const literal = try image.palette(.{ .style = .literal, .fill = .complete });
+    try testing.expectApproxEqAbs(0.5, literal.blue.?.lightness, 1e-9);
+    try testing.expectApproxEqAbs(0.12, literal.blue.?.chroma, 1e-9);
+    const readable_palette = try image.palette(.{ .fill = .complete, .mode = .dark });
+    try testing.expect(readable_palette.blue.?.contrastRatio(readable_palette.black) >= 4.5);
+}
+
+test "made-up hues are never picked as the accent" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(8, 0.6, 0.05);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const input = try image.themeInput(.{ .style = .literal, .fill = .complete });
+    try testing.expectApproxEqAbs(Analysis.referenceHues()[8], input.roles.accent.?.hue, 1e-9);
+    try testing.expectEqual(null, input.roles.secondary);
 }
 
 test {
