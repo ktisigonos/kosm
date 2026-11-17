@@ -29,6 +29,8 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **18e. Neovim highlight groups from kosm**
   - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
   - Do: info diagnostics take the info role; diff and git-sign groups (`DiffAdd`, `DiffChange`, `DiffDelete`, `Added`, `Changed`, `Removed`) take the theme's diff colors.
+  - Done: `kosm_nvim` `6ebf23f` writes `background`, `highlights` (groups by Neovim's name, fields in snake case, a translucent `bg` as `NONE`, plugin groups through `groups`) and `terminal`; base16 is gone. Pinned in `kosm_base` `710c699`, both pushed.
+  - Left for the human: re-pin `kosm_base` in the config; replace `app.base16.base0F` in `kosmoi/krystallos/nvim.zig` and `kosmoi/og_steam/nvim.zig`; rewrite `colors.lua` to set `theme.highlights` with `nvim_set_hl` and read `theme.terminal` in `get`, dropping nvim-base16, `transparent_groups` and `overrides()`.
   - Done when: the human's Neovim shows kosm's colors without nvim-base16.
 
 
