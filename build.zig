@@ -34,6 +34,7 @@ const official_packages = [_][]const u8{
     "kosm_hyprland",
     "kosm_hyprlang",
     "kosm_hyprmouse",
+    "kosm_hyprpaper",
     "kosm_hyprtoolkit",
     "kosm_icons",
     "kosm_ini",
@@ -49,7 +50,9 @@ const official_packages = [_][]const u8{
     "kosm_tuios",
     "kosm_userjs",
     "kosm_vicinae",
+    "kosm_wlr_which_key",
     "kosm_xml",
+    "kosm_yaml",
     "kosm_zen",
 };
 
