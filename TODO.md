@@ -8,10 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **18d. wlr-which-key colors and font** (waits on the human)
-  - Do: done: `kosm_yaml` `b13014a` (the `yaml` adapter, on kosm `deb5cf9`, whose tree-sitter specs see through wrapper nodes), `kosm_wlr_which_key` `61ca8e6` (`font`, `background`, `color`, `border`, `border_width`, `corner_r` set in `~/.config/wlr-which-key/config.yaml`), `kosm_base` `497deef` (pushed; the look's fonts as one Pango font, `border_size` and `rounding`); the config pins them all, and every repository is pushed. Left for the human: apply.
-  - Done when: an apply sets wlr-which-key's colors and font.
-
 - **18i. Every Vicinae setting**
   - Do: `kosm_vicinae` covers only the theme, font, icon theme and the launcher window's opacity, rounding, material, border width and shadow; give it every setting of `vicinae config default` (the rest of `launcher_window`: size, compact mode, layer shell, clock; shortcuts, favorites, providers and so on) as fields with Vicinae's names, written into `kosm.json`, and add each to the keys `settings.json` is warned about overriding.
   - Done when: every option of `vicinae config default` has a field, and the README's field list matches.
@@ -63,9 +59,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 
 - **13a. Kosm's packages in their own repositories**
-  - Do: the code is done and each package is a repository beside kosm (`~/Projects/Zig/ktisigonos/kosm_<name>`), pinning kosm and its adapter packages by url. What is left is the human's: create a repository per package on the forge and push kosm and each package (`REVIEW.md` has the commands), `kosm_glsl` included.
-  - Do: `kosm_commet`, `kosm_base` and `kosm_zen` are pushed; when the human asks, re-pin them in the config by url instead of the local commits it pins (`kosm_commet` `168a4c9`, `kosm_base` `cc996b1`, `kosm_zen` `c3c8383`).
-  - Do: maybe: test whether a fully transparent `foundation` image with `glass` makes Commet's panels translucent (translucent panel colors are drawn over black).
+  - Do: every package is a pushed repository beside kosm, and the config pins each by url.
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
   - Done when: `zig build test -Dnetwork` passes: a config `kosm init` makes from the real repositories diffs the starting kosmos for kitty, ghostty, Hyprland, Zen and nvim.
 
