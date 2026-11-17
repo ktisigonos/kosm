@@ -52,6 +52,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`Union.tag` is the tag enum, not a union value:** `FontStyle.disabled` passed to an `anytype` parameter has the type `@typeInfo(FontStyle).@"union".tag_type`, so code checking for the union never sees it. Coerce first: `@as(FontStyle, .disabled)` (a typed field does this for you).
 - **`x catch @compileError(...)` in a comptime-only helper still fails:** unless the call is forced to comptime, the error branch is analyzed and fires for valid input. Write `comptime (f(x) catch @compileError(...))`.
 - **A `switch` expression statement cannot take `catch` directly:** `switch (s) { ... } catch return e;` is "expected statement, found 'catch'"; bind it first: `const printed = switch (s) { ... }; printed catch return e;`.
+- **`@frameAddress` may be unavailable in release builds:** to tell where a callee's (dead) stack lies, take `@intFromPtr(&local)` of a variable in the caller and make the callee `noinline`, so its frames always sit below that address (the stack grows down on every target kosm runs on).
 - **`{t}` prints an enum's tag name:** `writer.print("{t}", .{direction})` writes `up`, no `@tagName` needed.
 - **`type` is a plain field name, `error` is not:** `zig fmt` turns `@"type": Color` and `.@"type"` into `type: Color` and `.type`, but `error` still needs `@"error"`.
 
