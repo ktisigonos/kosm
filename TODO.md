@@ -12,6 +12,14 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: done: `kosm_yaml` `b13014a` (the `yaml` adapter, on kosm `deb5cf9`, whose tree-sitter specs see through wrapper nodes), `kosm_wlr_which_key` `61ca8e6` (`font`, `background`, `color`, `border`, `border_width`, `corner_r` set in `~/.config/wlr-which-key/config.yaml`), `kosm_base` `497deef` (pushed; the look's fonts as one Pango font, `border_size` and `rounding`); the config pins them all. Left for the human: create the `kosm_yaml` and `kosm_wlr_which_key` repositories on the forge and push them, push kosm, then apply.
   - Done when: an apply sets wlr-which-key's colors and font.
 
+- **18i. Every Vicinae setting**
+  - Do: `kosm_vicinae` covers only the theme, font, icon theme and the launcher window's opacity, rounding, material, border width and shadow; give it every setting of `vicinae config default` (the rest of `launcher_window`: size, compact mode, layer shell, clock; shortcuts, favorites, providers and so on) as fields with Vicinae's names, written into `kosm.json`, and add each to the keys `settings.json` is warned about overriding.
+  - Done when: every option of `vicinae config default` has a field, and the README's field list matches.
+
+- **18j. Every dunst setting**
+  - Do: `kosm_dunst` covers only the font, separator, frame width, corner radius and urgency colors, the rest going through `extra`; give it every option of dunst's `dunstrc` (`man 5 dunst`: geometry, timeouts, icons, rules and so on) as fields with dunst's names.
+  - Done when: every documented `[global]` and urgency option has a field, and the README's field list matches.
+
 - **13z. A tertiary role** `ASK`
   - Do: apps wanting a third highlight (Commet's Material `tertiary`) take a fixed role, hardcoded in `kosm_commet`'s `from` (the warning role, as Commet's own Dark uses yellow); propose a theme-wide setting for it instead (a role beside `secondary`, or something else) and use it in every app that has such a color.
   - Done when: the human has agreed on the setting and `kosm_commet` reads it.
