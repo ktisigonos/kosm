@@ -21,6 +21,7 @@ const official_packages = [_][]const u8{
     "kosm_counter_strike",
     "kosm_counter_strike_2",
     "kosm_css",
+    "kosm_cursor",
     "kosm_dunst",
     "kosm_equibop",
     "kosm_fastfetch",

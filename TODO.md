@@ -69,6 +69,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **13p. Drop qt6ct and qt5ct** `ASK`
   - Do: nwg-look is replaced (`kosm_gtk` writes GTK's settings files and sets gsettings) and Kvantum is not installed. Left: the human uninstalls nwg-look and deletes `~/.config/Kvantum`; then decide qt6ct/qt5ct: `QT_QPA_PLATFORMTHEME=kde` (plasma-integration, installed) reads colors, fonts, icons, style and single-click from kdeglobals, which `kosm_kde` would gain fields for; the tooltip qss is lost, and Qt 5 apps need `plasma5-integration` or keep qt5ct.
   - Do: Krystallos' Hyprland app sets the `GTK_THEME` environment variable (or leaves it unset) instead of the hand-written `defs.lua`.
+  - Do: `kosm_kde` gains the cursor theme and size (`kcminputrc` `[Mouse] cursorTheme`, `cursorSize`), set from the shared cursor values like GTK's.
   - Do: the human's Flatpak overrides (`flatpak override --user --show`, and the system-wide one) still set `QT_QPA_PLATFORMTHEME=qt6ct`, `QT_STYLE_OVERRIDE=breeze` and Kvantum access; settle them with qt6ct/qt5ct.
   - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
 
@@ -82,8 +83,8 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: `kosm install` (short `kosm i`) installs what an app needs to look as configured (styles, themes such as Darkly or adw-gtk3), never the programs themselves; it is optional, and users may install these by hand instead. Each app declares its needs, with a package name per distro (Arch first, Fedora later). A need in the distro's official repositories is installed with its package manager, showing the exact command and running it only once the user confirms; kosm never updates it, the package manager does. Otherwise kosm installs it per user (under `~/.local`, no root) from source pinned by commit and content hash, showing the install script before it runs; `kosm update` shows the new commits and the diff of the build and install files, and moves the pin only once the user accepts. Propose how apps declare needs, the per-distro names, the source build and where files go first.
   - Done when: the human has agreed on the plan, and `kosm install` installs Darkly on the human's machine the chosen way.
 
-- **13s. Cursors generated from the palette** `ASK` `PLAN FIRST`
-  - Do: an app (`kosm_cursor`) that builds a cursor theme (XCursor, and hyprcursor) in the theme's colors. Default: Bibata Modern Ice's SVG sources recolored (fill, outline, shadow from the palette). Later maybe a cursor of kosm's own. Make it easy for users to rice their own cursors: their own SVGs, colors and size as plain fields. Propose how SVGs become cursors (rendering and the XCursor/hyprcursor formats, written ourselves or a dependency), where the theme is written, and how `kosm_gtk`'s cursor settings and Hyprland's `XCURSOR_*`/`HYPRCURSOR_*` pick it up.
+- **13s. Cursors generated from the palette** (waits on the human)
+  - Do: done: `kosm_cursor` `d45865a` (Bibata's SVGs recolored, drawn by resvg into XCursor files and zipped as hyprcursor SVGs into `~/.local/share/icons/kosm_cursor`; `rest` takes a `kosm_icons.Recolor` for the spinner), `kosm_icons` `c7efd52` (pushed; exports `svg`), `kosm_base` `8ab51c6` (pushed; the `cursor` app, whose theme GTK and Hyprland pick when the look sets no cursor name). Left for the human: create the `kosm_cursor` repository and push it; in the config pin `kosm_base` `8ab51c6`, `kosm_icons` `c7efd52` and `kosm_cursor`, add it to `packages.zon`, and set Krystallos' `cursor.name` to null; then apply.
   - Done when: the human has seen the generated cursor in GTK, Qt and Hyprland, in the kosmos' colors.
 
 
