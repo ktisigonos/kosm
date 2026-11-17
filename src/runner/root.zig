@@ -9,6 +9,7 @@ const interface = @import("kosm_interface");
 const Arguments = @import("Arguments.zig");
 const completions = @import("completions.zig");
 const discovery = @import("discovery.zig");
+const images = @import("images.zig");
 const params = @import("params.zig");
 const report = @import("report.zig");
 const set = @import("set.zig");
@@ -100,9 +101,16 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.A
         error.OutOfMemory => return error.OutOfMemory,
     };
 
-    var tree = try callKosmos(kosmos, arguments.parameters, diagnostics);
-    for (arguments.assignments) |assignment| set.assign(&tree, assignment, diagnostics) catch return error.Reported;
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
+    var tree = try callKosmos(kosmos, arguments.parameters, diagnostics, .{
+        .arena = arena,
+        .io = init.io,
+        .home = home,
+        .cache = if (arguments.config) |config| try std.Io.Dir.path.join(arena, &.{ config, images.cache_folder }) else null,
+        .diagnostics = diagnostics,
+        .stderr = streams.stderr,
+    });
+    for (arguments.assignments) |assignment| set.assign(&tree, assignment, diagnostics) catch return error.Reported;
 
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
@@ -205,7 +213,8 @@ fn ownerOf(plan: *const kosm.Plan, display_path: []const u8) []const u8 {
     return "";
 }
 
-fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics) Reported!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
+/// Calls `kosmos` with its `Params` parsed from `arguments` and their images loaded.
+fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
     const function = @typeInfo(@TypeOf(kosmos)).@"fn";
     const returned = if (function.param_types.len == 0) blk: {
         if (arguments.len != 0) return fail(diagnostics, "it takes no parameters, got '{s}'", .{arguments[0]});
@@ -214,7 +223,9 @@ fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnosti
         const Params = function.param_types[0].?;
         var hostname_buffer: [std.posix.HOST_NAME_MAX]u8 = undefined;
         const hostname = if (comptime params.hasHost(Params)) try readHostname(&hostname_buffer, diagnostics) else "";
-        break :blk kosmos(params.parse(Params, arguments, hostname, diagnostics) catch return error.Reported);
+        var parsed = params.parse(Params, arguments, hostname, diagnostics) catch return error.Reported;
+        try images.fill(Params, &parsed, image_context);
+        break :blk kosmos(parsed);
     };
     if (@typeInfo(@TypeOf(returned)) != .error_union) return returned;
     return returned catch |err| fail(diagnostics, "the kosmos function failed: {s}", .{@errorName(err)});
@@ -239,6 +250,7 @@ test {
     std.testing.refAllDecls(@import("colors.zig"));
     std.testing.refAllDecls(completions);
     std.testing.refAllDecls(params);
+    std.testing.refAllDecls(images);
     std.testing.refAllDecls(walk);
 }
 

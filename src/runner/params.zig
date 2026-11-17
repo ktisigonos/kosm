@@ -35,8 +35,11 @@ pub fn parse(comptime Params: type, arguments: []const []const u8, hostname: []c
         const text = arguments[index + 1];
         inline for (fields.field_names, fields.field_types, 0..) |name, Field, field_position| {
             if (field_position == field_index) {
-                @field(params, name) = parseValue(Field, text) catch
-                    return fail(diagnostics, "{s} '{s}' is not {s}", .{ flag, text, comptime describe(Field) });
+                @field(params, name) = if (comptime isImage(Field))
+                    .{ .path = text }
+                else
+                    parseValue(Field, text) catch
+                        return fail(diagnostics, "{s} '{s}' is not {s}", .{ flag, text, comptime describe(Field) });
             }
         }
     }
@@ -44,6 +47,12 @@ pub fn parse(comptime Params: type, arguments: []const []const u8, hostname: []c
         if (!given[fieldIndex(Params, "host").?]) params.host = try hostFrom(@FieldType(Params, "host"), hostname, diagnostics);
     }
     return params;
+}
+
+/// Whether a `Params` field of type `T` is an image, which a flag gives as a path and kosm loads
+/// before calling the kosmos.
+pub fn isImage(comptime T: type) bool {
+    return T == kosm.Image or T == ?kosm.Image;
 }
 
 /// Whether `Params` has a `host` field that kosm fills from the hostname.
@@ -82,7 +91,8 @@ fn hostFrom(comptime Host: type, hostname: []const u8, diagnostics: *kosm.Diagno
         fail(diagnostics, "the hostname '{s}' is not one of {s} ({s})", .{ hostname, @typeName(Enum), comptime enumList(Enum) });
 }
 
-/// Reads one value of `T` from text: what a flag or `--set` value may be.
+/// Reads one value of `T` from text: what a flag or `--set` value may be. Images are read by
+/// `parse` alone, as only images in `Params` are loaded.
 pub fn parseValue(comptime T: type, text: []const u8) !T {
     if (T == kosm.Color) return kosm.Color.parse(text);
     if (T == kosm.ColorChoice) return kosm.ColorChoice.parse(text);
@@ -103,6 +113,7 @@ pub fn parseValue(comptime T: type, text: []const u8) !T {
 
 /// What a value of `T` looks like, for "--x 'y' is not ...".
 pub fn describe(comptime T: type) []const u8 {
+    if (T == kosm.Image) return "an image's path (absolute or ~/)";
     if (T == kosm.Color) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...))";
     if (T == kosm.ColorChoice) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...)) or a hue (" ++ enumList(kosm.Palette.Hue) ++ ")";
     if (T == []const u8) return "text";
@@ -229,6 +240,21 @@ test "unknown, repeated, valueless and stray arguments are errors" {
     try expectFailure(TestParams, &.{"--blur"}, "--blur needs a value");
     try expectFailure(TestParams, &.{"blur"}, "expected --<parameter> <value>, got 'blur'");
     try expectFailure(struct {}, &.{ "--blur", "true" }, "it takes no parameters, got '--blur'");
+}
+
+test "an image flag gives the image's path, and an optional image defaults to null" {
+    const Params = struct {
+        wallpaper: kosm.Image = .{ .path = "~/default.jxl" },
+        lock: ?kosm.Image = null,
+    };
+    var diagnostics: kosm.Diagnostics = .{};
+    const defaults = try parse(Params, &.{}, "", &diagnostics);
+    try testing.expectEqualStrings("~/default.jxl", defaults.wallpaper.path);
+    try testing.expectEqual(null, defaults.lock);
+    const given = try parse(Params, &.{ "--wallpaper", "/a.png", "--lock", "~/b.jxl" }, "", &diagnostics);
+    try testing.expectEqualStrings("/a.png", given.wallpaper.path);
+    try testing.expectEqualStrings("~/b.jxl", given.lock.?.path);
+    try testing.expectEqual(0, given.wallpaper.pixels.len);
 }
 
 test "host comes from the hostname unless given as a flag" {
