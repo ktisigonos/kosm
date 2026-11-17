@@ -500,12 +500,26 @@ test "a config initialized from the real repositories diffs its starting kosmos"
     const arena = test_config.arena.allocator();
     var context = test_config.context();
     try init(context, official);
-    // The starting kosmos writes Zen's prefs into every profile and Blender's theme into every
-    // Blender version that has run, so the home needs one of each.
+    // The starting kosmos writes Zen's prefs and mod into every profile, which must list the mod,
+    // and Blender's theme into every Blender version that has run, and edits the existing settings
+    // of Commet and wlr-which-key, so the home needs one of each.
     try test_config.tmp.dir.createDirPath(testing.io, "home/.zen/a.default");
     try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.zen/a.default/prefs.js", .data = "" });
+    try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.zen/a.default/zen-themes.json", .data = "{\"kosm\": {\"id\": \"kosm\", \"preferences\": \"preferences.json\", \"enabled\": true}}\n" });
     try test_config.tmp.dir.createDirPath(testing.io, "home/.config/blender/5.2/config");
     try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.config/blender/5.2/config/bookmarks.txt", .data = "" });
+    try test_config.tmp.dir.createDirPath(testing.io, "home/.var/app/chat.commet.commetapp/data/commet");
+    try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.var/app/chat.commet.commetapp/data/commet/shared_preferences.json", .data = "{}" });
+    try test_config.tmp.dir.createDirPath(testing.io, "home/.config/wlr-which-key");
+    try test_config.tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.config/wlr-which-key/config.yaml", .data =
+        \\font: monospace 12
+        \\background: "#000000"
+        \\color: "#ffffff"
+        \\border: "#ffffff"
+        \\border_width: 1
+        \\corner_r: 0
+        \\
+    });
 
     // The fork builds the fetched packages against this repository's kosm.
     context.sources = try test_kosm.sources(arena, testing.io);
@@ -516,7 +530,7 @@ test "a config initialized from the real repositories diffs its starting kosmos"
     const diff = try context.run(&.{ runner, "--diff", "--config", context.config });
     if (!diff.term.success()) std.debug.print("{s}\n", .{diff.stderr});
     try testing.expect(diff.term.success());
-    for ([_][]const u8{ "~/.config/kitty/kosm.conf", "~/.config/ghostty/kosm", "~/.config/hypr/kosm.lua", "~/.config/ZenBrowser/kosm.css", "~/.zen/a.default/user.js", "~/.config/nvim/lua/theme.lua" }) |file| {
+    for ([_][]const u8{ "~/.config/kitty/kosm.conf", "~/.config/ghostty/kosm", "~/.config/hypr/kosm.lua", "~/.zen/a.default/chrome/zen-themes/kosm/chrome.css", "~/.zen/a.default/user.js", "~/.config/nvim/lua/theme.lua" }) |file| {
         try testing.expect(std.mem.find(u8, diff.stdout, try arena.print("+++ {s}\n", .{file})) != null);
     }
 }
