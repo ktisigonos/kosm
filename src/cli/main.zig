@@ -826,6 +826,77 @@ test "local packages provide their adapters and kosmoi wherever they live, and o
     try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "home/out.nord", .{}));
 }
 
+/// A kosmos whose stack outgrows a process' usual 8 or 16 MiB, as a Debug build of many large
+/// apps does.
+const test_deep = test_header ++ testAdapter("deep") ++
+    \\pub fn kosmos() struct { own: Writer } {
+    \\    var scratch: [64 * 1024 * 1024]u8 = undefined;
+    \\    @memset(&scratch, 1);
+    \\    std.mem.doNotOptimizeAway(&scratch);
+    \\    return .{ .own = .{} };
+    \\}
+    \\
+;
+/// A kosmos returning a list that lives in its own stack.
+const test_dangling = test_header ++
+    \\pub const Listed = struct {
+    \\    items: []const u32,
+    \\    pub fn apply(self: Listed, output: *kosm.Output) !void {
+    \\        _ = self;
+    \\        _ = output;
+    \\    }
+    \\};
+    \\
+    \\pub fn kosmos() struct { listed: Listed } {
+    \\    var items = [_]u32{ 1, 2 };
+    \\    std.mem.doNotOptimizeAway(&items);
+    \\    return .{ .listed = .{ .items = &items } };
+    \\}
+    \\
+;
+
+test "a kosmos runs on a stack deeper than the process', and a list left in it is refused" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var stdout: std.Io.Writer.Allocating = .init(arena);
+    var stderr: std.Io.Writer.Allocating = .init(arena);
+    const root = try tmp.dir.realPathFileAlloc(testing.io, ".", arena);
+    // Assumes the tests run from the repository root, as `zig build test` does.
+    const repository_root = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, ".", arena);
+    var environ = try testing.environ.createMap(arena);
+    _ = environ.swapRemove("ZIG_PROGRESS");
+    // Shared with the other config tests, so the compiled std stays warm.
+    try environ.put("ZIG_GLOBAL_CACHE_DIR", try std.Io.Dir.path.join(arena, &.{ repository_root, ".zig-cache/kosm-test-global-cache" }));
+    try environ.put("HOME", try std.Io.Dir.path.join(arena, &.{ root, "home" }));
+    try tmp.dir.createDirPath(testing.io, "home");
+    try tmp.dir.createDirPath(testing.io, "project");
+    const test_kosm = @import("test_kosm.zig");
+    const context: Context = .{
+        .io = testing.io,
+        .arena = arena,
+        .config = try std.Io.Dir.path.join(arena, &.{ root, "project" }),
+        .environ_map = &environ,
+        .sources = try test_kosm.sources(arena, testing.io),
+        .stdout = &stdout.writer,
+        .stderr = &stderr.writer,
+    };
+    try init_command.init(context, try test_kosm.stub(arena, testing.io, tmp.dir, root));
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/deep.zig", .data = test_deep });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/dangling.zig", .data = test_dangling });
+
+    try testing.expect(std.mem.find(u8, try testApplyDiff(context, "deep"), "+deep written\n") != null);
+
+    const built = try context.runZig(&.{ "build", "-Dkosmos=dangling" });
+    try testing.expect(built.term.success());
+    const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, runner_path });
+    const applied = try context.run(&.{ runner, "--diff", "--config", context.config });
+    try testing.expect(!applied.term.success());
+    try testing.expect(std.mem.find(u8, applied.stderr, "listed.items points into a function that has returned") != null);
+}
+
 /// Builds kosmos `name` in the config and runs it with `--diff`; returns the diff.
 fn testApplyDiff(context: Context, name: []const u8) ![]const u8 {
     const built = try context.runZig(&.{ "build", try context.arena.print("-Dkosmos={s}", .{name}) });

@@ -103,7 +103,8 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.A
     };
 
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
-    var tree = try callKosmos(kosmos, arguments.parameters, diagnostics, .{
+    var kosmos_stack: lifetime.Stack = undefined;
+    var tree = try callKosmos(kosmos, arguments.parameters, diagnostics, &kosmos_stack, .{
         .arena = arena,
         .io = init.io,
         .home = home,
@@ -111,9 +112,12 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.A
         .diagnostics = diagnostics,
         .stderr = streams.stderr,
     });
-    // The kosmos ran in the stack below `tree`, which is dead now that it returned.
-    if (try lifetime.findDeadList(arena, tree, .below(@intFromPtr(&tree)))) |path|
-        return fail(diagnostics, "{s} points into a function that has returned, so what it holds is garbage: write lists of values known only at run time as kosm.keep(T, &.{{ ... }}), or as constants", .{path});
+    // Its parameters were parsed in the stack below `tree`, and the kosmos ran in its own; both
+    // are dead now that it returned.
+    for ([_]lifetime.Stack{ .below(@intFromPtr(&tree)), kosmos_stack }) |dead| {
+        if (try lifetime.findDeadList(arena, tree, dead)) |path|
+            return fail(diagnostics, "{s} points into a function that has returned, so what it holds is garbage: write lists of values known only at run time as kosm.keep(T, &.{{ ... }}), or as constants", .{path});
+    }
     for (arguments.assignments) |assignment| set.assign(&tree, assignment, diagnostics) catch return error.Reported;
 
     var plan: kosm.Plan = .init(init.gpa, init.io);
@@ -217,23 +221,46 @@ fn ownerOf(plan: *const kosm.Plan, display_path: []const u8) []const u8 {
     return "";
 }
 
-/// Calls `kosmos` with its `Params` parsed from `arguments` and their images loaded. Never
-/// inlined, so the kosmos always runs in stack below its caller's.
-noinline fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
+/// Calls `kosmos` with its `Params` parsed from `arguments` and their images loaded, on its own
+/// stack, which `kosmos_stack` is set to. Never inlined, so the parameters are parsed in stack
+/// below its caller's.
+noinline fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics, kosmos_stack: *lifetime.Stack, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
     const function = @typeInfo(@TypeOf(kosmos)).@"fn";
-    const returned = if (function.param_types.len == 0) blk: {
+    var returned: function.return_type.? = undefined;
+    if (function.param_types.len == 0) {
         if (arguments.len != 0) return fail(diagnostics, "it takes no parameters, got '{s}'", .{arguments[0]});
-        break :blk kosmos();
-    } else blk: {
+        kosmos_stack.* = try callOnKosmosStack(kosmos, .{}, &returned, diagnostics);
+    } else {
         const Params = function.param_types[0].?;
         var hostname_buffer: [std.posix.HOST_NAME_MAX]u8 = undefined;
         const hostname = if (comptime params.hasHost(Params)) try readHostname(&hostname_buffer, diagnostics) else "";
         var parsed = params.parse(Params, arguments, hostname, diagnostics) catch return error.Reported;
         try images.fill(Params, &parsed, image_context);
-        break :blk kosmos(parsed);
-    };
+        kosmos_stack.* = try callOnKosmosStack(kosmos, .{parsed}, &returned, diagnostics);
+    }
     if (@typeInfo(@TypeOf(returned)) != .error_union) return returned;
     return returned catch |err| fail(diagnostics, "the kosmos function failed: {s}", .{@errorName(err)});
+}
+
+/// How deep the stack a kosmos runs on may grow. Kosmoi build whole apps by value, and a Debug
+/// build gives every temporary its own stack slot, so a kosmos wearing many apps outgrows a
+/// process' usual 8 or 16 MiB. It is only reserved: memory is used as deep as the kosmos goes.
+const kosmos_stack_size = 256 * 1024 * 1024;
+
+/// Calls `function` with `arguments` on a thread with a `kosmos_stack_size` stack, writing what
+/// it returns to `returned`, and gives the part of that stack it ran in.
+fn callOnKosmosStack(comptime function: anytype, arguments: anytype, returned: *@typeInfo(@TypeOf(function)).@"fn".return_type.?, diagnostics: *kosm.Diagnostics) Reported!lifetime.Stack {
+    const Call = struct {
+        fn run(call_arguments: @TypeOf(arguments), result: *@TypeOf(returned.*), top: *usize) void {
+            top.* = @frameAddress();
+            result.* = @call(.auto, function, call_arguments);
+        }
+    };
+    var top: usize = undefined;
+    const thread = std.Thread.spawn(.{ .stack_size = kosmos_stack_size }, Call.run, .{ arguments, returned, &top }) catch |err|
+        return fail(diagnostics, "cannot start the thread the kosmos runs on: {s}", .{@errorName(err)});
+    thread.join();
+    return .{ .low = top -| kosmos_stack_size, .high = top };
 }
 
 fn readHostname(buffer: *[std.posix.HOST_NAME_MAX]u8, diagnostics: *kosm.Diagnostics) Reported![]const u8 {
