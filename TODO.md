@@ -8,14 +8,9 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **17a. Zen repaints after an apply** (waits on the human)
-  - Do: done (`kosm_firefox` `22059df`, pushed, pinned in the config): the browser keeps the window's opaque region per painted element and refreshes only what it repaints, so a background turning translucent stayed marked opaque (a dark box without blur) until a refocus. A second after an apply changes prefs, Kosm Live nudges each window's root background color invisibly for two frames, which forces a full rebuild (an opacity change did not). Left for the human: apply, restart Zen once, then switch between an opaque and a translucent theme with Zen open. Once it works: re-pin `kosm_firefox` and `kosm_qtct` (`dc481be`) in `kosm_base`, push it, and re-pin `kosm_base` in the config.
-  - Done when: going from an opaque to a translucent theme with Zen open shows the page translucent, blurred, without refocusing.
-
 - **18d. wlr-which-key colors and font** (waits on the human)
-  - Do: wlr-which-key's `~/.config/wlr-which-key/config.yaml` is YAML; kosm edits only its style keys (`font`, `background`, `color`, `border`, `border_width`, `corner_r`) and leaves the menu alone. Needs a `kosm_yaml` adapter on the tree-sitter YAML grammar (`tree-sitter-grammars/tree-sitter-yaml`), which the human has approved. Do not start until the human says so: their git server is down, so the new package cannot be pushed.
+  - Do: done: `kosm_yaml` `b13014a` (the `yaml` adapter, on kosm `deb5cf9`, whose tree-sitter specs see through wrapper nodes), `kosm_wlr_which_key` `61ca8e6` (`font`, `background`, `color`, `border`, `border_width`, `corner_r` set in `~/.config/wlr-which-key/config.yaml`), `kosm_base` `497deef` (pushed; the look's fonts as one Pango font, `border_size` and `rounding`); the config pins them all. Left for the human: create the `kosm_yaml` and `kosm_wlr_which_key` repositories on the forge and push them, push kosm, then apply.
   - Done when: an apply sets wlr-which-key's colors and font.
-
 
 - **13z. A tertiary role** `ASK`
   - Do: apps wanting a third highlight (Commet's Material `tertiary`) take a fixed role, hardcoded in `kosm_commet`'s `from` (the warning role, as Commet's own Dark uses yellow); propose a theme-wide setting for it instead (a role beside `secondary`, or something else) and use it in every app that has such a color.
@@ -92,3 +87,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **18a. Zen's new tab page in the theme** `PLAN FIRST` (backlog: the human does not use it)
   - Do: the new tab page (Firefox's built-in `about:newtab`) is a page, which Zen mods cannot style: only the profile's `userContent.css` reaches it. `kosm_zen` writes its own stylesheet into each profile's `chrome` folder: the page transparent, its search box in `--kosm-button`, and Zen's logo replaced by the `logo` app's SVG; the human's `userContent.css` imports it. Propose the file, the import and how a missing import is reported first; drop the step if it makes setup harder for users.
   - Done when: on the human's machine the new tab page shows the window's background, a themed search box and the themed logo.
+
+- **17a. Zen repaints after an apply** (later)
+  - Do: done (`kosm_firefox` `22059df`, pushed, pinned in the config): the browser keeps the window's opaque region per painted element and refreshes only what it repaints, so a background turning translucent stayed marked opaque (a dark box without blur) until a refocus. A second after an apply changes prefs, Kosm Live nudges each window's root background color invisibly for two frames, which forces a full rebuild (an opacity change did not). It did not help on the human's first tries (once it worked, but so it did now and then without it). Next: find out whether the stale opaque region is the cause at all, without refocusing Zen (Hyprland focuses the Browser Console's window, so running the nudge from there is no test); if it is, trigger the rebuild once Zen's new styles have landed instead of after a fixed second. Once it works: re-pin `kosm_firefox` and `kosm_qtct` (`dc481be`) in `kosm_base`, push it, and re-pin `kosm_base` in the config.
+  - Done when: going from an opaque to a translucent theme with Zen open shows the page translucent, blurred, without refocusing.
