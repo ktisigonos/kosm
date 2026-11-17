@@ -4,6 +4,7 @@ const std = @import("std");
 
 pub const Color = @import("Color.zig");
 pub const Palette = @import("Palette.zig");
+pub const Image = @import("Image.zig");
 pub const Modifier = @import("Modifier.zig");
 pub const Variations = @import("Variations.zig");
 pub const Theme = @import("Theme.zig");
@@ -70,6 +71,7 @@ test {
     std.testing.refAllDecls(@import("Color/parse.zig"));
     std.testing.refAllDecls(@import("color_choice.zig"));
     std.testing.refAllDecls(Palette);
+    std.testing.refAllDecls(Image);
     std.testing.refAllDecls(Theme);
     std.testing.refAllDecls(Theme.Roles);
     std.testing.refAllDecls(Theme.Code);
