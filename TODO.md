@@ -29,9 +29,14 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 - **18e. Neovim highlight groups from kosm**
   - Do: `kosm_nvim` writes the highlight groups itself (editor UI, Treesitter, LSP, diagnostics) from the theme's roles and code colors, instead of base16 slots for the `nvim-base16` plugin; the human's `nvim/lua/config/colors.lua` then loads them and drops base16 and its overrides. Propose the groups and the module's shape first.
   - Do: info diagnostics take the info role; diff and git-sign groups (`DiffAdd`, `DiffChange`, `DiffDelete`, `Added`, `Changed`, `Removed`) take the theme's diff colors.
-  - Done: `kosm_nvim` `6ebf23f` writes `background`, `highlights` (groups by Neovim's name, fields in snake case, a translucent `bg` as `NONE`, plugin groups through `groups`) and `terminal`; base16 is gone. Pinned in `kosm_base` `710c699`, both pushed.
-  - Left for the human: re-pin `kosm_base` in the config; replace `app.base16.base0F` in `kosmoi/krystallos/nvim.zig` and `kosmoi/og_steam/nvim.zig`; rewrite `colors.lua` to set `theme.highlights` with `nvim_set_hl` and read `theme.terminal` in `get`, dropping nvim-base16, `transparent_groups` and `overrides()`.
+  - Done: `kosm_nvim` `b7fd761` writes the colors to `lua/kosm/theme.lua` (`background`, `colorscheme`, `highlights` by Neovim's name, the kosmos' `groups`, `terminal`) and its own plugin beside them (`lua/kosm/init.lua`, `plugin/kosm.lua`, `colors/kosm.lua`), which applies them live through a file watcher; a kosmos may name another colorscheme. Pinned in `kosm_base` `bf39f3c`, both pushed. The config's pins, the `personal` kosmos' groups and the human's nvim config (committed there, not pushed) are updated.
+  - Left for the human: `kosm apply personal`, then check Neovim.
   - Done when: the human's Neovim shows kosm's colors without nvim-base16.
+
+
+- **18o. A list that outlives its function crashes instead of failing**
+  - Do: `kosm apply --diff` segfaulted in `runner/lifetime.zig` (`findDeadList` walking into the list) on a kosmos that set `app.groups = &.{ ... }` holding a run-time color, instead of refusing it with the list's path. Likely the walk reads the dead list's items, which lie on the kosmos' own stack after it is freed; check the list's address without dereferencing it. Reproduce with a test kosmos.
+  - Done when: such a kosmos fails with the path of the list and writes nothing, under a test.
 
 
 - **18l. Image commands** (optional)
