@@ -43,6 +43,7 @@ there is undecided, so ask.
 
 - The layers never mix. Core data (colors, modifiers, the theme) knows nothing about apps or files. An app never parses a config and never does file IO; it only tells its `output` what to write, and reads files it builds others from (an installed icon theme) through it too. An adapter never knows about any app. The build enforces this where it can.
 - **Inputs before `from`, tweaks after.** `from(inputs)` derives a complete struct of plain fields; any field can be assigned afterwards. To make a change flow into everything derived from it, change the input and call `from` again.
+- **Lists outlive the function writing them.** A list of values known only at run time (a theme from an image or `Params`) is written `kosm.keep(T, &.{ ... })`, which copies it like `allocator.dupe`; lists of constants need nothing. Kosm refuses to apply a tree holding a list that points into a function that has returned, naming its path.
 - **Nothing is written until kosm says so.** User code only builds values. Kosm calls every app's `apply`, plans every edit in memory, and commits all or nothing. `--diff` prints the plan and writes nothing.
 
 ## Theme

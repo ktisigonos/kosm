@@ -50,7 +50,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 - **18l. Image commands** (optional)
   - Do: `kosm palette <image> [style options]` prints the palette (and roles) as Zig source to paste into a kosmos, for a palette frozen from an image. `kosm new kosmos <name> --image <path>` scaffolds a kosmos on `kosm_base` taking the image as its `Params` default, with its palette and hyprpaper's wallpaper from it; it fails if the config lacks `kosm_base`.
-  - Do: the scaffold wears its look through `base.fromTheme(look, theme, apps)` (`kosm_base` `d15972b`), as `base.from` takes the look at compile time; its wallpaper list `&.{.{ .path = params.wallpaper.path }}` is a list of run-time values (step 13x), so keep it valid however 13x is settled.
+  - Do: the scaffold wears its look through `base.fromTheme(look, theme, apps)` (`kosm_base` `d15972b`), as `base.from` takes the look at compile time; its wallpaper list is a list of run-time values, so it is written with `kosm.keep`.
   - Done when: both commands work on one of the human's wallpapers and the scaffold builds.
 
 - **18m. Re-apply the current kosmos with other arguments** `ASK`
@@ -81,12 +81,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
   - Do: `kosm_kde` gains the cursor theme and size (`kcminputrc` `[Mouse] cursorTheme`, `cursorSize`), set from the shared cursor values like GTK's.
   - Do: the human's Flatpak overrides (`flatpak override --user --show`, and the system-wide one) still set `QT_QPA_PLATFORMTHEME=qt6ct`, `QT_STYLE_OVERRIDE=breeze` and Kvantum access; settle them with qt6ct/qt5ct.
   - Done when: the human has agreed whether qt6ct and qt5ct go, and their settings come from kosm instead.
-
-
-- **13x. Lists built from run-time values** `ASK`
-  - Do: a list field (`Recolor.colors.only`, but also keyboard layouts, font families and any other `[]const`) set inside a function to `&.{ ... }` of run-time values points into that function's stack, which is reused once it returns: the app later reads garbage, silently (icons came out white instead of black). Zig cannot avoid the `&`: checked on 0.17, `[N]?Color` wants exactly N elements, tuple fields cannot default to run-time null, and a struct with numbered fields does not take list syntax; an `anytype` helper breaks the user-facing rules. `kosm.hex` is inline, so lists of hex colors are constants already. Run-time values remain: the theme handed to a look's `tweak` or to a kosmos' own functions (known at compile time unless `Params`/`--set` change it, which rules out evaluating the whole kosmos at compile time), and `Params` themselves. Options to weigh: pass the theme as `comptime` where it is known, so `&.{ theme.palette.blue }` is constant (the config's `personal/icons.zig` does this already: `wearing` hands its icon functions `comptime theme`; a look's `tweak` cannot, as `Look.tweak` is a run-time function pointer); have kosm copy every slice of the app tree into its arena right after the kosmos function returns (too late: the frames are gone, so this only works if the kosmos builds everything in one frame); a `.of(&.{ ... })` copy into a fixed buffer per list field; or document the rule ("lists of run-time values are top-level constants") in kosm_icons' README and the kosmos docs. Ask the human which.
-  - Do: images make this common: a kosmos taking `wallpaper: kosm.Image` writes `apps.hyprpaper.?.wallpapers = &.{.{ .path = params.wallpaper.path }}`, whose path came out as garbage ("longer than a path can be") until the list was moved to a file-level `var`.
-  - Done when: writing `.only = &.{ theme.palette.blue }` in a look's tweak or a kosmos function either works or cannot compile, and the human has seen the chosen form.
 
 
 - **13y. `kosm install` for styles and themes apps need** `PLAN FIRST`

@@ -10,6 +10,7 @@ const Arguments = @import("Arguments.zig");
 const completions = @import("completions.zig");
 const discovery = @import("discovery.zig");
 const images = @import("images.zig");
+const lifetime = @import("lifetime.zig");
 const params = @import("params.zig");
 const report = @import("report.zig");
 const set = @import("set.zig");
@@ -110,6 +111,9 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.A
         .diagnostics = diagnostics,
         .stderr = streams.stderr,
     });
+    // The kosmos ran in the stack below `tree`, which is dead now that it returned.
+    if (try lifetime.findDeadList(arena, tree, .below(@intFromPtr(&tree)))) |path|
+        return fail(diagnostics, "{s} points into a function that has returned, so what it holds is garbage: write lists of values known only at run time as kosm.keep(T, &.{{ ... }}), or as constants", .{path});
     for (arguments.assignments) |assignment| set.assign(&tree, assignment, diagnostics) catch return error.Reported;
 
     var plan: kosm.Plan = .init(init.gpa, init.io);
@@ -213,8 +217,9 @@ fn ownerOf(plan: *const kosm.Plan, display_path: []const u8) []const u8 {
     return "";
 }
 
-/// Calls `kosmos` with its `Params` parsed from `arguments` and their images loaded.
-fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
+/// Calls `kosmos` with its `Params` parsed from `arguments` and their images loaded. Never
+/// inlined, so the kosmos always runs in stack below its caller's.
+noinline fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
     const function = @typeInfo(@TypeOf(kosmos)).@"fn";
     const returned = if (function.param_types.len == 0) blk: {
         if (arguments.len != 0) return fail(diagnostics, "it takes no parameters, got '{s}'", .{arguments[0]});
@@ -251,6 +256,7 @@ test {
     std.testing.refAllDecls(completions);
     std.testing.refAllDecls(params);
     std.testing.refAllDecls(images);
+    std.testing.refAllDecls(lifetime);
     std.testing.refAllDecls(walk);
 }
 

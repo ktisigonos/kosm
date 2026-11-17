@@ -28,6 +28,10 @@ pub const Plan = @import("Plan.zig");
 pub const commit = @import("commit.zig");
 pub const diff = @import("diff.zig");
 
+/// A copy of a list of run-time values that outlives the function writing it, like
+/// `allocator.dupe`: `kosm.keep(kosm.Color, &.{ theme.palette.blue })`.
+pub const keep = @import("keep.zig").keep;
+
 /// Text written into a file verbatim, with no quoting or escaping.
 pub fn raw(text: []const u8) Raw {
     return .{ .text = text };
@@ -72,6 +76,7 @@ test {
     std.testing.refAllDecls(@import("color_choice.zig"));
     std.testing.refAllDecls(Palette);
     std.testing.refAllDecls(Image);
+    std.testing.refAllDecls(@import("keep.zig"));
     std.testing.refAllDecls(Theme);
     std.testing.refAllDecls(Theme.Roles);
     std.testing.refAllDecls(Theme.Code);
