@@ -1,7 +1,8 @@
-//! What every app's `from` receives: the resolved palette, the mode, the roles, the code
-//! colors, the variations, the alpha of backgrounds and the kosmos' names.
+//! What every app's `from` receives: the resolved palette, the mode, the roles, the code and
+//! diff colors, the variations, the alpha of backgrounds and the kosmos' names.
 //!
-//! `from` works everything out from an `Input`, in order: palette, roles, code colors. To
+//! `from` works everything out from an `Input`, in order: palette, roles, code colors, diff
+//! colors. To
 //! change something later, change `input` and call the update of its level, which redoes that
 //! level and every one after it. Assigning a finished value directly wins but flows nowhere.
 
@@ -12,8 +13,8 @@ const Color = @import("Color.zig");
 const Palette = @import("Palette.zig");
 const Variations = @import("Variations.zig");
 
-/// What the theme was built from. Change it, then call `updatePalette`, `updateRoles` or
-/// `updateCode` to work out that level and every one after it again.
+/// What the theme was built from. Change it, then call `updatePalette`, `updateRoles`,
+/// `updateCode` or `updateDiff` to work out that level and every one after it again.
 input: Input,
 /// Every hue filled in.
 palette: Palette.Resolved,
@@ -24,6 +25,8 @@ mode: Mode,
 roles: Roles,
 /// Colors for highlighting code.
 code: Code,
+/// Colors for added, changed and removed lines and files.
+diff: Diff,
 /// Shared transforms. Tweak them here once, for every module built from this theme.
 variations: Variations,
 /// Alpha of every app's background, 0 (clear) to 1 (opaque): terminals, the browser and
@@ -39,12 +42,15 @@ files: Files = .shared,
 /// The single global fact modules use to choose backgrounds and foregrounds.
 pub const Mode = enum { dark, light };
 
-/// What a theme is built from: the palette, the mode and the kosmos' own roles and code colors.
+/// What a theme is built from: the palette, the mode and the kosmos' own roles, code and diff
+/// colors.
 pub const Input = @import("Theme/Input.zig");
 /// The colors apps give meaning to, in libadwaita's names.
 pub const Roles = @import("Theme/Roles.zig");
 /// Colors for highlighting code, in tree-sitter's capture names.
 pub const Code = @import("Theme/Code.zig");
+/// Colors for added, changed and removed lines and files, for diffs and version control.
+pub const Diff = @import("Theme/Diff.zig");
 
 /// How an app names the files a program picks by name (KDE's color schemes, Blender's presets).
 /// Files a program must include by path are always `kosm`.
@@ -56,7 +62,7 @@ pub const Files = enum {
     per_kosmos,
 };
 
-/// Works out the palette, every role and code color `input` leaves null, and every
+/// Works out the palette, every role, code and diff color `input` leaves null, and every
 /// variation's default for its mode. Contrast picks choose between the palette's black and
 /// white, and shadows mix toward its black.
 pub fn from(input: Input) Theme {
@@ -66,6 +72,7 @@ pub fn from(input: Input) Theme {
         .mode = input.mode,
         .roles = undefined,
         .code = undefined,
+        .diff = undefined,
         .variations = .from(input.mode),
     };
     theme.updatePalette();
@@ -85,15 +92,23 @@ pub fn updatePalette(theme: *Theme) void {
     theme.updateRoles();
 }
 
-/// Works out the roles again from `input.roles` and the palette, then updates the code colors.
+/// Works out the roles again from `input.roles` and the palette, then updates the code and diff
+/// colors.
 pub fn updateRoles(theme: *Theme) void {
     theme.roles = .from(theme.palette, theme.mode, theme.input.roles);
     theme.updateCode();
 }
 
-/// Works out the code colors again from `input.code`, the palette, the roles and the variations.
+/// Works out the code colors again from `input.code`, the palette, the roles and the variations,
+/// then updates the diff colors.
 pub fn updateCode(theme: *Theme) void {
     theme.code = .from(theme.palette, theme.roles, theme.variations, theme.input.code);
+    theme.updateDiff();
+}
+
+/// Works out the diff colors again from `input.diff` and the roles.
+pub fn updateDiff(theme: *Theme) void {
+    theme.diff = .from(theme.roles, theme.input.diff);
 }
 
 /// `color` with its alpha scaled by `background_alpha`: what an app's `from` gives the color it
@@ -203,6 +218,23 @@ test "an overridden link wins over the accent" {
     const theme = from(.{ .palette = test_palette, .mode = .dark, .roles = .{ .link = test_pink } });
     try testing.expectEqual(test_pink, theme.roles.link);
     try testing.expectEqual(theme.palette.cyan, theme.roles.accent);
+}
+
+test "diff colors default from the success, warning and error roles" {
+    const theme = from(.{ .palette = test_palette, .mode = .dark });
+    try testing.expectEqual(theme.roles.success, theme.diff.added);
+    try testing.expectEqual(theme.roles.warning, theme.diff.changed);
+    try testing.expectEqual(theme.roles.@"error", theme.diff.removed);
+}
+
+test "an overridden role flows into the diff colors, an overridden diff color wins" {
+    var theme = from(.{ .palette = test_palette, .mode = .dark, .diff = .{ .removed = test_pink } });
+    theme.input.roles.success = test_pink;
+    theme.input.roles.@"error" = theme.palette.blue;
+    theme.updateRoles();
+    try testing.expectEqual(test_pink, theme.diff.added);
+    try testing.expectEqual(test_pink, theme.diff.removed);
+    try testing.expectEqual(theme.roles.warning, theme.diff.changed);
 }
 
 test "an overridden code color wins" {

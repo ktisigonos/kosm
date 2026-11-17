@@ -48,15 +48,16 @@ there is undecided, so ask.
 
 ## Theme
 
-`kosm.Theme` is the only thing every app receives: a palette, a mode, roles, code colors, a background alpha and variations.
+`kosm.Theme` is the only thing every app receives: a palette, a mode, roles, code colors, diff colors, a background alpha and variations.
 
 - **Palette:** black and white are required; the 12 hues of the wheel (red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink, 30 deg apart) are optional, and a missing one is mixed from its nearest set neighbours by wheel position. Colors beyond the wheel belong to apps or to the kosmos' own constants.
 - **Mode:** dark or light; the background and foreground roles follow it.
 - **Roles:** libadwaita's names, which KDE and Material map onto, plus the few those add: background, foreground, accent, secondary, tertiary, link, visited, info, success, warning, error. Each is optional and defaults from the palette (the accent is cyan, the link follows the accent); an app reads the role, never the palette color it defaults to, so one assignment recolors every app. An app's own colors beyond these stay its own fields.
 - **Code colors:** tree-sitter's capture names (comment, keyword, string, number, constant, function, type, variable, property, operator, punctuation, tag), each optional and defaulting from the palette or the foreground, for editors and anything highlighting code.
+- **Diff colors:** added, changed and removed, each optional and defaulting from the success, warning and error roles, for diffs, version control and anything marking changes.
 - **Background alpha:** one alpha every app gives its own background, so a single value makes terminals, browser and editors translucent together.
 - **Name:** the name programs show for the kosmos, falling back to the name kosm applies it under. One switch names the files a program picks by name: `kosm` for every kosmos, or after the kosmos so each keeps its own. Files a program includes by path are always `kosm`.
-- **Built in levels:** a theme is built from its input (palette, mode, and the roles and code colors the kosmos sets), in order: palette, roles, code colors. A level's defaults come from the levels before it, and updating a level after changing the input redoes it and every level after it.
+- **Built in levels:** a theme is built from its input (palette, mode, and the roles, code and diff colors the kosmos sets), in order: palette, roles, code colors, diff colors. A level's defaults come from the levels before it, and updating a level after changing the input redoes it and every level after it.
 - **From an image:** a kosmos may take its palette and roles from an image named in its `Params`. Kosm loads the image (and caches what it read), so the kosmos only computes from it in plain code; a style says how colors are taken, readable against the background by default or exactly as in the image.
 - **Variations:** named color transforms in families (lightness, emphasis, state, surface, line, contrast, alpha), tweaked once on the theme for every app.
 - Colors are OKLCH in f64. Modifiers also work in HSV, HSL, RGB and CMYK. A color outside sRGB is clipped when printed; `kosm colors` marks the palette colors that are.

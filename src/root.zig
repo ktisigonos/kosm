@@ -80,6 +80,7 @@ test {
     std.testing.refAllDecls(Theme);
     std.testing.refAllDecls(Theme.Roles);
     std.testing.refAllDecls(Theme.Code);
+    std.testing.refAllDecls(Theme.Diff);
     std.testing.refAllDecls(Modifier);
     std.testing.refAllDecls(Modifier.Step);
     std.testing.refAllDecls(Variations);
