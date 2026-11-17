@@ -8,11 +8,6 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-- **13z. A tertiary role** `ASK`
-  - Do: apps wanting a third highlight (Commet's Material `tertiary`) take a fixed role, hardcoded in `kosm_commet`'s `from` (the warning role, as Commet's own Dark uses yellow); propose a theme-wide setting for it instead (a role beside `secondary`, or something else) and use it in every app that has such a color.
-  - Done when: the human has agreed on the setting and `kosm_commet` reads it.
-
-
 - **18h. Equibop theme** `ASK`
   - Do: find out how Equibop (the Vesktop-based Discord client) takes a theme (Vencord's QuickCSS or a CSS file in its themes folder, Discord's CSS variables, live reload) and propose `kosm_equibop` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Equibop takes the kosmos' colors and fonts.
