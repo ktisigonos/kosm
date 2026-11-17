@@ -22,3 +22,7 @@ Bugs found in dependencies, to report to their projects. Group them under `## <p
 ## dunst (dunst-project/dunst)
 
 - [ ] `monitor = "DP-1"` logs `WARNING: 'DP-1': No digits found.` although naming a monitor is documented and works: `string_parse_maybe_int` (`src/option_parser.c`) tries the value as a number through `safe_string_to_int`, which warns, before keeping it as a name (v1.13.2). Workaround: none; the README says the warning is harmless.
+
+## firefox (Bugzilla, Core: Graphics: WebRender)
+
+- [ ] A `mask-image` on the chrome element holding the pages (Zen's `#tabbrowser-tabpanels`) is not applied to page elements with a `backdrop-filter`: they draw inside the masked-out area while the rest of the page is cut (Firefox 159.0.1 in Zen 1.24.1b, Linux Wayland, WebRender compositor blocklisted; seen on karasu.live and YouTube). Removing every `backdrop-filter` from the page fixes it; `clip-path: shape(...)` fails the same way, `clip-path: inset(...)` does not. A single-process test page (mask with a hole over a blurred div) does not reproduce it, so it seems to need the page in a content process. Not reduced further yet. Workaround: none; `kosm_zen` documents it on `CompactSidebar.Fill.xray`, and `.solid` avoids it.
