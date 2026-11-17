@@ -7,6 +7,12 @@ const Mode = @import("../Theme.zig").Mode;
 style: Style = .readable,
 /// What the hues the image lacks become. Default: `.semantic`.
 fill: Fill = .semantic,
+/// With a fill making hues up, the lightness and chroma they get. Default: `.neighbours`.
+tone: Tone = .neighbours,
+/// With a fill making hues up, how far they turn from their own hue toward the accent's, 0..1:
+/// 0 keeps their hue, 1 makes them the accent's hue. A little ties them to the image, as
+/// hand-made themes tint their reds and greens. Default: 0.
+tint: f64 = 0,
 /// With a fill making hues up and an image with no hues at all, the chroma they get; their
 /// lightness is halfway between black's and white's. Default: 0.12.
 fallback_chroma: f64 = 0.12,
@@ -57,8 +63,8 @@ pub const Style = enum {
 };
 
 /// What the hues the image lacks become. A made-up hue is the wheel position's reference hue
-/// (that of the saturated sRGB color there) at the lightness and chroma of the image's hues
-/// beside it, mixed by wheel position, so it fits them; the style then applies to it too.
+/// (that of the saturated sRGB color there), turned by `tint`, at the lightness and chroma
+/// `tone` picks; the style then applies to it too. Made-up hues are never the accent.
 pub const Fill = enum {
     /// Only the image's own hues are set; the rest are left to `Palette.resolve`, which mixes
     /// them from their neighbours, so a blue image gets a bluish red.
@@ -69,6 +75,16 @@ pub const Fill = enum {
     semantic,
     /// Every hue the image lacks is made up.
     complete,
+};
+
+/// The lightness and chroma of made-up hues.
+pub const Tone = enum {
+    /// Those of the image's hues on either side on the wheel, mixed by wheel position, so each
+    /// fits the colors around it.
+    neighbours,
+    /// The average of the image's hues, weighted by their share of the pixels, so every
+    /// made-up hue looks alike.
+    uniform,
 };
 
 /// How the image's hues score for the accent and secondary roles.

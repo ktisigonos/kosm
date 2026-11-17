@@ -25,6 +25,8 @@ pub const Style = Options.Style;
 pub const AccentBy = Options.AccentBy;
 /// What the hues the image lacks become: left to mixing, made up for the roles, or all made up.
 pub const Fill = Options.Fill;
+/// The lightness and chroma made-up hues get: their neighbours' or the image's average.
+pub const Tone = Options.Tone;
 
 pub const Error = error{
     /// The image has no pixels: kosm loads only the images a kosmos names in its `Params`.
@@ -105,28 +107,68 @@ fn filled(analysis: Analysis, options: Options) [hue_count]?Color {
     return hues;
 }
 
-/// The reference hue at `position`, at the lightness and chroma of the nearest image hues on
-/// either side, mixed by wheel position; with none, at `Options.fallback_chroma` halfway
-/// between black and white.
+/// A made-up hue for `position`: its reference hue, turned toward the accent by `Options.tint`,
+/// at the lightness and chroma `Options.tone` picks.
 fn madeUp(analysis: Analysis, position: usize, options: Options) Color {
-    const hue = Analysis.referenceHues()[position];
+    const tone = switch (options.tone) {
+        .neighbours => neighbourTone(analysis, position),
+        .uniform => uniformTone(analysis),
+    } orelse fallbackTone(analysis, options);
+    return withinGamut(.{ .lightness = tone.lightness, .chroma = tone.chroma, .hue = tintedHue(analysis, position, options) });
+}
+
+/// The lightness and chroma of a made-up hue.
+const MadeUpTone = struct { lightness: f64, chroma: f64 };
+
+/// The tone of the nearest image hues on either side of `position`, mixed by wheel position;
+/// null when the image has no hues.
+fn neighbourTone(analysis: Analysis, position: usize) ?MadeUpTone {
     for (1..hue_count) |previous_distance| {
         const previous = analysis.hues[(position + hue_count - previous_distance) % hue_count] orelse continue;
         for (1..hue_count) |next_distance| {
             const next = analysis.hues[(position + next_distance) % hue_count] orelse continue;
             const amount = @as(f64, @floatFromInt(previous_distance)) / @as(f64, @floatFromInt(previous_distance + next_distance));
-            return withinGamut(.{
+            return .{
                 .lightness = std.math.lerp(previous.lightness, next.lightness, amount),
                 .chroma = std.math.lerp(previous.chroma, next.chroma, amount),
-                .hue = hue,
-            });
+            };
         }
     }
-    return withinGamut(.{
+    return null;
+}
+
+/// The average tone of the image's hues, weighted by their share of the pixels; null when the
+/// image has no hues.
+fn uniformTone(analysis: Analysis) ?MadeUpTone {
+    var weight: f64 = 0;
+    var lightness: f64 = 0;
+    var chroma: f64 = 0;
+    for (analysis.hues, analysis.shares) |hue, share| {
+        const color = hue orelse continue;
+        weight += share;
+        lightness += color.lightness * share;
+        chroma += color.chroma * share;
+    }
+    if (weight == 0) return null;
+    return .{ .lightness = lightness / weight, .chroma = chroma / weight };
+}
+
+fn fallbackTone(analysis: Analysis, options: Options) MadeUpTone {
+    return .{
         .lightness = std.math.lerp(analysis.black.lightness, analysis.white.lightness, 0.5),
         .chroma = options.fallback_chroma,
-        .hue = hue,
-    });
+    };
+}
+
+/// The reference hue at `position`, turned by `Options.tint` of the shortest way toward the
+/// accent's hue; unturned when the image has no hues.
+fn tintedHue(analysis: Analysis, position: usize, options: Options) f64 {
+    const reference = Analysis.referenceHues()[position];
+    if (options.tint == 0) return reference;
+    const accent = analysis.hues[bestHue(analysis, options, null) orelse return reference].?;
+    var turn = Color.wrapHue(accent.hue - reference);
+    if (turn > 180) turn -= 360;
+    return Color.wrapHue(reference + turn * std.math.clamp(options.tint, 0, 1));
 }
 
 fn hueOf(result: Palette, position: usize) ?Color {
@@ -415,6 +457,37 @@ test "made-up hues are never picked as the accent" {
     const input = try image.themeInput(.{ .style = .literal, .fill = .complete });
     try testing.expectApproxEqAbs(Analysis.referenceHues()[8], input.roles.accent.?.hue, 1e-9);
     try testing.expectEqual(null, input.roles.secondary);
+}
+
+test "a uniform tone gives made-up hues the image hues' average, weighted by share" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..30]) |*pixel| pixel.* = wheelPixel(4, 0.4, 0.1);
+    for (pixels[30..40]) |*pixel| pixel.* = wheelPixel(8, 0.8, 0.06);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const result = try image.palette(.{ .style = .literal, .fill = .complete, .tone = .uniform });
+    for ([_]?Color{ result.red, result.magenta, result.pink }) |hue| {
+        try testing.expectApproxEqAbs(0.5, hue.?.lightness, 1e-9);
+        try testing.expectApproxEqAbs(0.09, hue.?.chroma, 1e-9);
+    }
+}
+
+test "tint turns made-up hues toward the accent, the shortest way round" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(8, 0.6, 0.1);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const references = Analysis.referenceHues();
+    const untinted = try image.palette(.{ .style = .literal });
+    try testing.expectApproxEqAbs(references[0], untinted.red.?.hue, 1e-9);
+
+    const half = try image.palette(.{ .style = .literal, .tint = 0.5 });
+    var turn = Color.wrapHue(references[8] - references[0]);
+    if (turn > 180) turn -= 360;
+    try testing.expectApproxEqAbs(Color.wrapHue(references[0] + turn / 2), half.red.?.hue, 1e-9);
+    try testing.expect(turn < 0);
+
+    const full = try image.palette(.{ .style = .literal, .tint = 1 });
+    try testing.expectApproxEqAbs(references[8], full.green.?.hue, 1e-9);
+    try testing.expectApproxEqAbs(references[8], full.blue.?.hue, 1e-9);
 }
 
 test {
