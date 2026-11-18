@@ -173,7 +173,9 @@ fn resolveScript(init: std.process.Init, comptime target: ScriptTarget, diagnost
         .config = target.config,
         .frontends = comptime discovery.frontends(target.adapter_sources),
         .modules = comptime moduleNames(target.kosmoi),
+        .kosmoi = comptime kosmosNames(target.kosmoi),
         .library = ScriptLibrary(target).library(runtime),
+        .calls_folder = &runtime.scripts_folder,
         .diagnostics = diagnostics,
     }, diagnostics.kosmos);
 }
@@ -305,16 +307,16 @@ const Folders = struct {
 /// when a Zig kosmos is applied itself.
 const Layers = struct {
     /// Tables for the kosmos' `Params`, set before the command line's parameters.
-    params: []const kosm.Loose = &.{},
+    params: []const kosmos_call.Layer = &.{},
     /// Tables for the tree, set before the command line's `--set`s.
     overrides: []const kosm.Loose = &.{},
 
     /// The params and overrides of `scripts`, each naming its script when its frontend did not.
     fn of(arena: std.mem.Allocator, scripts: []const script.Loaded) std.mem.Allocator.Error!Layers {
-        var params_list: std.ArrayList(kosm.Loose) = .empty;
+        var params_list: std.ArrayList(kosmos_call.Layer) = .empty;
         var overrides: std.ArrayList(kosm.Loose) = .empty;
         for (scripts) |loaded| {
-            if (loaded.script.params) |given| try params_list.append(arena, script.withOrigin(given, loaded.path));
+            if (loaded.script.params) |given| try params_list.append(arena, .{ .values = script.withOrigin(given, loaded.path), .folder = loaded.folder });
             if (loaded.script.overrides) |given| try overrides.append(arena, script.withOrigin(given, loaded.path));
         }
         return .{ .params = params_list.items, .overrides = overrides.items };
@@ -328,7 +330,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []cons
     const arguments = try readArguments(init, ParamsOf(kosmos), raw_arguments, diagnostics);
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
     var kosmos_stack: lifetime.Stack = undefined;
-    var tree = try kosmos_call.callKosmos(kosmos, .{ .arguments = arguments.parameters, .layers = layers.params, .scripts_folder = try std.Io.Dir.path.join(arena, &.{ folders.config, script.directory }) }, diagnostics, &kosmos_stack, .{
+    var tree = try kosmos_call.callKosmos(kosmos, .{ .arguments = arguments.parameters, .layers = layers.params }, diagnostics, &kosmos_stack, .{
         .arena = arena,
         .io = init.io,
         .places = .{ .home = home, .config = folders.config, .kosmos = folders.kosmos, .folders = folders.named },
@@ -462,6 +464,14 @@ fn zigKosmosNames(comptime sources: []const ScriptTarget.KosmosSource) []const u
     comptime var names: []const u8 = "";
     inline for (comptime kosmos_call.zigKosmoi(sources)) |entry| names = names ++ (if (names.len == 0) "" else ", ") ++ entry.name;
     return if (names.len == 0) "none" else names;
+}
+
+/// The name and origin of every kosmos in `sources`.
+fn kosmosNames(comptime sources: []const ScriptTarget.KosmosSource) []const script.KosmosName {
+    comptime var names: []const script.KosmosName = &.{};
+    inline for (comptime kosmos_call.zigKosmoi(sources)) |entry| names = names ++ .{script.KosmosName{ .name = entry.name, .origin = entry.origin }};
+    const final = names[0..names.len].*;
+    return &final;
 }
 
 /// The import name of every module in `sources`.
@@ -837,9 +847,15 @@ fn scriptKosmos(given: ScriptParams) !ScriptTree {
 
 /// Calls `scriptKosmos` with `arguments`, the kosmos' folder being `folder`.
 fn callScriptKosmos(arena: std.mem.Allocator, folder: []const u8, arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !ScriptTree {
+    return callScriptKosmosOn(arena, folder, &.{}, arguments, diagnostics);
+}
+
+/// Calls `scriptKosmos` with `arguments` on top of scripts' `layers`, the kosmos' folder being
+/// `folder`.
+fn callScriptKosmosOn(arena: std.mem.Allocator, folder: []const u8, layers: []const kosmos_call.Layer, arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !ScriptTree {
     var stack: lifetime.Stack = undefined;
     var stderr: std.Io.Writer.Allocating = .init(arena);
-    return kosmos_call.callKosmos(scriptKosmos, .{ .arguments = arguments }, diagnostics, &stack, .{
+    return kosmos_call.callKosmos(scriptKosmos, .{ .arguments = arguments, .layers = layers }, diagnostics, &stack, .{
         .arena = arena,
         .io = testing.io,
         .places = .{ .home = folder, .config = folder, .kosmos = folder },
@@ -863,6 +879,26 @@ test "a kosmos reads the file its Params name, next to it by default" {
     try testing.expectEqualStrings("return {}\n", (try callScriptKosmos(arena.allocator(), folder, &.{}, &diagnostics)).script);
     const other = try std.Io.Dir.path.join(arena.allocator(), &.{ folder, "other.txt" });
     try testing.expectEqualStrings("other\n", (try callScriptKosmos(arena.allocator(), folder, &.{ "--script", other }, &diagnostics)).script);
+}
+
+test "a relative path a script sets starts from that script's folder" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var folder_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try tmpPath(&tmp, &folder_buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try tmp.dir.createDirPath(testing.io, "kosmoi/personal");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kosmoi/note.txt", .data = "top\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kosmoi/personal/note.txt", .data = "variant\n" });
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "test" };
+    const entries: []const kosm.Loose.Entry = &.{.{ .key = "script", .value = .{ .value = .{ .text = "note.txt" } } }};
+    const table: kosm.Loose = .{ .value = .{ .table = entries } };
+    const top = try std.Io.Dir.path.join(arena.allocator(), &.{ folder, "kosmoi" });
+    const variant = try std.Io.Dir.path.join(arena.allocator(), &.{ folder, "kosmoi/personal" });
+
+    try testing.expectEqualStrings("top\n", (try callScriptKosmosOn(arena.allocator(), folder, &.{.{ .values = table, .folder = top }}, &.{}, &diagnostics)).script);
+    try testing.expectEqualStrings("variant\n", (try callScriptKosmosOn(arena.allocator(), folder, &.{ .{ .values = table, .folder = top }, .{ .values = table, .folder = variant } }, &.{}, &diagnostics)).script);
 }
 
 test "a missing file fails naming its path before the kosmos runs" {

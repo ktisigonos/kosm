@@ -13,7 +13,7 @@ home: []const u8,
 config: []const u8,
 /// The folder of every package and local module, which `~~<name>/` stands for.
 folders: []const Places.Folder,
-/// The folder relative paths a script gives start from.
+/// The absolute folder of the script being read, which relative paths it gives start from.
 scripts_folder: []const u8,
 /// The folder decoded images are cached in; null caches nothing.
 cache: ?[]const u8,

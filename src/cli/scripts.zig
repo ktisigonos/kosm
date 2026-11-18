@@ -28,22 +28,37 @@ const source_folders = [_][]const u8{ "src", "build" };
 /// Folders a walk never enters: build output, fetched packages, caches.
 const skipped_folders = [_][]const u8{ "zig-out", "zig-pkg", ".zig-cache" };
 
-/// Whether kosmos `name` ("minimal", or "minimal.x" which the runner refuses) is a script: a
-/// file in `kosmoi/` named after its part before the first dot, with any extension but Zig's.
-/// An empty `name` asks whether there is any script.
+/// Whether kosmos `name` is a script: "minimal" (or "minimal.x", which the runner refuses) when
+/// `kosmoi/` holds a file named after its part before the first dot, and "personal.nord" also
+/// when the kosmos folder `kosmoi/personal/` holds one named `nord`, with any extension but Zig's
+/// and its manifests'.
 pub fn isScript(context: Context, name: []const u8) Error!bool {
-    const file_part = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len];
-    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, kosmoi_directory });
+    var segments = std.mem.splitScalar(u8, name, '.');
+    const first = segments.first();
+    if (try holdsScript(context, kosmoi_directory, first)) return true;
+    const variant = segments.next() orelse return false;
+    return holdsScript(context, try std.Io.Dir.path.join(context.arena, &.{ kosmoi_directory, first }), variant);
+}
+
+/// Whether the config's folder `folder` holds a script named `name`, or any script when `name`
+/// is empty.
+fn holdsScript(context: Context, folder: []const u8, name: []const u8) Error!bool {
+    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, folder });
     var dir = std.Io.Dir.cwd().openDir(context.io, path, .{ .iterate = true }) catch return false;
     defer dir.close(context.io);
     var iterator = dir.iterate();
     while (iterator.next(context.io) catch |err| return context.fail("cannot read {s}: {s}", .{ path, @errorName(err) })) |entry| {
         if (entry.kind != .file and entry.kind != .sym_link) continue;
-        if (std.mem.startsWith(u8, entry.name, ".") or std.mem.endsWith(u8, entry.name, ".zig")) continue;
+        if (std.mem.startsWith(u8, entry.name, ".") or isZig(entry.name)) continue;
         const dot = std.mem.findScalar(u8, entry.name, '.') orelse continue;
-        if (file_part.len == 0 or std.mem.eql(u8, entry.name[0..dot], file_part)) return true;
+        if (name.len == 0 or std.mem.eql(u8, entry.name[0..dot], name)) return true;
     }
     return false;
+}
+
+/// Whether `file_name` is Zig source or a Zig manifest, never a script.
+fn isZig(file_name: []const u8) bool {
+    return std.mem.endsWith(u8, file_name, ".zig") or std.mem.endsWith(u8, file_name, ".zon");
 }
 
 /// What the built runner reports for completing script `name`'s arguments: `kind<TAB>...`
@@ -72,9 +87,18 @@ pub fn baseOf(context: Context, name: []const u8) Error!?[]const u8 {
     return null;
 }
 
-/// Whether `kosmoi/` holds any script kosmos.
+/// Whether `kosmoi/` or a kosmos folder in it holds any script kosmos.
 pub fn any(context: Context) Error!bool {
-    return isScript(context, "");
+    if (try holdsScript(context, kosmoi_directory, "")) return true;
+    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, kosmoi_directory });
+    var dir = std.Io.Dir.cwd().openDir(context.io, path, .{ .iterate = true }) catch return false;
+    defer dir.close(context.io);
+    var iterator = dir.iterate();
+    while (iterator.next(context.io) catch |err| return context.fail("cannot read {s}: {s}", .{ path, @errorName(err) })) |entry| {
+        if (entry.kind != .directory or std.mem.startsWith(u8, entry.name, ".")) continue;
+        if (try holdsScript(context, try std.Io.Dir.path.join(context.arena, &.{ kosmoi_directory, entry.name }), "")) return true;
+    }
+    return false;
 }
 
 /// Builds the runner when it is missing or stale; returns whether it is ready.
@@ -254,6 +278,22 @@ const test_frost =
     \\
 ;
 
+/// A kosmos folder holding a Zig kosmos and its variant `iced`.
+const test_snow =
+    \\const kitty = @import("kosm_kitty");
+    \\
+    \\pub const Tree = struct { kitty: kitty.App };
+    \\
+    \\pub fn kosmos() Tree {
+    \\    return .{ .kitty = .{ .fonts = .{ .font_size = 20 } } };
+    \\}
+    \\
+    \\pub fn iced() Tree {
+    \\    return kosmos();
+    \\}
+    \\
+;
+
 /// Runs script kosmos `name` with `--diff`; returns stdout, or stderr when it failed.
 fn testDiff(context: Context, name: []const u8) ![]const u8 {
     const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, runner_path });
@@ -299,9 +339,16 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/over.kosmos", .data = "base on\nset kitty.fonts.font_size=14\n" });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/alone.kosmos", .data = "theme palette.black=#000000\ntheme palette.white=#ffffff\ntheme mode=dark\nset kitty.fonts.font_size=9\n" });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/bad.kosmos", .data = "base frost\nset kitty.fonts.font_size=big\n" });
+    try tmp.dir.createDirPath(testing.io, "project/kosmoi/snow");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/root.zig", .data = test_snow });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/nord.kosmos", .data = "base snow\nset kitty.fonts.font_size=21\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/iced.kosmos", .data = "base snow\n" });
 
     try testing.expect(try isScript(context, "on"));
     try testing.expect(!try isScript(context, "frost"));
+    try testing.expect(try isScript(context, "snow.nord"));
+    try testing.expect(!try isScript(context, "snow"));
+    try testing.expect(!try isScript(context, "snow.root"));
     stdout.clearRetainingCapacity();
     try testing.expect(try prepare(context));
     // The build gave the frontend's completion files and its editor file, created only once.
@@ -315,6 +362,9 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try testing.expect(std.mem.find(u8, try testDiff(context, "over"), "+font_size 14\n") != null);
     try testing.expect(std.mem.find(u8, try testDiff(context, "alone"), "+font_size 9\n") != null);
     try testing.expectEqualStrings("error: kosmos 'bad': kosmoi/bad.kosmos:2: kitty.fonts.font_size: expected an integer that fits u32, got 'big'\n", try testDiff(context, "bad"));
+    // A script in a kosmos' folder is its variant, and may not share a Zig variant's name.
+    try testing.expect(std.mem.find(u8, try testDiff(context, "snow.nord"), "+font_size 21\n") != null);
+    try testing.expectEqualStrings("error: kosmos 'snow.iced': 'snow.iced' names both kosmoi/snow/iced.kosmos and a kosmos of kosmoi/snow/; rename one\n", try testDiff(context, "snow.iced"));
 
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/on.kosmos", .data = "base frost\nparam size=13\n" });
     try testing.expect(!try isStale(context));
@@ -333,6 +383,8 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     stdout.clearRetainingCapacity();
     try @import("list.zig").list(context, null);
     try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/on.kosmos\n") != null);
+    try testing.expect(std.mem.find(u8, stdout.written(), "  snow.nord ") != null);
+    try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/snow/nord.kosmos\n") != null);
     stdout.clearRetainingCapacity();
     try @import("build_kosmoi.zig").build(context, .{ .only = &.{"on"} });
     try testing.expectEqualStrings("building the script runner\nbuilt the script runner\n", stdout.written());

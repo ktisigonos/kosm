@@ -191,7 +191,8 @@ fn writeRow(writer: *std.Io.Writer, kosmos: Kosmos, width: usize) std.Io.Writer.
     try writer.print("{s}\n", .{kosmos.origin});
 }
 
-/// Every kosmos in `sources`, in order, then every script, and what each package provides.
+/// Every kosmos in `sources`, in order, each followed by the scripts in its folder, then every
+/// other script, and what each package provides.
 pub fn collect(comptime sources: []const Source, comptime scripts: []const Script) Table {
     @setEvalBranchQuota(discovery.branch_quota);
     comptime var kosmoi: []const Kosmos = &.{};
@@ -207,13 +208,35 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
                 .apps = appsIn(sources, Tree, ""),
             }};
         }
+        // Scripts in the kosmos' folder are its variants, listed with the others.
+        inline for (scripts) |script| {
+            if (comptime parentOf(script.name)) |parent| {
+                if (comptime std.mem.eql(u8, parent, source.name)) kosmoi = kosmoi ++ .{scriptRow(script)};
+            }
+        }
         if (source.kind == .package) packages = packages ++ .{Package{ .name = source.name, .provided = inspect.provided(source.name, source.module) }};
     }
-    inline for (scripts) |script| kosmoi = kosmoi ++ .{Kosmos{ .name = script.name, .file = script.name, .origin = script.origin, .apps = &.{} }};
+    inline for (scripts) |script| {
+        const listed = if (comptime parentOf(script.name)) |parent| inline for (sources) |source| {
+            if (comptime std.mem.eql(u8, parent, source.name)) break true;
+        } else false else false;
+        if (!listed) kosmoi = kosmoi ++ .{scriptRow(script)};
+    }
     const final_kosmoi = kosmoi[0..kosmoi.len].*;
     const final_packages = packages[0..packages.len].*;
     const table: Table = .{ .kosmoi = &final_kosmoi, .packages = &final_packages };
     return table;
+}
+
+/// The kosmos whose folder holds `name`'s script ("personal" of "personal.nord"), or null for
+/// a script in `kosmoi/` itself.
+fn parentOf(comptime name: []const u8) ?[]const u8 {
+    const dot = std.mem.findScalar(u8, name, '.') orelse return null;
+    return name[0..dot];
+}
+
+fn scriptRow(comptime script: Script) Kosmos {
+    return .{ .name = script.name, .file = script.name, .origin = script.origin, .apps = &.{} };
 }
 
 /// The apps in a tree of type `T`, looking through structs and optionals like the walk does
@@ -289,7 +312,7 @@ const test_table = collect(&.{
     .{ .name = "base", .origin = "kosmoi/base.zig", .kind = .local, .module = Base },
     .{ .name = "frost", .origin = "kosmoi/frost.zig", .kind = .local, .module = Frost },
     .{ .name = "kosm_probe", .origin = "package kosm_probe", .kind = .package, .module = ProbePackage },
-}, &.{.{ .name = "minimal", .origin = "kosmoi/minimal.lua" }});
+}, &.{ .{ .name = "frost.nord", .origin = "kosmoi/frost/nord.lua" }, .{ .name = "minimal", .origin = "kosmoi/minimal.lua" } });
 
 test "list prints every kosmos with its origin, then what each package provides" {
     var buffer: [512]u8 = undefined;
@@ -300,6 +323,7 @@ test "list prints every kosmos with its origin, then what each package provides"
         \\  frost            kosmoi/frost.zig
         \\  frost.iced       kosmoi/frost.zig
         \\  frost.cold.deep  kosmoi/frost.zig
+        \\  frost.nord       kosmoi/frost/nord.lua
         \\  kosm_probe       package kosm_probe
         \\  minimal          kosmoi/minimal.lua
         \\packages:
@@ -324,6 +348,7 @@ test "listing one kosmos file shows its variants and the apps in each tree" {
         \\frost.cold.deep  kosmoi/frost.zig
         \\  terminal.kitty: ?kosm_probe.App
         \\  editor: kosm_probe.App
+        \\frost.nord       kosmoi/frost/nord.lua
         \\
     , writer.buffered());
 }

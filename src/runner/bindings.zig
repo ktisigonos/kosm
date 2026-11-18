@@ -197,7 +197,8 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                     const runtime: *Runtime = @ptrCast(@alignCast(given.state orelse return given.fail("{s} cannot be called here", .{full})));
                     var diagnostics: kosm.Diagnostics = .{ .kosmos = entry.name };
                     var stack: lifetime.Stack = undefined;
-                    var tree = kosmos_call.callKosmos(kosmos, .{ .arguments = &.{}, .layers = arguments, .scripts_folder = runtime.scripts_folder }, &diagnostics, &stack, .{
+                    const layers: []const kosmos_call.Layer = if (arguments.len == 0) &.{} else &.{.{ .values = arguments[0], .folder = runtime.scripts_folder }};
+                    var tree = kosmos_call.callKosmos(kosmos, .{ .arguments = &.{}, .layers = layers }, &diagnostics, &stack, .{
                         .arena = runtime.arena,
                         .io = runtime.io,
                         .places = .{ .home = runtime.home, .config = runtime.config, .kosmos = entry.folder, .folders = runtime.folders },

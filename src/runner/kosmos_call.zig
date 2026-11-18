@@ -18,10 +18,15 @@ pub const Reported = error{Reported};
 pub const Given = struct {
     /// The command line's parameters, which win.
     arguments: []const []const u8,
-    /// Tables a script kosmos sets, the lowest first.
-    layers: []const kosm.Loose = &.{},
-    /// The folder of the scripts setting `layers`, which relative paths they give start from.
-    scripts_folder: []const u8 = "",
+    /// Tables script kosmoi set, the lowest first.
+    layers: []const Layer = &.{},
+};
+
+/// A table of `Params` a script sets.
+pub const Layer = struct {
+    values: kosm.Loose,
+    /// The absolute folder of the script, which relative paths it gives start from.
+    folder: []const u8,
 };
 
 /// Calls `kosmos` with its `Params` read from `given` and their images and files loaded, on its
@@ -40,12 +45,12 @@ pub noinline fn callKosmos(comptime kosmos: anytype, given: Given, diagnostics: 
         var start: Params = .{};
         var host_set = false;
         for (given.layers) |layer| {
-            kosm.assign(Params, image_context.arena, &start, layer, diagnostics) catch |err| switch (err) {
+            kosm.assign(Params, image_context.arena, &start, layer.values, diagnostics) catch |err| switch (err) {
                 error.InvalidAssignment => return error.Reported,
                 error.OutOfMemory => return error.OutOfMemory,
             };
-            try params.absoluteLayerPaths(Params, image_context.arena, &start, layer, given.scripts_folder);
-            host_set = host_set or script.setsKey(layer, "host");
+            try params.absoluteLayerPaths(Params, image_context.arena, &start, layer.values, layer.folder);
+            host_set = host_set or script.setsKey(layer.values, "host");
         }
         var hostname_buffer: [std.posix.HOST_NAME_MAX]u8 = undefined;
         const hostname = if (comptime params.hasHost(Params)) try readHostname(&hostname_buffer, diagnostics) else "";
@@ -101,6 +106,8 @@ pub fn refuseDeadLists(arena: std.mem.Allocator, tree: anytype, dead: []const li
 pub const ZigKosmos = struct {
     /// As `kosm apply` spells it: "frost", "frost.iced".
     name: []const u8,
+    /// Where it is declared, for messages: "kosmoi/frost.zig", "package kosm_probe".
+    origin: []const u8,
     Namespace: type,
     function: []const u8,
     folder: []const u8,
@@ -113,7 +120,7 @@ pub fn zigKosmoi(comptime sources: []const @import("ScriptTarget.zig").KosmosSou
     inline for (sources) |source| {
         inline for (comptime discovery.declaredKosmoi(source.module)) |declared| {
             const name = comptime if (declared.name.len == 0) source.name else source.name ++ "." ++ declared.name;
-            found = found ++ .{ZigKosmos{ .name = name, .Namespace = declared.Namespace, .function = declared.function, .folder = source.folder }};
+            found = found ++ .{ZigKosmos{ .name = name, .origin = source.origin, .Namespace = declared.Namespace, .function = declared.function, .folder = source.folder }};
         }
     }
     const final = found[0..found.len].*;

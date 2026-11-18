@@ -377,33 +377,56 @@ fn addModuleRoots(b: *std.Build, run: *std.Build.Step.Run, name: []const u8, mod
     for (module.import_table.keys(), module.import_table.values()) |imported_name, imported| addModuleRoots(b, run, imported_name, imported, seen);
 }
 
-/// A script kosmos in `kosmoi/`: a file with an extension other than Zig's.
+/// A script kosmos in `kosmoi/` or a kosmos folder in it: a file with an extension other than
+/// Zig's and its manifests'.
 const ScriptFile = struct {
-    /// Its name, the file name before the first dot: "minimal".
+    /// Its name, the file name before the first dot ("minimal"), after its kosmos' name in a
+    /// kosmos folder ("personal.nord").
     name: []const u8,
-    /// "kosmoi/minimal.lua".
+    /// "kosmoi/minimal.lua", "kosmoi/personal/nord.lua".
     origin: []const u8,
 };
 
-/// Every script kosmos in `kosmoi/`, sorted by name; null after failing the build.
+/// Every script kosmos in `kosmoi/` and its kosmos folders, sorted by name; null after failing
+/// the build.
 fn scriptFiles(b: *std.Build) ?[]const ScriptFile {
     const io = b.graph.io;
     const full_path = b.root.joinString(b.allocator, "kosmoi") catch @panic("OOM");
     var dir = std.Io.Dir.cwd().openDir(io, full_path, .{ .iterate = true }) catch return &.{};
     defer dir.close(io);
     var found: std.ArrayList(ScriptFile) = .empty;
+    if (!appendScripts(b, dir, "kosmoi", "", &found)) return null;
     var iterator = dir.iterate();
     while (iterator.next(io) catch |err| {
         fail(b, "cannot read kosmoi/: {s}", .{@errorName(err)});
         return null;
-    }) |file| {
-        if (file.kind != .file and file.kind != .sym_link) continue;
-        if (std.mem.startsWith(u8, file.name, ".") or std.mem.endsWith(u8, file.name, ".zig")) continue;
-        const dot = std.mem.findScalar(u8, file.name, '.') orelse continue;
-        found.append(b.allocator, .{ .name = b.dupe(file.name[0..dot]), .origin = b.fmt("kosmoi/{s}", .{file.name}) }) catch @panic("OOM");
+    }) |entry| {
+        if (entry.kind != .directory or std.mem.startsWith(u8, entry.name, ".")) continue;
+        var folder = dir.openDir(io, entry.name, .{ .iterate = true }) catch |err| {
+            fail(b, "cannot read kosmoi/{s}/: {s}", .{ entry.name, @errorName(err) });
+            return null;
+        };
+        defer folder.close(io);
+        if (!appendScripts(b, folder, b.fmt("kosmoi/{s}", .{entry.name}), b.fmt("{s}.", .{entry.name}), &found)) return null;
     }
     std.mem.sort(ScriptFile, found.items, {}, scriptLessThan);
     return found.items;
+}
+
+/// Appends every script in `dir`, the config's folder `shown`, each named after `prefix` and its
+/// file name before the first dot; returns false after failing the build.
+fn appendScripts(b: *std.Build, dir: std.Io.Dir, shown: []const u8, prefix: []const u8, found: *std.ArrayList(ScriptFile)) bool {
+    var iterator = dir.iterate();
+    while (iterator.next(b.graph.io) catch |err| {
+        fail(b, "cannot read {s}/: {s}", .{ shown, @errorName(err) });
+        return false;
+    }) |file| {
+        if (file.kind != .file and file.kind != .sym_link) continue;
+        if (std.mem.startsWith(u8, file.name, ".") or std.mem.endsWith(u8, file.name, ".zig") or std.mem.endsWith(u8, file.name, ".zon")) continue;
+        const dot = std.mem.findScalar(u8, file.name, '.') orelse continue;
+        found.append(b.allocator, .{ .name = b.fmt("{s}{s}", .{ prefix, file.name[0..dot] }), .origin = b.fmt("{s}/{s}", .{ shown, file.name }) }) catch @panic("OOM");
+    }
+    return true;
 }
 
 fn scriptLessThan(_: void, left: ScriptFile, right: ScriptFile) bool {
