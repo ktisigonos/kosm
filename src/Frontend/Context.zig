@@ -9,6 +9,12 @@ const Frontend = @import("../Frontend.zig");
 arena: std.mem.Allocator,
 /// The script as messages show it: "kosmoi/personal.lua".
 path: []const u8,
+/// The variant to build, as `kosm apply mine.light` names it: `&.{"light"}`. Empty builds the
+/// script's own kosmos. A script giving variants builds the one named `kosmos` for it, in a
+/// group too; one giving none has no variants to name.
+variant: []const []const u8 = &.{},
+/// What the script may call.
+library: Frontend.Library = .{},
 /// Why `load` failed, set by `fail`.
 message: ?[]const u8 = null,
 

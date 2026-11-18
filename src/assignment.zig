@@ -8,6 +8,10 @@ const Diagnostics = @import("Diagnostics.zig");
 const Loose = @import("Loose.zig");
 const Value = @import("value.zig").Value;
 const app = @import("app.zig");
+const Handle = @import("Frontend/Handle.zig");
+
+/// Deep copies, so a value copied from a handle owns its lists.
+pub const copy = @import("assignment/copy.zig");
 
 /// Values read from text, and how types are described in messages.
 pub const text = @import("assignment/text.zig");
@@ -27,13 +31,29 @@ const branch_quota = 100_000;
 /// table of one tag and its value. Strings and lists are copied into `arena`. On an error,
 /// `tree` is unchanged and the message names the value's origin and path.
 pub fn assign(comptime T: type, arena: std.mem.Allocator, tree: *T, loose: Loose, diagnostics: *Diagnostics) Error!void {
+    return assignNamed(T, arena, tree, loose, diagnostics, "the kosmos");
+}
+
+/// `assign`, with `name` standing for `tree` in messages about it as a whole: "argument 1",
+/// "kosm_kitty.App". A handle given for a value of its own type sets a deep copy of it.
+pub fn assignNamed(comptime T: type, arena: std.mem.Allocator, tree: *T, loose: Loose, diagnostics: *Diagnostics, name: []const u8) Error!void {
     // Trees are large, so the copy lives in the arena; lists are replaced, never changed in place,
     // so a shallow copy keeps `tree` intact until it is overwritten.
-    const copy = try arena.create(T);
-    copy.* = tree.*;
-    var walker: Walker = .{ .arena = arena, .diagnostics = diagnostics };
-    try walker.overlay(T, copy, loose);
-    tree.* = copy.*;
+    const working = try arena.create(T);
+    working.* = tree.*;
+    var walker: Walker = .{ .arena = arena, .diagnostics = diagnostics, .name = name };
+    try walker.overlay(T, working, loose);
+    tree.* = working.*;
+}
+
+/// A `T` built from `loose` alone, starting from the type's defaults, the way a function's
+/// argument is: a field without a default must be given. `name` stands for the value in
+/// messages about it as a whole: "argument 1".
+pub fn build(comptime T: type, arena: std.mem.Allocator, loose: Loose, diagnostics: *Diagnostics, name: []const u8) Error!T {
+    const built = try arena.create(T);
+    var walker: Walker = .{ .arena = arena, .diagnostics = diagnostics, .name = name };
+    try walker.fresh(T, built, loose);
+    return built.*;
 }
 
 const Walker = struct {
@@ -43,12 +63,15 @@ const Walker = struct {
     segments: std.ArrayList([]const u8) = .empty,
     /// The origin of the innermost value that has one.
     origin: ?[]const u8 = null,
+    /// What messages call the value as a whole.
+    name: []const u8,
 
     /// Sets `target` from `loose`, keeping what `loose` leaves out.
     fn overlay(walker: *Walker, comptime T: type, target: *T, loose: Loose) Error!void {
         @setEvalBranchQuota(branch_quota);
         const outer_origin = walker.enter(loose);
         defer walker.origin = outer_origin;
+        if (loose.value == .handle) return walker.fromHandle(T, target, loose);
         if (comptime isLeaf(T)) return walker.fresh(T, target, loose);
         switch (@typeInfo(T)) {
             .optional => |optional| {
@@ -96,6 +119,7 @@ const Walker = struct {
         @setEvalBranchQuota(branch_quota);
         const outer_origin = walker.enter(loose);
         defer walker.origin = outer_origin;
+        if (loose.value == .handle) return walker.fromHandle(T, target, loose);
         if (T == Value) {
             target.* = try walker.toValue(loose);
             return;
@@ -189,6 +213,24 @@ const Walker = struct {
         return .{ .value = .{ .table = combined.items }, .origin = found.?.origin };
     }
 
+    /// Sets `target` to a deep copy of the value a handle holds, which must be a `T`, or the
+    /// value inside an optional `T`.
+    fn fromHandle(walker: *Walker, comptime T: type, target: *T, loose: Loose) Error!void {
+        const handle = loose.value.handle;
+        if (handle.as(T)) |value| {
+            target.* = try copy.deep(T, walker.arena, value.*);
+            return;
+        }
+        if (@typeInfo(T) == .optional) {
+            const Child = @typeInfo(T).optional.child;
+            if (handle.as(Child)) |value| {
+                target.* = try copy.deep(Child, walker.arena, value.*);
+                return;
+            }
+        }
+        return walker.expected(T, loose);
+    }
+
     const UnionMode = enum { overlay, fresh };
 
     /// A tag's name for a tag without a value, or a table of one tag and its value; `.overlay`
@@ -256,7 +298,7 @@ const Walker = struct {
                 else => {},
             },
             .boolean => |boolean| if (T == bool) return boolean,
-            .table, .list, .null => {},
+            .table, .list, .null, .handle => {},
         }
         return walker.expected(T, loose);
     }
@@ -287,7 +329,7 @@ const Walker = struct {
             .integer => |integer| return .{ .integer = integer },
             .float => |float| return .{ .float = float },
             .boolean => |boolean| return .{ .boolean = boolean },
-            .text, .null => return walker.expected(Value, loose),
+            .text, .null, .handle => return walker.expected(Value, loose),
         }
     }
 
@@ -345,7 +387,7 @@ const Walker = struct {
             const separator = if (path.written().len == 0 or segment[0] == '[') "" else ".";
             path.writer.print("{s}{s}", .{ separator, segment }) catch return error.OutOfMemory;
         }
-        const shown_path = if (path.written().len == 0) "the kosmos" else path.written();
+        const shown_path = if (path.written().len == 0) walker.name else path.written();
         if (walker.origin) |origin| {
             walker.diagnostics.set("", "", "{s}: {s}: {s}", .{ origin, shown_path, problem });
         } else {
@@ -399,6 +441,7 @@ fn describeGiven(buffer: []u8, loose: Loose) []const u8 {
             std.fmt.bufPrint(buffer, "the number {e}", .{float})) catch "a number",
         .boolean => |boolean| if (boolean) "true" else "false",
         .null => "null",
+        .handle => |handle| std.fmt.bufPrint(buffer, "a {s}", .{handle.type.name}) catch "a Zig value",
     };
 }
 
@@ -679,4 +722,51 @@ test "strings are copied, so they outlive the script's buffers" {
     try fixture.assignLoose(fixture.kitty("font", .{ .string = &buffer }));
     buffer[0] = 'X';
     try testing.expectEqualStrings("Iosevka", fixture.kittyApp().font.?);
+}
+
+/// A handle's table for tests that only check its type.
+fn testHandleType(comptime T: type, name: []const u8) Handle.Type {
+    const Stub = struct {
+        fn get(call: *@import("Frontend/Call.zig"), pointer: *anyopaque, key: Handle.Key) @import("Frontend/Call.zig").Error!Loose {
+            _ = .{ pointer, key };
+            return call.fail("not in tests", .{});
+        }
+        fn set(call: *@import("Frontend/Call.zig"), pointer: *anyopaque, key: Handle.Key, value: Loose) @import("Frontend/Call.zig").Error!void {
+            _ = .{ pointer, key, value };
+            return call.fail("not in tests", .{});
+        }
+        fn length(pointer: *anyopaque) usize {
+            _ = pointer;
+            return 0;
+        }
+    };
+    return .{ .id = Handle.id(T), .name = name, .get = Stub.get, .set = Stub.set, .length = Stub.length };
+}
+
+test "a handle sets a deep copy of its value into a field of its type, optional or not" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    const layout_type = testHandleType(Layout, "Layout");
+    var variant = "latin".*;
+    var layout: Layout = .{ .layout = "rs", .variant = &variant };
+    const handle: Handle = .{ .pointer = &layout, .type = &layout_type };
+    try fixture.assignLoose(fixture.kitty("layouts", .{ .list = &.{looseOf(.{ .handle = handle })} }));
+    layout.layout = "us";
+    try testing.expectEqualStrings("rs", fixture.kittyApp().layouts[0].layout);
+
+    const color_type = testHandleType(Color, "kosm.Color");
+    var color = try Color.parse("#ff0000");
+    try fixture.assignLoose(fixture.kitty("border", .{ .handle = .{ .pointer = &color, .type = &color_type } }));
+    try testing.expectEqualStrings("#ff0000", fixture.kittyApp().border.?.hex().slice());
+    try fixture.expectFailure(fixture.kitty("font", .{ .handle = handle }), "terminal.kitty.font: expected text or null, got a Layout");
+}
+
+test "build starts from the type's defaults and names the value as a whole" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    const built = try build(Layout, fixture.arena.allocator(), looseOf(.{ .table = &.{entryOf("layout", .{ .string = "us" })} }), &fixture.diagnostics, "argument 1");
+    try testing.expectEqualStrings("us", built.layout);
+    try testing.expectEqual(null, built.variant);
+    try testing.expectError(error.InvalidAssignment, build(Layout, fixture.arena.allocator(), looseOf(.{ .integer = 3 }), &fixture.diagnostics, "argument 1"));
+    try testing.expectEqualStrings("argument 1: expected a table of its fields (layout, variant), got the integer 3", fixture.diagnostics.message());
 }

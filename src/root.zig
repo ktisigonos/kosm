@@ -132,6 +132,9 @@ test {
     std.testing.refAllDecls(app);
     std.testing.refAllDecls(assignment);
     std.testing.refAllDecls(assignment.text);
+    std.testing.refAllDecls(assignment.copy);
+    std.testing.refAllDecls(Frontend);
+    std.testing.refAllDecls(Frontend.Handle);
 }
 
 const test_palette: Palette = .{

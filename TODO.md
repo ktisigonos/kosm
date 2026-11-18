@@ -26,6 +26,9 @@ Steps 21e-21f: kosmoi written in Lua, through a **frontend**. Decided with the h
 
 - **21f. Calls from Lua** `PLAN FIRST`
   - Do: a Lua kosmos calls Zig functions: a Zig kosmos or base (`kosmoi.personal(params)`) returning a tree it overrides, `from` after changed inputs, theme building, modifiers and variations, and Lua variants as plain function calls. Bindings are generated from the Zig declarations by reflection inside kosm; package authors write none. Completion covers the calls.
+  - Decided: values cross as handles (typed Zig values in kosm's arena; assigning one copies it deeply), every bindable public function, value and struct/union of every module and `kosm` is bound by reflection, spelled `kosmoi.personal(...)`, `kosm_kitty.from(theme)`, `kosm.Theme.from(...)`; one step.
+  - Built in kosm: `Loose.handle`, `assignNamed`/`build`/`copy.deep`, `Frontend.Library`/`Namespace`/`Function`/`Handle`/`Call`, `runner/bindings.zig`, script variants (`mine.light`) and scripts returning a tree. Uncommitted in kosm_lua (tests pass with `--fork`): `frontend/Bridge.zig` (globals, functions, handle metatables), variants and tree results in `frontend/root.zig`.
+  - Left: Lua tests of calls, handles and variants (a hand-written test library); pin kosm_lua on the new kosm commit and commit it; an end-to-end run on a scratch copy of the config; completion for the calls (`fun(...)` per function, methods per class, `kosmoi` and package globals); `DESIGN.md` (calls, handles, variants of scripts replace "it has no variants"); the kosm_lua README. Note: `kosm_base.fromTheme` takes its look at compile time, so Lua cannot call it.
   - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor.
 
 

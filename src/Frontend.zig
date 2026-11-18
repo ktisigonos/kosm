@@ -11,8 +11,9 @@ const std = @import("std");
 name: []const u8,
 /// File extensions this frontend claims, with the dot (".lua").
 extensions: []const []const u8,
-/// Reads a script's text into what it builds on and what it sets. Strings may point into
-/// `source`, which lives for the whole run; anything else is allocated in `context.arena`.
+/// Runs a script and reads what it builds: what it builds on and what it sets, or the tree it
+/// built by calling Zig code through `context.library`. Strings may point into `source`, which
+/// lives for the whole run; anything else is allocated in `context.arena`.
 load: *const fn (context: *Context, source: []const u8) Error!Script,
 /// Writes the files an editor completes scripts from, out of every type a script may set;
 /// kosm puts them in the config's `zig-out/completions/<name>/` whenever it builds the runner
@@ -31,6 +32,21 @@ pub const Context = @import("Frontend/Context.zig");
 
 /// Every type a script may set, for `complete`.
 pub const Completion = @import("Frontend/Completion.zig");
+
+/// Every Zig function, value and namespace a script may call.
+pub const Library = @import("Frontend/Library.zig");
+
+/// A name a script reaches functions, values and other namespaces through.
+pub const Namespace = @import("Frontend/Namespace.zig");
+
+/// A Zig function a script calls.
+pub const Function = @import("Frontend/Function.zig");
+
+/// A Zig value a script holds by reference.
+pub const Handle = @import("Frontend/Handle.zig");
+
+/// What a function or handle gets from its frontend when a script uses it.
+pub const Call = @import("Frontend/Call.zig");
 
 /// Errors `load` may return. Return `InvalidScript` through `Context.fail`.
 pub const Error = std.mem.Allocator.Error || error{InvalidScript};

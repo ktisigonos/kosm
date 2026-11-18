@@ -24,12 +24,14 @@ pub const Context = struct {
     frontends: []const discovery.DeclaredFrontend,
     /// The name of every module that may declare Zig kosmoi, which no script may share.
     modules: []const []const u8,
+    /// What a script may call.
+    library: kosm.Frontend.Library = .{},
     diagnostics: *kosm.Diagnostics,
 };
 
 /// One script read by its frontend.
 pub const Loaded = struct {
-    /// As `kosm apply` spells it: "minimal".
+    /// As `kosm apply` spells it: "minimal", "minimal.light".
     name: []const u8,
     /// As messages show it: "kosmoi/minimal.lua".
     path: []const u8,
@@ -41,6 +43,8 @@ pub const Chain = struct {
     /// The Zig kosmos at the bottom ("personal", "frost.iced"), or null when the bottom script
     /// has no base.
     base: ?[]const u8,
+    /// The tree the bottom script built itself by calling Zig code; then `base` is null.
+    tree: ?kosm.Frontend.Handle = null,
     /// Every script, the one building on the base first and the applied one last.
     scripts: []const Loaded,
 };
@@ -73,10 +77,11 @@ fn isScriptOf(file_name: []const u8, name: []const u8) bool {
     return !std.mem.eql(u8, file_name[name.len..], zig_extension);
 }
 
-/// Reads the script kosmos `name` and every script below it.
+/// Reads the script kosmos `name` (with a variant, `minimal.light`) and every script below it.
 pub fn resolve(context: Context, name: []const u8) Error!Chain {
     var visited: std.ArrayList([]const u8) = .empty;
     var loaded: std.ArrayList(Loaded) = .empty;
+    var tree: ?kosm.Frontend.Handle = null;
     var current = name;
     const base: ?[]const u8 = while (true) {
         for (visited.items) |earlier| {
@@ -92,22 +97,35 @@ pub fn resolve(context: Context, name: []const u8) Error!Chain {
             if (loaded.items.len == 0) return fail(context, "there is no script kosmos '{s}' in {s}/", .{ current, directory });
             break current;
         };
-        if (dot != null) return fail(context, "'{s}': {s}/{s} is a script, and script kosmoi have no variants", .{ current, directory, file_name });
         for (context.modules) |module| {
             if (std.mem.eql(u8, module, file_part)) return fail(context, "'{s}' names both {s}/{s} and the Zig module '{s}'; rename one", .{ file_part, directory, file_name, module });
         }
-        const script = try load(context, file_part, file_name);
+        const variant = if (dot) |position| try splitVariant(context.arena, current[position + 1 ..]) else &.{};
+        const script = try load(context, current, file_name, file_part.len, variant);
         try loaded.append(context.arena, script);
+        if (script.script.tree) |built| {
+            tree = built;
+            break null;
+        }
         current = script.script.base orelse break null;
     };
     std.mem.reverse(Loaded, loaded.items);
-    return .{ .base = base, .scripts = loaded.items };
+    return .{ .base = base, .tree = tree, .scripts = loaded.items };
 }
 
-/// Reads `file_name` in `directory` through the frontend claiming its extension.
-fn load(context: Context, name: []const u8, file_name: []const u8) Error!Loaded {
+/// `light.soft` as `&.{ "light", "soft" }`.
+fn splitVariant(arena: std.mem.Allocator, text: []const u8) std.mem.Allocator.Error![]const []const u8 {
+    var segments: std.ArrayList([]const u8) = .empty;
+    var parts = std.mem.splitScalar(u8, text, '.');
+    while (parts.next()) |part| try segments.append(arena, part);
+    return segments.items;
+}
+
+/// Reads `file_name` in `directory`, whose name is its first `name_length` bytes, through the
+/// frontend claiming its extension, building `variant` of it.
+fn load(context: Context, name: []const u8, file_name: []const u8, name_length: usize, variant: []const []const u8) Error!Loaded {
     const shown = try context.arena.print("{s}/{s}", .{ directory, file_name });
-    const extension = file_name[name.len..];
+    const extension = file_name[name_length..];
     const frontend = try frontendFor(context, shown, extension);
     const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, shown });
     const source = std.Io.Dir.cwd().readFileAlloc(context.io, full_path, context.arena, .limited(size_limit)) catch |err| switch (err) {
@@ -115,7 +133,7 @@ fn load(context: Context, name: []const u8, file_name: []const u8) Error!Loaded 
         error.StreamTooLong => return fail(context, "{s}: the file is larger than {d} MiB", .{ shown, size_limit / (1024 * 1024) }),
         else => return fail(context, "{s}: cannot read the file: {s}", .{ shown, @errorName(err) }),
     };
-    var frontend_context: kosm.Frontend.Context = .{ .arena = context.arena, .path = shown };
+    var frontend_context: kosm.Frontend.Context = .{ .arena = context.arena, .path = shown, .variant = variant, .library = context.library };
     const script = frontend.load(&frontend_context, source) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.InvalidScript => {
@@ -124,6 +142,8 @@ fn load(context: Context, name: []const u8, file_name: []const u8) Error!Loaded 
             return fail(context, "{s}: {s}", .{ shown, message });
         },
     };
+    if (script.tree != null and (script.base != null or script.params != null or script.theme != null or script.overrides != null))
+        return fail(context, "{s}: it returns a tree it built, so it may set nothing else; set values on the tree instead", .{shown});
     if (script.base == null and script.params != null)
         return fail(context, "{s}: it sets parameters but builds on no kosmos, so nothing takes them", .{shown});
     if (script.base != null and script.theme != null)
@@ -232,7 +252,8 @@ fn fail(context: Context, comptime format: []const u8, arguments: anytype) Error
 const testing = std.testing;
 
 /// A frontend for tests reading one setting per line: `base frost`, `param blur=false`,
-/// `theme mode=dark` or `set kitty.size=3`, values read like `--set`'s; `fail` fails at its line.
+/// `theme mode=dark` or `set kitty.size=3`, values read like `--set`'s; `fail` fails at its line,
+/// `tree` returns `test_tree`, and `variants` builds on the kosmos the variant names.
 const test_frontend: kosm.Frontend = .{ .name = "lines", .extensions = &.{".kosmos"}, .load = loadLines };
 
 fn loadLines(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.Script {
@@ -242,6 +263,7 @@ fn loadLines(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.
     var override_entries: std.ArrayList(kosm.Loose.Entry) = .empty;
     var lines = std.mem.splitScalar(u8, source, '\n');
     var line_number: usize = 0;
+    var has_variants = false;
     while (lines.next()) |line| {
         line_number += 1;
         if (line.len == 0) continue;
@@ -252,16 +274,29 @@ fn loadLines(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.
             result.base = rest;
             continue;
         }
+        if (std.mem.eql(u8, keyword, "variants")) {
+            has_variants = true;
+            result.base = try std.mem.join(context.arena, ".", context.variant);
+            continue;
+        }
+        if (std.mem.eql(u8, keyword, "tree")) {
+            result.tree = .{ .pointer = &test_tree, .type = &test_tree_type };
+            continue;
+        }
         if (std.mem.eql(u8, keyword, "fail")) return context.fail("{s}: {s}", .{ try context.at(line_number), rest });
         const entries = if (std.mem.eql(u8, keyword, "param")) &params_entries else if (std.mem.eql(u8, keyword, "theme")) &theme_entries else if (std.mem.eql(u8, keyword, "set")) &override_entries else return context.fail("{s}: unknown keyword '{s}'", .{ try context.at(line_number), keyword });
         const equals = std.mem.findScalar(u8, rest, '=') orelse return context.fail("unreadable line {d}", .{line_number});
         try entries.append(context.arena, try nestedEntry(context.arena, rest[0..equals], .{ .value = .{ .text = rest[equals + 1 ..] }, .origin = try context.at(line_number) }));
     }
+    if (context.variant.len != 0 and !has_variants) return context.fail("it has no variants", .{});
     if (params_entries.items.len != 0) result.params = .{ .value = .{ .table = params_entries.items } };
     if (theme_entries.items.len != 0) result.theme = .{ .value = .{ .table = theme_entries.items } };
     if (override_entries.items.len != 0) result.overrides = .{ .value = .{ .table = override_entries.items } };
     return result;
 }
+
+var test_tree: u8 = 0;
+const test_tree_type: kosm.Frontend.Handle.Type = .{ .id = kosm.Frontend.Handle.id(u8), .name = "u8", .get = undefined, .set = undefined, .length = undefined };
 
 /// `a.b` and `leaf` as the entry `a = { b = leaf }`.
 fn nestedEntry(arena: std.mem.Allocator, path: []const u8, leaf: kosm.Loose) std.mem.Allocator.Error!kosm.Loose.Entry {
@@ -332,6 +367,21 @@ test "scripts building on scripts are read down to the Zig kosmos, the lowest fi
     try testing.expectEqualStrings("top", chain.scripts[1].name);
 }
 
+test "a variant of a script is built by its frontend, and a returned tree ends the chain" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{ .{ "mine.kosmos", "variants\n" }, .{ "built.kosmos", "tree\n" }, .{ "on.kosmos", "base built\nset kitty.size=3\n" }, .{ "both.kosmos", "tree\nset kitty.size=3\n" } });
+    defer fixture.deinit();
+
+    const variant = try resolve(fixture.context(), "mine.frost.iced");
+    try testing.expectEqualStrings("frost.iced", variant.base.?);
+    try testing.expectEqualStrings("mine.frost.iced", variant.scripts[0].name);
+    const built = try resolve(fixture.context(), "on");
+    try testing.expectEqual(null, built.base);
+    try testing.expect(built.tree.?.pointer == @as(*anyopaque, &test_tree));
+    try testing.expectEqualStrings("built", built.scripts[0].name);
+    try fixture.expectFailure("both", "kosmoi/both.kosmos: it returns a tree it built, so it may set nothing else; set values on the tree instead");
+}
+
 test "a script without a base ends the chain on none" {
     var fixture: Fixture = undefined;
     try fixture.init(&.{ .{ "alone.kosmos", "theme mode=dark\nset kitty.size=3\n" }, .{ "on.kosmos", "base alone\n" } });
@@ -379,7 +429,7 @@ test "a script without a base may not set parameters, one with a base no theme i
     defer fixture.deinit();
     try fixture.expectFailure("params", "kosmoi/params.kosmos: it sets parameters but builds on no kosmos, so nothing takes them");
     try fixture.expectFailure("theme", "kosmoi/theme.kosmos: it sets a theme input but builds on 'frost', which builds its own theme; set the base's parameters or its theme's values instead");
-    try fixture.expectFailure("variant.deep", "'variant.deep': kosmoi/variant.kosmos is a script, and script kosmoi have no variants");
+    try fixture.expectFailure("variant.deep", "kosmoi/variant.kosmos: it has no variants");
     try fixture.expectFailure("missing", "there is no script kosmos 'missing' in kosmoi/");
 }
 

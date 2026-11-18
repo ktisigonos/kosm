@@ -1,7 +1,13 @@
 //! What a script kosmos says, as a frontend reads it: the kosmos it builds on, or none, and the
-//! values it sets. Kosm puts the values into the typed tree, all or nothing.
+//! values it sets, or the tree it built itself by calling Zig code. Kosm puts the values into
+//! the typed tree, all or nothing.
 
 const Loose = @import("../Loose.zig");
+const Handle = @import("Handle.zig");
+
+/// The tree the script built by calling a Zig kosmos and setting its values, as a handle. Set
+/// alone: a script returning a tree builds on no name and sets nothing else.
+tree: ?Handle = null,
 
 /// The kosmos this one builds on, as `kosm apply` spells it: a Zig kosmos ("personal",
 /// "frost.iced") or another script kosmos ("minimal"). Null builds the kosmos from `theme`

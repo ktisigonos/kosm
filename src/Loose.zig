@@ -27,4 +27,8 @@ pub const Kind = union(enum) {
     boolean: bool,
     /// Clears an optional field.
     null,
+    /// A Zig value a script holds, copied into a field of the same type.
+    handle: Handle,
 };
+
+const Handle = @import("Frontend/Handle.zig");
