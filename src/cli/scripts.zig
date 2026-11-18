@@ -456,6 +456,11 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try testing.expect(std.mem.find(u8, (try report(context, "on")).?, "param\t--size\t") != null);
     try testing.expect(std.mem.find(u8, (try report(context, "alone")).?, "set\tkitty.fonts.font_size\t") != null);
     try testing.expectEqual(null, try report(context, "missing"));
+    // A Zig variant in a script kosmos' folder completes its own parameters and paths.
+    const hail_iced = (try report(context, "hail.iced")).?;
+    try testing.expect(std.mem.find(u8, hail_iced, "param\t--on\t") != null);
+    try testing.expect(std.mem.find(u8, hail_iced, "set\tkitty.fonts.font_size\t") != null);
+    try testing.expectEqual(null, try baseOf(context, "hail.iced"));
 
     // `kosm list` shows scripts, and `kosm build` takes a script's name.
     stdout.clearRetainingCapacity();

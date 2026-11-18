@@ -220,6 +220,12 @@ fn treeTypes(comptime sources: []const ScriptTarget.KosmosSource) []const type {
 fn writeScriptCompletions(init: std.process.Init, comptime target: ScriptTarget, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const stdout = streams.stdout;
     var runtime = try scriptRuntime(init, target, &.{}, streams.stderr, diagnostics);
+    // A Zig kosmos sent here (one in a script kosmos' folder) completes as its own runner would.
+    if (try script.locate(KosmosBuilder(target).scriptContext(&runtime, diagnostics), diagnostics.kosmos) == null) {
+        inline for (comptime kosmos_call.zigKosmoi(target.kosmoi)) |entry| {
+            if (std.mem.eql(u8, diagnostics.kosmos, entry.name)) return completions.write(stdout, @field(entry.Namespace, entry.function));
+        }
+    }
     const chain = try resolveScript(target, &runtime, diagnostics.kosmos, diagnostics);
     if (chain.tree) |tree| {
         inline for (comptime treeTypes(target.kosmoi)) |Tree| {
