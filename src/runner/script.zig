@@ -70,37 +70,107 @@ pub const Chain = struct {
 
 /// Where the script a kosmos name names lives.
 pub const Location = struct {
-    /// In the config: "kosmoi/minimal.lua", or "kosmoi/personal/nord.lua" for a script in a
-    /// kosmos' folder.
+    /// In the config: "kosmoi/minimal.lua", "kosmoi/frost/root.lua" for a script giving its
+    /// folder's kosmos, or "kosmoi/personal/nord.lua" for a script in a kosmos' folder.
     path: []const u8,
     /// How much of the name the file names: "minimal" of "minimal.light", or "personal.nord".
     name_length: usize,
     /// ".lua".
     extension: []const u8,
+    /// Whether the script is its folder's root, giving the kosmos named after the folder, which
+    /// may hold Zig variants in a `root.zig` beside it.
+    is_root: bool = false,
 };
 
-/// The script kosmos `name` (with any variant) names: `kosmoi/<name>.<extension>`, or for
-/// `kosmos.variant` also `kosmoi/<kosmos>/<variant>.<extension>`. Null when there is none; two
-/// files it could name fail naming both.
+/// The file name a script giving its folder's kosmos has before its extension.
+const root_name = "root";
+
+/// The script kosmos `name` (with any variant) names: `kosmoi/<name>.<extension>` or
+/// `kosmoi/<name>/root.<extension>`, or for `kosmos.variant` also
+/// `kosmoi/<kosmos>/<variant>.<extension>`. Null when there is none, or when `name` is a Zig
+/// kosmos, which wins over the variants of a script it shares a folder with. Two scripts, or a
+/// script and a Zig kosmos, giving the same name fail naming both.
 pub fn locate(context: Context, name: []const u8) Error!?Location {
     var segments = std.mem.splitScalar(u8, name, '.');
     const first = segments.first();
-    const second = segments.next();
-    const top: ?Location = if (try findIn(context, directory, first, first)) |file_name| .{
-        .path = try context.arena.print("{s}/{s}", .{ directory, file_name }),
-        .name_length = first.len,
-        .extension = file_name[first.len..],
-    } else null;
-    const variant = second orelse return top;
     const folder = try context.arena.print("{s}/{s}", .{ directory, first });
+    const top = try locatedIn(context, directory, first, first, first.len);
+    var root = try locatedIn(context, folder, root_name, first, first.len);
+    if (root) |*found| found.is_root = true;
+    if (top != null and root != null) return fail(context, "'{s}' names both {s} and {s}; rename one", .{ first, top.?.path, root.?.path });
+    const owner = top orelse root;
+    const variant = segments.next() orelse return owner;
     const nested_name = name[0 .. first.len + 1 + variant.len];
-    const nested: ?Location = if (try findIn(context, folder, variant, nested_name)) |file_name| .{
+    const nested = if (std.mem.eql(u8, variant, root_name)) null else try locatedIn(context, folder, variant, nested_name, nested_name.len);
+    if (zigOrigin(context, name)) |origin| {
+        if (nested) |file| try checkName(context, nested_name, file);
+        if (owner) |script| {
+            if (try givenVariant(context, script, name[first.len + 1 ..])) |given|
+                return fail(context, "'{s}.{s}' names both a variant of {s} and a kosmos of {s}; rename one", .{ first, given, script.path, origin });
+        }
+        return null;
+    }
+    if (nested) |file| {
+        if (owner) |script| {
+            if (try givenVariant(context, script, variant)) |given|
+                return fail(context, "'{s}.{s}' names both a variant of {s} and {s}; rename one", .{ first, given, script.path, file.path });
+        }
+        return file;
+    }
+    if (owner) |script| try checkVariant(context, script, name[0..first.len], name[first.len + 1 ..]);
+    return owner;
+}
+
+/// The script named `name` in the config's folder `folder`, naming `name_length` bytes of the
+/// kosmos name; null when there is none. Two scripts of that name fail, naming it `shown`.
+fn locatedIn(context: Context, folder: []const u8, name: []const u8, shown: []const u8, name_length: usize) Error!?Location {
+    const file_name = try findIn(context, folder, name, shown) orelse return null;
+    return .{
         .path = try context.arena.print("{s}/{s}", .{ folder, file_name }),
-        .name_length = nested_name.len,
-        .extension = file_name[variant.len..],
-    } else null;
-    if (top != null and nested != null) return fail(context, "'{s}' names both a variant of {s} and {s}; rename one", .{ nested_name, top.?.path, nested.?.path });
-    return top orelse nested;
+        .name_length = name_length,
+        .extension = file_name[name.len..],
+    };
+}
+
+/// Where the Zig kosmos `name` is declared, or null when there is none.
+fn zigOrigin(context: Context, name: []const u8) ?[]const u8 {
+    for (context.kosmoi) |kosmos| {
+        if (std.mem.eql(u8, kosmos.name, name)) return kosmos.origin;
+    }
+    return null;
+}
+
+/// Fails when `variant` of script `script`, the kosmos `owner`, shares a name with a Zig kosmos
+/// as a group holding it or held by it (`cold` and `cold.deep`).
+fn checkVariant(context: Context, script: Location, owner: []const u8, variant: []const u8) Error!void {
+    for (context.kosmoi) |kosmos| {
+        if (!std.mem.startsWith(u8, kosmos.name, owner) or kosmos.name.len <= owner.len or kosmos.name[owner.len] != '.') continue;
+        if (overlaps(kosmos.name[owner.len + 1 ..], variant))
+            return fail(context, "'{s}' names both a variant of {s} and a kosmos of {s}; rename one", .{ kosmos.name, script.path, kosmos.origin });
+    }
+}
+
+/// The variant of `script` that `variant` ("cold" or "cold.deep") names, is in or holds, as the
+/// script spells it; null when the script gives none of them.
+fn givenVariant(context: Context, script: Location, variant: []const u8) Error!?[]const u8 {
+    const frontend = try frontendFor(context, script.path, script.extension);
+    const list = frontend.variants orelse return null;
+    const source = try readScript(context, script.path);
+    var frontend_context: kosm.Frontend.Context = .{ .arena = context.arena, .path = script.path, .library = context.library };
+    var listed: kosm.Frontend.Error![]const []const u8 = undefined;
+    try runOnKosmosStack(context, script.path, runVariants, .{ list, &frontend_context, source, &listed });
+    const given = listed catch |err| return frontendFailure(context, script.path, &frontend_context, err);
+    for (given) |name| {
+        if (overlaps(name, variant)) return name;
+    }
+    return null;
+}
+
+/// Whether two dotted names are the same or one holds the other: `cold`, `cold.deep`.
+fn overlaps(left: []const u8, right: []const u8) bool {
+    const shorter, const longer = if (left.len <= right.len) .{ left, right } else .{ right, left };
+    if (!std.mem.startsWith(u8, longer, shorter)) return false;
+    return longer.len == shorter.len or longer[shorter.len] == '.';
 }
 
 /// The file name of script `name` in the config's folder `folder` ("minimal.lua"), or null
@@ -153,7 +223,7 @@ pub fn resolve(context: Context, name: []const u8) Error!Chain {
             if (loaded.items.len == 0) return fail(context, "there is no script kosmos '{s}' in {s}/", .{ current, directory });
             break current;
         };
-        try checkName(context, current[0..location.name_length], location.path);
+        try checkName(context, current[0..location.name_length], location);
         if (context.building) |building| try building.enter(context.arena, current, context.diagnostics);
         const variant = if (location.name_length < current.len) try splitVariant(context.arena, current[location.name_length + 1 ..]) else &.{};
         const script = try load(context, current, location, variant);
@@ -168,18 +238,24 @@ pub fn resolve(context: Context, name: []const u8) Error!Chain {
     return .{ .base = base, .tree = tree, .scripts = loaded.items };
 }
 
-/// Fails when script `name`, at `path`, shares its name with a Zig module, or, in a kosmos'
-/// folder, with a variant or group of that kosmos.
-fn checkName(context: Context, name: []const u8, path: []const u8) Error!void {
+/// Fails when script `name`, at `location`, shares its name with a Zig module, or, in a kosmos'
+/// folder, with a variant or group of that kosmos. A folder's root script shares its name with
+/// the folder's own module, which may then give variants only.
+fn checkName(context: Context, name: []const u8, location: Location) Error!void {
     if (std.mem.findScalar(u8, name, '.') == null) {
+        if (location.is_root) {
+            if (zigOrigin(context, name)) |origin|
+                return fail(context, "'{s}' names both {s} and the kosmos of {s}; only one root of a folder gives its kosmos", .{ name, location.path, origin });
+            return;
+        }
         for (context.modules) |module| {
-            if (std.mem.eql(u8, module, name)) return fail(context, "'{s}' names both {s} and the Zig module '{s}'; rename one", .{ name, path, module });
+            if (std.mem.eql(u8, module, name)) return fail(context, "'{s}' names both {s} and the Zig module '{s}'; rename one", .{ name, location.path, module });
         }
         return;
     }
     for (context.kosmoi) |kosmos| {
         const shared = std.mem.startsWith(u8, kosmos.name, name) and (kosmos.name.len == name.len or kosmos.name[name.len] == '.');
-        if (shared) return fail(context, "'{s}' names both {s} and a kosmos of {s}; rename one", .{ name, path, kosmos.origin });
+        if (shared) return fail(context, "'{s}' names both {s} and a kosmos of {s}; rename one", .{ name, location.path, kosmos.origin });
     }
 }
 
@@ -196,40 +272,64 @@ fn splitVariant(arena: std.mem.Allocator, text: []const u8) std.mem.Allocator.Er
 fn load(context: Context, name: []const u8, location: Location, variant: []const []const u8) Error!Loaded {
     const shown = location.path;
     const frontend = try frontendFor(context, shown, location.extension);
-    const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, shown });
-    const folder = std.Io.Dir.path.dirname(full_path).?;
-    if (context.calls_folder) |calls_folder| calls_folder.* = folder;
-    const source = std.Io.Dir.cwd().readFileAlloc(context.io, full_path, context.arena, .limited(size_limit)) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.StreamTooLong => return fail(context, "{s}: the file is larger than {d} MiB", .{ shown, size_limit / (1024 * 1024) }),
-        else => return fail(context, "{s}: cannot read the file: {s}", .{ shown, @errorName(err) }),
-    };
+    const source = try readScript(context, shown);
     var frontend_context: kosm.Frontend.Context = .{ .arena = context.arena, .path = shown, .variant = variant, .library = context.library };
     var loaded: kosm.Frontend.Error!kosm.Frontend.Script = undefined;
-    // A script builds whole kosmos trees by value through its calls, which outgrows a process'
-    // usual stack as a kosmos does, so it runs on a stack as large as a kosmos'.
-    const thread = std.Thread.spawn(.{ .stack_size = kosmos_call.kosmos_stack_size }, runLoad, .{ frontend, &frontend_context, source, &loaded }) catch |err|
-        return fail(context, "{s}: cannot start the thread the script runs on: {s}", .{ shown, @errorName(err) });
-    thread.join();
-    const script = loaded catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.InvalidScript => {
-            const message = frontend_context.message orelse "the script cannot be read, and its frontend did not say why";
-            if (std.mem.startsWith(u8, message, shown)) return fail(context, "{s}", .{message});
-            return fail(context, "{s}: {s}", .{ shown, message });
-        },
-    };
+    try runOnKosmosStack(context, shown, runLoad, .{ frontend.load, &frontend_context, source, &loaded });
+    const script = loaded catch |err| return frontendFailure(context, shown, &frontend_context, err);
     if (script.tree != null and (script.base != null or script.params != null or script.theme != null or script.overrides != null))
         return fail(context, "{s}: it returns a tree it built, so it may set nothing else; set values on the tree instead", .{shown});
     if (script.base == null and script.params != null)
         return fail(context, "{s}: it sets parameters but builds on no kosmos, so nothing takes them", .{shown});
     if (script.base != null and script.theme != null)
         return fail(context, "{s}: it sets a theme input but builds on '{s}', which builds its own theme; set the base's parameters or its theme's values instead", .{ shown, script.base.? });
-    return .{ .name = name, .path = shown, .folder = folder, .script = script };
+    return .{ .name = name, .path = shown, .folder = try scriptFolder(context, shown), .script = script };
 }
 
-fn runLoad(frontend: kosm.Frontend, context: *kosm.Frontend.Context, source: []const u8, loaded: *kosm.Frontend.Error!kosm.Frontend.Script) void {
-    loaded.* = frontend.load(context, source);
+/// The absolute folder holding the config's script `shown`.
+fn scriptFolder(context: Context, shown: []const u8) std.mem.Allocator.Error![]const u8 {
+    return std.Io.Dir.path.dirname(try std.Io.Dir.path.join(context.arena, &.{ context.config, shown })).?;
+}
+
+/// The text of the config's script `shown`, which lives for the whole run. Relative paths the
+/// script gives its calls start from its folder from now on.
+fn readScript(context: Context, shown: []const u8) Error![]const u8 {
+    const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, shown });
+    if (context.calls_folder) |calls_folder| calls_folder.* = try scriptFolder(context, shown);
+    return std.Io.Dir.cwd().readFileAlloc(context.io, full_path, context.arena, .limited(size_limit)) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.StreamTooLong => return fail(context, "{s}: the file is larger than {d} MiB", .{ shown, size_limit / (1024 * 1024) }),
+        else => return fail(context, "{s}: cannot read the file: {s}", .{ shown, @errorName(err) }),
+    };
+}
+
+/// Runs `function` with `arguments` for script `shown` and waits for it. A script builds whole
+/// kosmos trees by value through its calls, which outgrows a process' usual stack as a kosmos
+/// does, so it runs on a stack as large as a kosmos'.
+fn runOnKosmosStack(context: Context, shown: []const u8, comptime function: anytype, arguments: anytype) Error!void {
+    const thread = std.Thread.spawn(.{ .stack_size = kosmos_call.kosmos_stack_size }, function, arguments) catch |err|
+        return fail(context, "{s}: cannot start the thread the script runs on: {s}", .{ shown, @errorName(err) });
+    thread.join();
+}
+
+/// The failure a frontend returned for script `shown`, with its message.
+fn frontendFailure(context: Context, shown: []const u8, frontend_context: *const kosm.Frontend.Context, err: kosm.Frontend.Error) Error {
+    switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidScript => {
+            const message = frontend_context.message orelse "the script cannot be read, and its frontend did not say why";
+            if (std.mem.startsWith(u8, message, shown)) return fail(context, "{s}", .{message});
+            return fail(context, "{s}: {s}", .{ shown, message });
+        },
+    }
+}
+
+fn runLoad(load_script: *const fn (*kosm.Frontend.Context, []const u8) kosm.Frontend.Error!kosm.Frontend.Script, context: *kosm.Frontend.Context, source: []const u8, loaded: *kosm.Frontend.Error!kosm.Frontend.Script) void {
+    loaded.* = load_script(context, source);
+}
+
+fn runVariants(list: *const fn (*kosm.Frontend.Context, []const u8) kosm.Frontend.Error![]const []const u8, context: *kosm.Frontend.Context, source: []const u8, listed: *kosm.Frontend.Error![]const []const u8) void {
+    listed.* = list(context, source);
 }
 
 /// The one frontend claiming `extension`.
@@ -334,8 +434,18 @@ const testing = std.testing;
 
 /// A frontend for tests reading one setting per line: `base frost`, `param blur=false`,
 /// `theme mode=dark` or `set kitty.size=3`, values read like `--set`'s; `fail` fails at its line,
-/// `tree` returns `test_tree`, and `variants` builds on the kosmos the variant names.
-const test_frontend: kosm.Frontend = .{ .name = "lines", .extensions = &.{".kosmos"}, .load = loadLines };
+/// `tree` returns `test_tree`, `variants` builds on the kosmos the variant names, and
+/// `gives light` lists `light` among its variants.
+const test_frontend: kosm.Frontend = .{ .name = "lines", .extensions = &.{".kosmos"}, .load = loadLines, .variants = listLines };
+
+fn listLines(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error![]const []const u8 {
+    var names: std.ArrayList([]const u8) = .empty;
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "gives ")) try names.append(context.arena, line["gives ".len..]);
+    }
+    return names.items;
+}
 
 fn loadLines(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.Script {
     var result: kosm.Frontend.Script = .{};
@@ -360,6 +470,7 @@ fn loadLines(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.
             result.base = try std.mem.join(context.arena, ".", context.variant);
             continue;
         }
+        if (std.mem.eql(u8, keyword, "gives")) continue;
         if (std.mem.eql(u8, keyword, "tree")) {
             result.tree = .{ .pointer = &test_tree, .type = &test_tree_type };
             continue;
@@ -415,8 +526,14 @@ const Fixture = struct {
             .io = testing.io,
             .config = fixture.config,
             .frontends = &.{.{ .package = "kosm_lines", .frontend = test_frontend }},
-            .modules = &.{ "frost", "kosm_kitty" },
-            .kosmoi = &.{ .{ .name = "frost", .origin = "kosmoi/frost/" }, .{ .name = "frost.iced", .origin = "kosmoi/frost/" }, .{ .name = "frost.cold.deep", .origin = "kosmoi/frost/" } },
+            .modules = &.{ "frost", "kosm_kitty", "snow" },
+            .kosmoi = &.{
+                .{ .name = "frost", .origin = "kosmoi/frost/" },
+                .{ .name = "frost.iced", .origin = "kosmoi/frost/" },
+                .{ .name = "frost.cold.deep", .origin = "kosmoi/frost/" },
+                .{ .name = "snow.iced", .origin = "kosmoi/snow/" },
+                .{ .name = "snow.cold.deep", .origin = "kosmoi/snow/" },
+            },
             .diagnostics = &fixture.diagnostics,
         };
     }
@@ -475,8 +592,10 @@ test "a script in a kosmos' folder sharing a name with a Zig variant, a group or
         .{ "frost/cold.kosmos", "" },
         .{ "frost/twice.kosmos", "" },
         .{ "frost/twice.toml", "" },
-        .{ "mine.kosmos", "variants\n" },
+        .{ "mine.kosmos", "variants\ngives dark\n" },
         .{ "mine/dark.kosmos", "" },
+        .{ "other.kosmos", "variants\ngives light\n" },
+        .{ "other/dark.kosmos", "base frost\n" },
     });
     defer fixture.deinit();
     try fixture.expectFailure("frost.iced", "'frost.iced' names both kosmoi/frost/iced.kosmos and a kosmos of kosmoi/frost/; rename one");
@@ -484,6 +603,48 @@ test "a script in a kosmos' folder sharing a name with a Zig variant, a group or
     try testing.expectError(error.Reported, resolve(fixture.context(), "frost.twice"));
     try testing.expect(std.mem.startsWith(u8, fixture.diagnostics.message(), "'frost.twice' names both kosmoi/frost/twice."));
     try fixture.expectFailure("mine.dark", "'mine.dark' names both a variant of kosmoi/mine.kosmos and kosmoi/mine/dark.kosmos; rename one");
+    // A script in the folder of a script without that variant is the variant.
+    try testing.expectEqualStrings("kosmoi/other/dark.kosmos", (try resolve(fixture.context(), "other.dark")).scripts[0].path);
+}
+
+test "a folder's root script gives its kosmos, and the Zig variants beside it win their names" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{
+        .{ "snow/root.zig", "" },
+        .{ "snow/root.kosmos", "base frost\n" },
+        .{ "snow/nord.kosmos", "base snow.iced\n" },
+        .{ "bare/root.kosmos", "variants\ngives light\n" },
+    });
+    defer fixture.deinit();
+
+    const own = try resolve(fixture.context(), "snow");
+    try testing.expectEqualStrings("frost", own.base.?);
+    try testing.expectEqualStrings("kosmoi/snow/root.kosmos", own.scripts[0].path);
+    try testing.expect(std.mem.endsWith(u8, own.scripts[0].folder, "/kosmoi/snow"));
+    try testing.expectEqual(null, try locate(fixture.context(), "snow.iced"));
+    try testing.expectEqualStrings("snow.iced", (try resolve(fixture.context(), "snow.nord")).base.?);
+    // A folder without root.zig holds a script kosmos and its variants alone.
+    const variant = try resolve(fixture.context(), "bare.frost.iced");
+    try testing.expectEqualStrings("frost.iced", variant.base.?);
+    try testing.expectEqualStrings("kosmoi/bare/root.kosmos", variant.scripts[0].path);
+}
+
+test "a root script sharing a name with its folder's Zig kosmos, a variant or another script fails naming both" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{
+        .{ "frost/root.zig", "" },
+        .{ "frost/root.kosmos", "base kosm_kitty\n" },
+        .{ "snow/root.zig", "" },
+        .{ "snow/root.kosmos", "variants\ngives iced\ngives cold\n" },
+        .{ "hail.kosmos", "" },
+        .{ "hail/root.kosmos", "" },
+    });
+    defer fixture.deinit();
+    try fixture.expectFailure("frost", "'frost' names both kosmoi/frost/root.kosmos and the kosmos of kosmoi/frost/; only one root of a folder gives its kosmos");
+    try fixture.expectFailure("snow.iced", "'snow.iced' names both a variant of kosmoi/snow/root.kosmos and a kosmos of kosmoi/snow/; rename one");
+    try fixture.expectFailure("snow.cold", "'snow.cold.deep' names both a variant of kosmoi/snow/root.kosmos and a kosmos of kosmoi/snow/; rename one");
+    try fixture.expectFailure("snow.cold.deep", "'snow.cold' names both a variant of kosmoi/snow/root.kosmos and a kosmos of kosmoi/snow/; rename one");
+    try fixture.expectFailure("hail", "'hail' names both kosmoi/hail.kosmos and kosmoi/hail/root.kosmos; rename one");
 }
 
 test "scripts building on scripts are read down to the Zig kosmos, the lowest first" {

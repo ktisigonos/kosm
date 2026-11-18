@@ -172,18 +172,9 @@ fn writeOutput(io: std.Io, arena: std.mem.Allocator, folder: []const u8, file: k
 /// The chain of script kosmos `name`, read through the frontends. Scripts' calls run with
 /// `runtime`.
 fn resolveScript(comptime target: ScriptTarget, runtime: *Runtime, name: []const u8, diagnostics: *kosm.Diagnostics) !script.Chain {
-    return script.resolve(.{
-        .arena = runtime.arena,
-        .io = runtime.io,
-        .config = target.config,
-        .frontends = comptime discovery.frontends(target.adapter_sources),
-        .modules = comptime moduleNames(target.kosmoi),
-        .kosmoi = comptime kosmosNames(target.kosmoi),
-        .library = ScriptLibrary(target).library(runtime),
-        .calls_folder = &runtime.scripts_folder,
-        .building = &runtime.building,
-        .diagnostics = diagnostics,
-    }, name);
+    var context = KosmosBuilder(target).scriptContext(runtime, diagnostics);
+    context.building = &runtime.building;
+    return script.resolve(context, name);
 }
 
 /// Every module, kosmos and value of the config a script may call.
@@ -366,8 +357,8 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var runtime = try scriptRuntime(init, target, raw_arguments, streams.stderr, diagnostics);
     runtime.kosmoi = KosmosBuilder(target).of(&runtime);
-    // A Zig kosmos building on another is applied here, where every kosmos can be built; a
-    // script of its name is read instead, which fails naming both.
+    // A Zig kosmos building on another, or in the folder of a script kosmos, is applied here,
+    // where every kosmos can be built; locating fails when a script gives its name too.
     const is_script = try script.locate(KosmosBuilder(target).scriptContext(&runtime, diagnostics), diagnostics.kosmos) != null;
     inline for (comptime kosmos_call.zigKosmoi(target.kosmoi)) |entry| {
         if (!is_script and std.mem.eql(u8, diagnostics.kosmos, entry.name)) {
@@ -409,8 +400,9 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
             defer runtime.building.restore(depth);
             const scripts_folder = runtime.scripts_folder;
             defer runtime.scripts_folder = scripts_folder;
-            if (zigKosmos(name)) |index| return buildZig(runtime, index, .{}, tree, tree_name, diagnostics);
+            // Locating first fails on a script and a Zig kosmos giving the same name.
             const location = try script.locate(scriptContext(runtime, diagnostics), name);
+            if (location == null) if (zigKosmos(name)) |index| return buildZig(runtime, index, .{}, tree, tree_name, diagnostics);
             if (location == null) return fail(diagnostics, "there is no such kosmos; Zig kosmoi: {s}, and scripts are files in {s}/", .{ comptime zigKosmosNames(target.kosmoi), script.directory });
             const chain = try resolveScript(target, runtime, name, diagnostics);
             if (chain.tree) |handle| return buildOnTree(runtime, handle, chain.scripts, tree, tree_name, diagnostics);
@@ -475,6 +467,7 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
             return kept;
         }
 
+        /// What finding and reading scripts needs, the scripts' calls running with `runtime`.
         fn scriptContext(runtime: *Runtime, diagnostics: *kosm.Diagnostics) script.Context {
             return .{
                 .arena = runtime.arena,
@@ -482,6 +475,9 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
                 .config = target.config,
                 .frontends = comptime discovery.frontends(target.adapter_sources),
                 .modules = comptime moduleNames(target.kosmoi),
+                .kosmoi = comptime kosmosNames(target.kosmoi),
+                .library = ScriptLibrary(target).library(runtime),
+                .calls_folder = &runtime.scripts_folder,
                 .diagnostics = diagnostics,
             };
         }

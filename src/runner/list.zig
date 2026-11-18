@@ -4,6 +4,7 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
+const kosmos_call = @import("kosmos_call.zig");
 const inspect = @import("inspect.zig");
 const interface = @import("kosm_interface");
 
@@ -44,6 +45,11 @@ pub fn list(init: std.process.Init, comptime sources: []const Source, comptime s
         return 1;
     }
 
+    if (init.environ_map.get(interface.runner_variable) != null) {
+        try table.writeBuildingOnKosmoi(&stdout.interface);
+        try stdout.interface.flush();
+        return 0;
+    }
     if (init.environ_map.get(interface.completions_variable) != null) {
         try table.writeCompletions(&stdout.interface);
         try stdout.interface.flush();
@@ -94,6 +100,8 @@ pub const Kosmos = struct {
     file: []const u8,
     origin: []const u8,
     apps: []const App,
+    /// Whether its `Params` name a kosmos to build on, so the runner of scripts applies it.
+    builds_on_kosmoi: bool = false,
 };
 
 /// An app in a kosmos tree.
@@ -152,6 +160,13 @@ pub const Table = struct {
         for (table.kosmoi) |kosmos| try writer.print("{s}\t{s}\n", .{ kosmos.name, kosmos.origin });
     }
 
+    /// The name of every kosmos building on another, one per line.
+    pub fn writeBuildingOnKosmoi(table: Table, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        for (table.kosmoi) |kosmos| {
+            if (kosmos.builds_on_kosmoi) try writer.print("{s}\n", .{kosmos.name});
+        }
+    }
+
     /// Every kosmos name, comma-separated, or "none".
     pub fn writeNames(table: Table, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         if (table.kosmoi.len == 0) return writer.writeAll("none");
@@ -191,13 +206,17 @@ fn writeRow(writer: *std.Io.Writer, kosmos: Kosmos, width: usize) std.Io.Writer.
     try writer.print("{s}\n", .{kosmos.origin});
 }
 
-/// Every kosmos in `sources`, in order, each followed by the scripts in its folder, then every
-/// other script, and what each package provides.
+/// Every kosmos in `sources`, in order, each after the root script of its folder and followed
+/// by the other scripts there, then every other script, and what each package provides.
 pub fn collect(comptime sources: []const Source, comptime scripts: []const Script) Table {
     @setEvalBranchQuota(discovery.branch_quota);
     comptime var kosmoi: []const Kosmos = &.{};
     comptime var packages: []const Package = &.{};
     inline for (sources) |source| {
+        // A root script gives the kosmos of a folder whose Zig module gives only variants.
+        inline for (scripts) |script| {
+            if (comptime std.mem.eql(u8, script.name, source.name)) kosmoi = kosmoi ++ .{scriptRow(script)};
+        }
         inline for (comptime discovery.declaredKosmoi(source.module)) |declared| {
             const Function = @typeInfo(@TypeOf(@field(declared.Namespace, declared.function))).@"fn";
             const Tree = discovery.Payload(Function.return_type.?);
@@ -206,6 +225,7 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
                 .file = source.name,
                 .origin = source.origin,
                 .apps = appsIn(sources, Tree, ""),
+                .builds_on_kosmoi = Function.param_types.len == 1 and kosmos_call.buildsOnKosmoi(Function.param_types[0].?),
             }};
         }
         // Scripts in the kosmos' folder are its variants, listed with the others.
@@ -217,9 +237,10 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
         if (source.kind == .package) packages = packages ++ .{Package{ .name = source.name, .provided = inspect.provided(source.name, source.module) }};
     }
     inline for (scripts) |script| {
-        const listed = if (comptime parentOf(script.name)) |parent| inline for (sources) |source| {
-            if (comptime std.mem.eql(u8, parent, source.name)) break true;
-        } else false else false;
+        const folder = comptime parentOf(script.name) orelse script.name;
+        const listed = inline for (sources) |source| {
+            if (comptime std.mem.eql(u8, folder, source.name)) break true;
+        } else false;
         if (!listed) kosmoi = kosmoi ++ .{scriptRow(script)};
     }
     const final_kosmoi = kosmoi[0..kosmoi.len].*;
@@ -294,6 +315,13 @@ const Frost = struct {
     };
 };
 
+/// A folder whose root script gives its kosmos, and whose root.zig gives only a variant.
+const Snow = struct {
+    pub fn iced(params: struct { on: kosm.Kosmos(Frost.Tree) = .{ .name = "snow" } }) !Frost.Tree {
+        return params.on.tree();
+    }
+};
+
 const Base = struct {
     pub fn from(theme: kosm.Theme) struct { editor: TestApp } {
         _ = theme;
@@ -312,10 +340,16 @@ const test_table = collect(&.{
     .{ .name = "base", .origin = "kosmoi/base.zig", .kind = .local, .module = Base },
     .{ .name = "frost", .origin = "kosmoi/frost.zig", .kind = .local, .module = Frost },
     .{ .name = "kosm_probe", .origin = "package kosm_probe", .kind = .package, .module = ProbePackage },
-}, &.{ .{ .name = "frost.nord", .origin = "kosmoi/frost/nord.lua" }, .{ .name = "minimal", .origin = "kosmoi/minimal.lua" } });
+    .{ .name = "snow", .origin = "kosmoi/snow/", .kind = .local, .module = Snow },
+}, &.{
+    .{ .name = "frost.nord", .origin = "kosmoi/frost/nord.lua" },
+    .{ .name = "minimal", .origin = "kosmoi/minimal.lua" },
+    .{ .name = "snow", .origin = "kosmoi/snow/root.lua" },
+    .{ .name = "snow.nord", .origin = "kosmoi/snow/nord.lua" },
+});
 
 test "list prints every kosmos with its origin, then what each package provides" {
-    var buffer: [512]u8 = undefined;
+    var buffer: [1024]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     try test_table.writeAll(&writer);
     try testing.expectEqualStrings(
@@ -325,6 +359,9 @@ test "list prints every kosmos with its origin, then what each package provides"
         \\  frost.cold.deep  kosmoi/frost.zig
         \\  frost.nord       kosmoi/frost/nord.lua
         \\  kosm_probe       package kosm_probe
+        \\  snow             kosmoi/snow/root.lua
+        \\  snow.iced        kosmoi/snow/
+        \\  snow.nord        kosmoi/snow/nord.lua
         \\  minimal          kosmoi/minimal.lua
         \\packages:
         \\  kosm_probe
@@ -351,6 +388,13 @@ test "listing one kosmos file shows its variants and the apps in each tree" {
         \\frost.nord       kosmoi/frost/nord.lua
         \\
     , writer.buffered());
+}
+
+test "the kosmoi building on another are those whose Params name one" {
+    var buffer: [128]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try test_table.writeBuildingOnKosmoi(&writer);
+    try testing.expectEqualStrings("snow.iced\n", writer.buffered());
 }
 
 test "a group picks every kosmos in it, and a name only matches whole segments" {

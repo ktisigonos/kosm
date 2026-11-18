@@ -1,7 +1,7 @@
 //! `kosm build`: compiles the runners of the kosmoi the command line or `kosm.zon` picks (every
 //! kosmos in `kosmoi/` by default) in one `zig build`, so the next `kosm apply` of any of them
-//! compiles nothing until a file changes. When a script kosmos is picked, it also builds the
-//! runner every script kosmos shares.
+//! compiles nothing until a file changes. When a script kosmos, or a Zig kosmos building on
+//! another, is picked, it also builds the runner every script kosmos shares.
 
 const std = @import("std");
 const Context = @import("Context.zig");
@@ -33,7 +33,8 @@ pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
     };
     const picked = try splitScripts(context, picked_names);
     const names = picked.zig;
-    const with_scripts = picked.scripts != 0;
+    // A Zig kosmos building on another is applied by the runner of scripts, so it is built too.
+    const with_scripts = picked.scripts != 0 or try anyBuildsOnKosmoi(context, names);
     if (names.len == 0 and !with_scripts) return context.stdout.writeAll("no kosmoi to build\n");
     const scripts_built = !with_scripts or try buildScripts(context);
     if (names.len == 0) return if (scripts_built) {} else error.Failed;
@@ -175,6 +176,27 @@ fn listKosmoi(context: Context) Error![]const Listed {
         return context.fail("cannot list the kosmoi of {s}", .{context.config});
     }
     return parseListing(context.arena, result.stdout);
+}
+
+/// Whether any of the Zig kosmoi `names` builds on another kosmos, as the lister built by
+/// `listKosmoi` reports.
+fn anyBuildsOnKosmoi(context: Context, names: []const []const u8) Error!bool {
+    var environ: std.process.Environ.Map = if (context.environ_map) |map| try map.clone(context.arena) else .init(context.arena);
+    try environ.put(interface.runner_variable, "1");
+    var asking = context;
+    asking.environ_map = &environ;
+    const result = try asking.run(&.{try std.Io.Dir.path.join(context.arena, &.{ context.config, lister_path })});
+    if (!result.term.success()) {
+        try context.stderr.writeAll(result.stderr);
+        return context.fail("cannot ask the lister of {s} which kosmoi build on others", .{context.config});
+    }
+    var lines = std.mem.tokenizeScalar(u8, result.stdout, '\n');
+    while (lines.next()) |line| {
+        for (names) |name| {
+            if (std.mem.eql(u8, line, name)) return true;
+        }
+    }
+    return false;
 }
 
 /// The lister's completion lines, `name<TAB>origin` each.

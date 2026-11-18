@@ -32,11 +32,6 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Left for the human: push kosm, `kosm update` in the config, then try completion in the editor.
   - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor.
 
-- **21h. Script kosmoi with Zig variants** `PLAN FIRST`
-  - Do: a script kosmos gets a folder, as a Zig kosmos has one: `kosmoi/frost/root.<extension>` is the script kosmos `frost` with its script variants, and a `kosmoi/frost/root.zig` beside it holds Zig variants (`frost.iced`, building on `frost` through `kosm.Kosmos`) and declares no `kosmos` itself. A folder holds one root per language, exactly one of them gives the kosmos, and a variant's name stays unique across them. Touches the build's name checks (a module and a script sharing the folder's name), `script.locate`, the command line's `isScript` (a Zig variant there is not a script), `kosm list`, completion and `kosm build`.
-  - Do: `kosm build` also builds the runner of scripts when a Zig kosmos builds on another, so its first apply builds nothing.
-  - Done when: a script kosmos in a folder with a Zig variant built on it applies both with `--diff`, and both are listed and completed.
-
 - **21i. Nothing compile-time in what kosmoi call**
   - Do: every function bases, looks and kosmoi export for building on takes ordinary values, so every frontend can call it: `kosm_base.from(comptime look, ...)` and `fromTheme` gain run-time forms, compile-time ones kept only where Zig needs them. A look written in Lua then becomes a base.
   - Done when: a Lua look (a palette, fonts and values) gives a base with every app, applying with `--diff`.

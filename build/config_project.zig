@@ -200,6 +200,8 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
             const package_path = b.fmt("{s}/{s}", .{ directory, entry.name });
             b.dependOnDirectoryContents(b.path(package_path));
             const has_root = if (dir.statFile(io, b.fmt("{s}/root.zig", .{entry.name}), .{})) |_| true else |_| false;
+            // A kosmos folder whose root is a script holds no Zig module unless it has a root.zig.
+            if (!has_root and std.mem.eql(u8, directory, "kosmoi") and try holdsScriptRoot(b, dir, entry.name)) continue;
             try found.append(b.allocator, .{
                 .name = b.dupe(entry.name),
                 .root = b.fmt("{s}/root.zig", .{package_path}),
@@ -211,6 +213,35 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
     }
     std.mem.sort(Local, found.items, {}, localLessThan);
     return found.items;
+}
+
+/// Whether the folder `name` in `dir` holds a script giving its kosmos: `root` with an extension
+/// other than Zig's and its manifests'.
+fn holdsScriptRoot(b: *std.Build, dir: std.Io.Dir, name: []const u8) !bool {
+    const io = b.graph.io;
+    var folder = try dir.openDir(io, name, .{ .iterate = true });
+    defer folder.close(io);
+    var iterator = folder.iterate();
+    while (try iterator.next(io)) |file| {
+        if (file.kind != .file and file.kind != .sym_link) continue;
+        if (isScriptFile(file.name) and std.mem.eql(u8, scriptStem(file.name), script_root)) return true;
+    }
+    return false;
+}
+
+/// The file name a script giving its folder's kosmos has before its extension.
+const script_root = "root";
+
+/// Whether `file_name` is a script: not hidden, with an extension other than Zig's and its
+/// manifests'.
+fn isScriptFile(file_name: []const u8) bool {
+    if (std.mem.startsWith(u8, file_name, ".") or std.mem.endsWith(u8, file_name, ".zig") or std.mem.endsWith(u8, file_name, ".zon")) return false;
+    return std.mem.findScalar(u8, file_name, '.') != null;
+}
+
+/// A script's file name before its first dot: "nord" of "nord.lua".
+fn scriptStem(file_name: []const u8) []const u8 {
+    return file_name[0 .. std.mem.findScalar(u8, file_name, '.') orelse file_name.len];
 }
 
 fn localLessThan(_: void, left: Local, right: Local) bool {
@@ -422,9 +453,11 @@ fn appendScripts(b: *std.Build, dir: std.Io.Dir, shown: []const u8, prefix: []co
         return false;
     }) |file| {
         if (file.kind != .file and file.kind != .sym_link) continue;
-        if (std.mem.startsWith(u8, file.name, ".") or std.mem.endsWith(u8, file.name, ".zig") or std.mem.endsWith(u8, file.name, ".zon")) continue;
-        const dot = std.mem.findScalar(u8, file.name, '.') orelse continue;
-        found.append(b.allocator, .{ .name = b.fmt("{s}{s}", .{ prefix, file.name[0..dot] }), .origin = b.fmt("{s}/{s}", .{ shown, file.name }) }) catch @panic("OOM");
+        if (!isScriptFile(file.name)) continue;
+        const stem = scriptStem(file.name);
+        // A folder's root script gives the kosmos named after the folder.
+        const name = if (prefix.len != 0 and std.mem.eql(u8, stem, script_root)) b.dupe(prefix[0 .. prefix.len - 1]) else b.fmt("{s}{s}", .{ prefix, stem });
+        found.append(b.allocator, .{ .name = name, .origin = b.fmt("{s}/{s}", .{ shown, file.name }) }) catch @panic("OOM");
     }
     return true;
 }
@@ -434,12 +467,15 @@ fn scriptLessThan(_: void, left: ScriptFile, right: ScriptFile) bool {
 }
 
 /// Fails the build and returns false when a script kosmos in `kosmoi/` shares its name with a
-/// module, which `kosm apply` could not tell apart.
+/// module, which `kosm apply` could not tell apart. A folder's root script shares it with the
+/// folder's own module, whose variants the runner tells apart from the script's.
 fn checkScriptNames(b: *std.Build, entries: []const Entry) bool {
     const found = scriptFiles(b) orelse return false;
     for (found) |script| {
         for (entries) |entry| {
-            if (std.mem.eql(u8, entry.name, script.name)) {
+            const own_folder = entry.kind == .kosmos and std.mem.startsWith(u8, script.origin, entry.origin) and
+                std.mem.eql(u8, scriptStem(std.Io.Dir.path.basename(script.origin)), script_root);
+            if (std.mem.eql(u8, entry.name, script.name) and !own_folder) {
                 fail(b, "'{s}' names both the script {s} and {s}; kosmoi, apps, adapters and packages need unique names", .{ script.name, script.origin, entry.origin });
                 return false;
             }

@@ -15,6 +15,11 @@ extensions: []const []const u8,
 /// built by calling Zig code through `context.library`. Strings may point into `source`, which
 /// lives for the whole run; anything else is allocated in `context.arena`.
 load: *const fn (context: *Context, source: []const u8) Error!Script,
+/// Lists the variants a script gives as `kosm apply` spells them after the script's name
+/// ("light", "dark", "dark.soft"), running none of them, so kosm can refuse a variant that
+/// shares its name with a Zig variant or another script. Null for a frontend whose scripts
+/// give no variants; `context.variant` is unused.
+variants: ?*const fn (context: *Context, source: []const u8) Error![]const []const u8 = null,
 /// Writes the files an editor completes scripts from, out of every type a script may set;
 /// kosm puts them in the config's `zig-out/completions/<name>/` whenever it builds the runner
 /// of scripts. Null for a frontend giving no completion.
