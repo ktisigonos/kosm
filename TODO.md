@@ -8,10 +8,10 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-Steps 21e-21f: kosmoi written in Lua, through a **frontend**. Decided with the human:
+Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the human:
 - A **frontend** lets users write kosmoi in a language other than Zig, like an adapter lets kosm write a format. It is an ordinary package, written like a third-party one; kosm core knows no frontend language, only the interface every frontend implements. Lua comes first; TOML, JSON or C# may follow later, each optional, so a large runtime (.NET) is acceptable.
 - One package per language, `kosm_<language>`, holds everything kosm does with that language: its adapter and its frontend, each a Zig module of its own. `kosm_lua` (today the Lua adapter) gains the Lua frontend. Apps depending on a package only for its adapter (`kosm_hyprland`, `kosm_nvim` on `kosm_lua`) must not fetch the frontend's interpreter: make it a lazy dependency, and verify that this holds before relying on it.
-- Lua kosmoi build on Zig ones: a Lua kosmos calls a Zig kosmos or base like a function and assigns its overrides on top. Zig stays the language of packages (apps, adapters, bases, looks, frontends).
+- Every language is equal: any kosmos, look or base, in any language, builds on any other, the same workflow in a different syntax. Lua may be more limited, and gets idioms where they read better in Lua. Zig is the natural pick for low-level code, but in the end apps, adapters and the rest of kosm can be written through any frontend too (step 21j).
 - No compiling on a Lua edit: the script is read when kosm runs, so only adding, updating or editing Zig code (packages, Zig kosmoi) rebuilds. Per-package binaries are not done: Zig has no stable ABI, and a rebuild on `add`/`update`/Zig edits is fast enough.
 - Kosmoi keep doing no IO themselves: kosm loads the script, like an image named in `Params`, so missing files, `~/`, caching and errors work as for every other input.
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
@@ -28,8 +28,24 @@ Steps 21e-21f: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: a Lua kosmos calls Zig functions: a Zig kosmos or base (`kosmoi.personal(params)`) returning a tree it overrides, `from` after changed inputs, theme building, modifiers and variations, and Lua variants as plain function calls. Bindings are generated from the Zig declarations by reflection inside kosm; package authors write none. Completion covers the calls.
   - Decided: values cross as handles (typed Zig values in kosm's arena; assigning one copies it deeply), every bindable public function, value and struct/union of every module and `kosm` is bound by reflection, spelled `kosmoi.personal(...)`, `kosm_kitty.from(theme)`, `kosm.Theme.from(...)`; one step.
   - Built: kosm (calls, handles, script variants, scripts returning a tree, completion of every call) and `kosm_lua` `69de873` (pinned on kosm `1fbab7c`; not pushed: the forge's credential lookup timed out). Checked on a scratch copy of the human's config with `kosm_lua` by path: `kosm apply mine --diff` and `mine.image` (a variant calling `kosmoi.personal.image` with another wallpaper, `kosm_kitty.from` a new theme, and `color:mix`) give the expected diffs, and `lua-language-server --check` flags only real mistakes.
-  - Left for the human: push kosm and `kosm_lua`, re-pin `kosm_lua` in the config (`kosm update`), add a Lua variant of `personal` to `kosmoi/`, and try completion in the editor.
-  - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor.
+  - Built since: `personal.themed(input, name, wallpaper)` in the human's config (Krystallos' fonts and values in any theme, callable from a script) and `kosmoi/nord.lua` using it, both uncommitted there; `nord.lua` becomes `personal.nord` in 21g. `kosm_lua` is pushed.
+  - Left for the human: push kosm, `kosm update` in the config, then try completion in the editor.
+  - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor (needs 21g for `personal.nord`).
+
+- **21g. Variants in any language**
+  - Do: a kosmos' folder holds variants in any language: `kosmoi/personal/nord.lua` is `personal.nord`, a Zig file beside a Lua kosmos one of its variants. A script variant builds on its parent like any script (`kosmoi.personal()`, `personal.themed(...)`, or `base`/`params`/`overrides`). Variant names are unique across languages; two of one name fail naming both files. Completion, `--diff`, `kosm colors` and listing kosmoi treat them like Zig variants. Move the human's `kosmoi/nord.lua` to `kosmoi/personal/nord.lua` (asked for).
+  - Done when: `kosm apply personal.nord --diff` gives Nord on the human's personal kosmos, completing in the editor.
+
+- **21h. Zig builds on scripts** `PLAN FIRST`
+  - Do: a Zig kosmos, look or base builds on a script kosmos (or look or base) as it builds on a Zig one, getting its tree as a typed Zig value. Kosmoi do no IO, so kosm runs the script before the Zig code, the way it loads an image named in `Params` (proposal: a `Params` field `kosm.Kosmos(Apps)` naming the script). Kosmoi calling each other in a loop fail naming the chain. Propose the spelling first.
+  - Done when: a Zig variant of `personal` builds on `personal.nord` and applies with `--diff`.
+
+- **21i. Nothing compile-time in what kosmoi call**
+  - Do: every function bases, looks and kosmoi export for building on takes ordinary values, so every frontend can call it: `kosm_base.from(comptime look, ...)` and `fromTheme` gain run-time forms, compile-time ones kept only where Zig needs them. A look written in Lua then becomes a base.
+  - Done when: a Lua look (a palette, fonts and values) gives a base with every app, applying with `--diff`.
+
+- **21j. Apps, adapters and the rest of kosm in any language** `ASK` `PLAN FIRST` (later)
+  - Do: a frontend can also give apps and adapters (and whatever else kosm is built from), so kosm is moddable in any supported language. A frontend then runs code at apply time (parsing and formatting files), not only building trees. Plan with the human first.
 
 
 - **18h. Equibop theme** `ASK`

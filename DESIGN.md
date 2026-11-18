@@ -28,7 +28,7 @@ there is undecided, so ask.
 - **package:** anything `kosm add` fetches; it may hold apps, adapters, kosmoi and a base kosmoi build on.
 - **app:** support for one program (`kosm_hyprland` exports `App`, `from`, `App.apply`).
 - **adapter:** support for one file format (Lua, TOML, JSON).
-- **frontend:** support for writing kosmoi in a language other than Zig (Lua), the way an adapter lets kosm write a format.
+- **frontend:** support for writing in a language other than Zig (Lua), the way an adapter lets kosm write a format.
 - **kosmos:** a rice, a function returning a tree of apps. It is what kosm applies.
 - **base:** turns a look into apps; the official one is `kosm_base`, and a user's own base holds it and adds apps.
 - **look:** what makes a base look nice (Krystallos, Everforest): a theme, fonts, the base's shared values, and a tweak of the official base's apps. A look builds no apps, so it works on any base holding the official one.
@@ -101,7 +101,9 @@ there is undecided, so ask.
 
 ## Kosmoi written through a frontend
 
-- A **script kosmos** is a file `kosmoi/<name>.<extension>` that the frontend claiming its extension reads into loose values; its name is unique among every kosmos, module and package. It may give variants as functions, which `kosm apply <name>.<variant>` builds. Zig stays the language of packages (apps, adapters, bases, looks, frontends); kosm core knows no frontend language, only the interface every frontend implements.
+- **Every language is equal.** A kosmos, look or base is the same whatever language it is written in: called with its inputs, it gives a value the caller builds on, and any of them, in any language, builds on any other. What one language reaches, every frontend reaches; a frontend adds only syntax, and idioms where they read better in its language (Lua methods, variants as functions). Zig is the natural choice for low-level code (adapters, formats), but nothing requires it: in the end apps, adapters and every other part of kosm can be written through any frontend.
+
+- A **script kosmos** is a file `kosmoi/<name>.<extension>` that the frontend claiming its extension reads into loose values; its name is unique among every kosmos, module and package. It may give variants as functions, which `kosm apply <name>.<variant>` builds. kosm core knows no frontend language, only the interface every frontend implements.
 - A script builds on a Zig kosmos or base (setting its `Params` below the command line's, then values on its tree), on another script, or on nothing: then it gives a theme input, and every app of the config that a theme alone builds is chosen by naming it. Or it builds its tree itself by calling Zig code, and returns it.
 - A script calls Zig code: every Zig kosmos (`kosmoi.personal(params)`), and every public function and value of `kosm` and of each module whose parameters a script can give, found by reflection, so package authors write no bindings. A value a call returns stays a typed Zig value the script holds by reference: setting its fields sets them as an assignment would, and giving it to a call or a field copies it.
 - A script reaches no files, environment or programs: its frontend gives it only the language's libraries that compute.
