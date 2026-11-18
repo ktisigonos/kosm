@@ -43,6 +43,32 @@ pub fn isScript(context: Context, name: []const u8) Error!bool {
     return false;
 }
 
+/// What the built runner reports for completing script `name`'s arguments: `kind<TAB>...`
+/// lines, a `base` line first when it builds on a Zig kosmos. Null when the script cannot be
+/// read; applying it then says why.
+pub fn report(context: Context, name: []const u8) Error!?[]const u8 {
+    var environ: std.process.Environ.Map = if (context.environ_map) |map| try map.clone(context.arena) else .init(context.arena);
+    try environ.put(interface.completions_variable, "1");
+    var asking = context;
+    asking.environ_map = &environ;
+    const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, runner_path });
+    // `--diff` goes along so that a runner too old to report still writes nothing.
+    const result = try asking.run(&.{ runner, name, "--diff" });
+    return if (result.term.success()) result.stdout else null;
+}
+
+/// The Zig kosmos script `name` builds on, through any scripts below it, as its built runner
+/// reports it; null when it builds on none or cannot be read.
+pub fn baseOf(context: Context, name: []const u8) Error!?[]const u8 {
+    const reported = try report(context, name) orelse return null;
+    var lines = std.mem.splitScalar(u8, reported, '\n');
+    while (lines.next()) |line| {
+        var fields = std.mem.splitScalar(u8, line, '\t');
+        if (std.mem.eql(u8, fields.first(), "base")) return fields.rest();
+    }
+    return null;
+}
+
 /// Whether `kosmoi/` holds any script kosmos.
 pub fn any(context: Context) Error!bool {
     return isScript(context, "");
@@ -229,6 +255,21 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try testing.expect(std.mem.find(u8, try testDiff(context, "on"), "+font_size 13\n") != null);
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/frost.zig", .data = test_frost });
     try testing.expect(try isStale(context));
+
+    // The runner reports what a script builds on and what completes its arguments.
+    try testing.expectEqualStrings("frost", (try baseOf(context, "over")).?);
+    try testing.expectEqual(null, try baseOf(context, "alone"));
+    try testing.expect(std.mem.find(u8, (try report(context, "on")).?, "param\t--size\t") != null);
+    try testing.expect(std.mem.find(u8, (try report(context, "alone")).?, "set\tkitty.fonts.font_size\t") != null);
+    try testing.expectEqual(null, try report(context, "missing"));
+
+    // `kosm list` shows scripts, and `kosm build` takes a script's name.
+    stdout.clearRetainingCapacity();
+    try @import("list.zig").list(context, null);
+    try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/on.kosmos\n") != null);
+    stdout.clearRetainingCapacity();
+    try @import("build_kosmoi.zig").build(context, .{ .only = &.{"on"} });
+    try testing.expectEqualStrings("building the script runner\nbuilt the script runner\n", stdout.written());
 
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/frost.kosmos", .data = "" });
     stderr.clearRetainingCapacity();

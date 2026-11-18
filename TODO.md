@@ -8,7 +8,7 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
-Steps 21d-21f: kosmoi written in Lua, through a **frontend**. Decided with the human:
+Steps 21e-21f: kosmoi written in Lua, through a **frontend**. Decided with the human:
 - A **frontend** lets users write kosmoi in a language other than Zig, like an adapter lets kosm write a format. It is an ordinary package, written like a third-party one; kosm core knows no frontend language, only the interface every frontend implements. Lua comes first; TOML, JSON or C# may follow later, each optional, so a large runtime (.NET) is acceptable.
 - One package per language, `kosm_<language>`, holds everything kosm does with that language: its adapter and its frontend, each a Zig module of its own. `kosm_lua` (today the Lua adapter) gains the Lua frontend. Apps depending on a package only for its adapter (`kosm_hyprland`, `kosm_nvim` on `kosm_lua`) must not fetch the frontend's interpreter: make it a lazy dependency, and verify that this holds before relying on it.
 - Lua kosmoi build on Zig ones: a Lua kosmos calls a Zig kosmos or base like a function and assigns its overrides on top. Zig stays the language of packages (apps, adapters, bases, looks, frontends).
@@ -17,17 +17,9 @@ Steps 21d-21f: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-- **21d. The Lua frontend, data only** `ASK`
-  - Do: propose the Lua implementation (PUC Lua 5.4, 5.5, LuaJIT or another) as a dependency of `kosm_lua`, lazy as decided above; then build the frontend module: a Lua kosmos returns a table of theme inputs and app overrides, put into the tree through 21b. Errors carry the script's file and line.
-  - Do: check that `kosm_hyprland` and `kosm_nvim` build without fetching the interpreter.
-  - Do: the frontend declares `pub const frontend: kosm.Frontend` in its own module, and `load` returns a `kosm.Frontend.Script` (base, params, theme, overrides); kosm's runner does the rest.
-  - Do: `kosm list` shows script kosmoi (today it lists Zig ones only), and `kosm build <script>` accepts a script's name (today `--only` skips the script runner).
-  - Do: a relative path a script gives in its base's `Params` starts from the script's folder; today every relative path starts from the Zig base's folder.
-  - Do: applying a script on a directory Zig kosmos refreshes that kosmos' manifest, as applying it does; shell completion of a script's arguments (its base's `Params`, `--set` paths) is empty today.
-  - Done when: a Lua kosmos overriding a few values of the human's base applies with `--diff`, editing it reapplies without compiling, and bad values fail naming file, line and path.
-
 - **21e. Lua completion**
   - Do: the Lua frontend generates LuaLS annotation files (`---@class`, `---@field` with the `///` doc comments) for every app, base, look, Zig kosmos and its `Params` in the config, when the script runner is built, into `zig-out/completions/lua/`. `kosm.Frontend` gains the capability (and the editor file, `.luarc.json`, that `kosm init` writes); kosm hands it the types, with doc comments read from the sources by `std.zig.Ast`, since reflection has none.
+  - Do: the `.luarc.json` sets `runtime.version` to the frontend's Lua 5.5, and leaves out the globals the frontend removes (`io`, `os`, `package`, `debug`, `require`, `dofile`, `loadfile`, `load`, `print`) while declaring `kosm.null`; check that the installed LuaLS takes "Lua 5.5", else use "Lua 5.4".
   - Do: `kosm add` and `kosm update` build the script runner when `kosmoi/` holds a script, so completion is current right after; today they only leave it stale for the next apply.
   - Done when: in an editor with LuaLS, a Lua kosmos completes app fields with their docs, including a Zig kosmos of the config right after `kosm build`.
 

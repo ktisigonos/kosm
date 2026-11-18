@@ -34,10 +34,18 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
 
     var names: Names = .{ .b = b };
     inline for (@typeInfo(@TypeOf(manifest.dependencies)).@"struct".field_names) |name| {
-        const dependency = b.dependency(name, .{ .target = target, .optimize = optimize });
+        var dependency = b.dependency(name, .{ .target = target, .optimize = optimize });
+        // Only the script runner asks for frontends, so no other build fetches their interpreters.
+        if (scripts and dependency.builder.available_options_map.contains("frontend")) {
+            dependency = b.dependency(name, .{ .target = target, .optimize = optimize, .frontend = true });
+        }
         const module = dependency.builder.modules.get(name) orelse
             return fail(b, "package '{s}' has no module named '{s}'; its manifest name and module name must match", .{ name, name });
         if (!names.add(.{ .name = name, .module = module, .origin = b.fmt("package '{s}'", .{name}), .kind = .package })) return;
+        const frontend_name = name ++ "_frontend";
+        if (dependency.builder.modules.get(frontend_name)) |frontend| {
+            if (!names.add(.{ .name = frontend_name, .module = frontend, .origin = b.fmt("package '{s}'", .{name}), .kind = .frontend })) return;
+        }
     }
     const kosm_dependency = for (names.modules.items) |entry| {
         if (std.mem.eql(u8, entry.name, "kosm")) break b.dependency("kosm", .{ .target = target, .optimize = optimize });
@@ -56,8 +64,9 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     }
     // Every local module sees every package and every other local module by name.
     for (names.modules.items) |entry| {
-        if (entry.kind == .package) continue;
+        if (entry.kind == .package or entry.kind == .frontend) continue;
         for (names.modules.items) |other| {
+            if (other.kind == .frontend) continue;
             if (other.module != entry.module) entry.module.addImport(other.name, other.module);
         }
     }
@@ -102,7 +111,14 @@ fn addEditorCheck(b: *std.Build, entries: []const Entry) void {
     }
 }
 
-const Kind = enum { package, kosmos, app, adapter };
+const Kind = enum {
+    package,
+    /// A package's frontend module (`kosm_lua_frontend`), present only in script runner builds.
+    frontend,
+    kosmos,
+    app,
+    adapter,
+};
 
 const Entry = struct {
     name: []const u8,
@@ -316,8 +332,9 @@ fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
         \\
     ) catch @panic("OOM");
     for (entries) |entry| {
-        if (!canHoldKosmoi(entry)) continue;
-        writer.print("            .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry.name) }) catch @panic("OOM");
+        if (!canHoldKosmoi(entry) and entry.kind != .frontend) continue;
+        const package = if (entry.kind == .frontend) entry.name[0 .. entry.name.len - "_frontend".len] else entry.name;
+        writer.print("            .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(package), std.zig.fmtString(entry.name) }) catch @panic("OOM");
     }
     writer.writeAll(
         \\        },
@@ -333,25 +350,47 @@ fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     b.installArtifact(b.addExecutable(.{ .name = "scripts", .root_module = root_module }));
 }
 
-/// Fails the build and returns false when a script kosmos in `kosmoi/` shares its name with a
-/// module, which `kosm apply` could not tell apart.
-fn checkScriptNames(b: *std.Build, entries: []const Entry) bool {
+/// A script kosmos in `kosmoi/`: a file with an extension other than Zig's.
+const ScriptFile = struct {
+    /// Its name, the file name before the first dot: "minimal".
+    name: []const u8,
+    /// "kosmoi/minimal.lua".
+    origin: []const u8,
+};
+
+/// Every script kosmos in `kosmoi/`, sorted by name; null after failing the build.
+fn scriptFiles(b: *std.Build) ?[]const ScriptFile {
     const io = b.graph.io;
     const full_path = b.root.joinString(b.allocator, "kosmoi") catch @panic("OOM");
-    var dir = std.Io.Dir.cwd().openDir(io, full_path, .{ .iterate = true }) catch return true;
+    var dir = std.Io.Dir.cwd().openDir(io, full_path, .{ .iterate = true }) catch return &.{};
     defer dir.close(io);
+    var found: std.ArrayList(ScriptFile) = .empty;
     var iterator = dir.iterate();
     while (iterator.next(io) catch |err| {
         fail(b, "cannot read kosmoi/: {s}", .{@errorName(err)});
-        return false;
+        return null;
     }) |file| {
         if (file.kind != .file and file.kind != .sym_link) continue;
         if (std.mem.startsWith(u8, file.name, ".") or std.mem.endsWith(u8, file.name, ".zig")) continue;
         const dot = std.mem.findScalar(u8, file.name, '.') orelse continue;
-        const name = file.name[0..dot];
+        found.append(b.allocator, .{ .name = b.dupe(file.name[0..dot]), .origin = b.fmt("kosmoi/{s}", .{file.name}) }) catch @panic("OOM");
+    }
+    std.mem.sort(ScriptFile, found.items, {}, scriptLessThan);
+    return found.items;
+}
+
+fn scriptLessThan(_: void, left: ScriptFile, right: ScriptFile) bool {
+    return std.mem.order(u8, left.name, right.name) == .lt;
+}
+
+/// Fails the build and returns false when a script kosmos in `kosmoi/` shares its name with a
+/// module, which `kosm apply` could not tell apart.
+fn checkScriptNames(b: *std.Build, entries: []const Entry) bool {
+    const found = scriptFiles(b) orelse return false;
+    for (found) |script| {
         for (entries) |entry| {
-            if (std.mem.eql(u8, entry.name, name)) {
-                fail(b, "'{s}' names both the script kosmoi/{s} and {s}; kosmoi, apps, adapters and packages need unique names", .{ name, file.name, entry.origin });
+            if (std.mem.eql(u8, entry.name, script.name)) {
+                fail(b, "'{s}' names both the script {s} and {s}; kosmoi, apps, adapters and packages need unique names", .{ script.name, script.origin, entry.origin });
                 return false;
             }
         }
@@ -480,6 +519,13 @@ fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         }) catch @panic("OOM");
     }
     writer.writeAll(
+        \\    }, &.{
+        \\
+    ) catch @panic("OOM");
+    for (scriptFiles(b) orelse return) |script| {
+        writer.print("        .{{ .name = \"{f}\", .origin = \"{f}\" }},\n", .{ std.zig.fmtString(script.name), std.zig.fmtString(script.origin) }) catch @panic("OOM");
+    }
+    writer.writeAll(
         \\    });
         \\}
         \\
@@ -493,9 +539,9 @@ fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
 }
 
 /// Every local kosmos, app and adapter, and every installed package but kosm itself: each may
-/// declare kosmoi wherever it lives.
+/// declare kosmoi wherever it lives. A frontend module declares only its frontend.
 fn canHoldKosmoi(entry: Entry) bool {
-    return !std.mem.eql(u8, entry.name, "kosm");
+    return entry.kind != .frontend and !std.mem.eql(u8, entry.name, "kosm");
 }
 
 /// Whether the runner collects the adapters `entry` declares: every installed package but kosm,

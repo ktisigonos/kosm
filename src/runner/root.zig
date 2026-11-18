@@ -77,7 +77,36 @@ pub fn runScript(init: std.process.Init, comptime target: ScriptTarget) !u8 {
         return 1;
     }
     var diagnostics: kosm.Diagnostics = .{ .kosmos = all_arguments[1] };
+    if (init.environ_map.get(interface.completions_variable) != null) {
+        return finishRun(writeScriptCompletions(init, target, &diagnostics, streams.stdout), &diagnostics, streams);
+    }
     return finishRun(applyScript(init, target, all_arguments[2..], &diagnostics, streams), &diagnostics, streams);
+}
+
+/// The chain of script kosmos `diagnostics.kosmos`, read through the frontends.
+fn resolveScript(init: std.process.Init, comptime target: ScriptTarget, diagnostics: *kosm.Diagnostics) !script.Chain {
+    return script.resolve(.{
+        .arena = init.arena.allocator(),
+        .io = init.io,
+        .config = target.config,
+        .frontends = comptime discovery.frontends(target.adapter_sources),
+        .modules = comptime moduleNames(target.kosmoi),
+        .diagnostics = diagnostics,
+    }, diagnostics.kosmos);
+}
+
+/// What completes a script's arguments: the Zig kosmos it builds on (a `base` line), then that
+/// kosmos' parameters and `--set` paths, or without one the `--set` paths of every app.
+fn writeScriptCompletions(init: std.process.Init, comptime target: ScriptTarget, diagnostics: *kosm.Diagnostics, stdout: *std.Io.Writer) !void {
+    const chain = try resolveScript(init, target, diagnostics);
+    const base = chain.base orelse return completions.writeSetPaths(stdout, discovery.Standalone(target.apps));
+    inline for (comptime zigKosmoi(target.kosmoi)) |entry| {
+        if (std.mem.eql(u8, base, entry.name)) {
+            try stdout.print("{s}\t{s}\n", .{ completions.base_kind, entry.name });
+            return completions.write(stdout, @field(entry.Namespace, entry.function));
+        }
+    }
+    return fail(diagnostics, "{s} builds on '{s}', but there is no such kosmos; Zig kosmoi: {s}", .{ chain.scripts[0].path, base, comptime zigKosmosNames(target.kosmoi) });
 }
 
 /// The exit status of an apply that returned `result`, after printing its failure.
@@ -170,7 +199,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []cons
     const arguments = try readArguments(init, ParamsOf(kosmos), raw_arguments, diagnostics);
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
     var kosmos_stack: lifetime.Stack = undefined;
-    var tree = try callKosmos(kosmos, .{ .arguments = arguments.parameters, .layers = layers.params }, diagnostics, &kosmos_stack, .{
+    var tree = try callKosmos(kosmos, .{ .arguments = arguments.parameters, .layers = layers.params, .scripts_folder = try std.Io.Dir.path.join(arena, &.{ folders.config, script.directory }) }, diagnostics, &kosmos_stack, .{
         .arena = arena,
         .io = init.io,
         .places = .{ .home = home, .config = folders.config, .kosmos = folders.kosmos, .folders = folders.named },
@@ -192,14 +221,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []cons
 fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_arguments: []const []const u8, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const arena = init.arena.allocator();
     const adapters = comptime discovery.adapters(target.adapter_sources);
-    const chain = try script.resolve(.{
-        .arena = arena,
-        .io = init.io,
-        .config = target.config,
-        .frontends = comptime discovery.frontends(target.adapter_sources),
-        .modules = comptime moduleNames(target.kosmoi),
-        .diagnostics = diagnostics,
-    }, diagnostics.kosmos);
+    const chain = try resolveScript(init, target, diagnostics);
     const base = chain.base orelse return applyStandalone(init, target, raw_arguments, adapters, diagnostics, streams, chain.scripts);
     const layers = try Layers.of(arena, chain.scripts);
     inline for (comptime zigKosmoi(target.kosmoi)) |entry| {
@@ -416,6 +438,8 @@ const Given = struct {
     arguments: []const []const u8,
     /// Tables a script kosmos sets, the lowest first.
     layers: []const kosm.Loose = &.{},
+    /// The folder of the scripts setting `layers`, which relative paths they give start from.
+    scripts_folder: []const u8 = "",
 };
 
 /// Calls `kosmos` with its `Params` read from `given` and their images and files loaded, on its
@@ -438,6 +462,7 @@ noinline fn callKosmos(comptime kosmos: anytype, given: Given, diagnostics: *kos
                 error.InvalidAssignment => return error.Reported,
                 error.OutOfMemory => return error.OutOfMemory,
             };
+            try params.absoluteLayerPaths(Params, image_context.arena, &start, layer, given.scripts_folder);
             host_set = host_set or script.setsKey(layer, "host");
         }
         var hostname_buffer: [std.posix.HOST_NAME_MAX]u8 = undefined;

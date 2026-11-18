@@ -1,7 +1,7 @@
 //! `kosm build`: compiles the runners of the kosmoi the command line or `kosm.zon` picks (every
 //! kosmos in `kosmoi/` by default) in one `zig build`, so the next `kosm apply` of any of them
-//! compiles nothing until a file changes. Unless only some kosmoi are named, it also builds the
-//! runner every script kosmos shares, when `kosmoi/` holds one.
+//! compiles nothing until a file changes. When a script kosmos is picked, it also builds the
+//! runner every script kosmos shares.
 
 const std = @import("std");
 const Context = @import("Context.zig");
@@ -23,7 +23,7 @@ const kosmoi_directory = "kosmoi/";
 pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
     const listed = try listKosmoi(context);
     const chosen = selection orelse try loadSelection(context);
-    const names = switch (try select(context.arena, listed, chosen)) {
+    const picked_names = switch (try select(context.arena, listed, chosen)) {
         .names => |names| names,
         .unknown => |name| return context.fail("{s} names '{s}', but there is no such kosmos; kosmoi: {s}", .{
             if (selection == null) try std.Io.Dir.path.join(context.arena, &.{ context.config, Settings.file_name }) else "kosm build",
@@ -31,7 +31,9 @@ pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
             try joinNames(context.arena, listed),
         }),
     };
-    const with_scripts = chosen != .only and try scripts.any(context);
+    const picked = try splitScripts(context, picked_names);
+    const names = picked.zig;
+    const with_scripts = picked.scripts != 0;
     if (names.len == 0 and !with_scripts) return context.stdout.writeAll("no kosmoi to build\n");
     const scripts_built = !with_scripts or try buildScripts(context);
     if (names.len == 0) return if (scripts_built) {} else error.Failed;
@@ -65,6 +67,19 @@ pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
         if (failed.items.len == 1) "does" else "do",
         if (failed.items.len == names.len) "" else "; the others are built",
     });
+}
+
+/// The picked names split into Zig kosmoi, each compiled into a runner of its own, and how many
+/// are scripts, which share one runner.
+const Picked = struct { zig: []const []const u8, scripts: usize };
+
+fn splitScripts(context: Context, names: []const []const u8) Error!Picked {
+    var zig: std.ArrayList([]const u8) = .empty;
+    var script_count: usize = 0;
+    for (names) |name| {
+        if (try scripts.isScript(context, name)) script_count += 1 else try zig.append(context.arena, name);
+    }
+    return .{ .zig = zig.items, .scripts = script_count };
 }
 
 /// Builds the runner every script kosmos shares, naming it in the report; returns whether it built.

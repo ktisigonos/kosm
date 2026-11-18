@@ -213,11 +213,16 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
         };
         if (!prepared) return 1;
         try stderr.flush();
+        const base = scripts.baseOf(context, command.kosmos) catch |err| switch (err) {
+            error.Failed => return 1,
+            else => |other| return other,
+        };
+        if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff, stderr)) return 1;
         const runner = try std.Io.Dir.path.join(arena, &.{ config, scripts.runner_path });
         break :script try std.mem.concat(arena, []const u8, &.{ &.{ runner, command.kosmos }, command.runner_arguments, &.{ "--config", config } });
     } else zig: {
         if (!try build(context, command.kosmos)) return 1;
-        if (!try refreshManifest(init, builds, config, command, stderr)) return 1;
+        if (!try refreshManifest(init, builds, config, command.kosmos, command.diff, stderr)) return 1;
         const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
         break :zig try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
     };
@@ -227,13 +232,13 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
     return 1;
 }
 
-/// Brings a directory kosmos' manifest up to date, or on `--diff` only says what would
-/// change. Returns whether the apply can go on.
-fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, command: Apply, stderr: *std.Io.Writer) !bool {
+/// Brings the manifest of directory kosmos `kosmos` up to date, or on `diff` only says what
+/// would change. Returns whether the apply can go on.
+fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, kosmos: []const u8, diff: bool, stderr: *std.Io.Writer) !bool {
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     const context = builds.context(init, config, &stdout.interface, stderr);
-    directory_package.refreshApplied(context, command.kosmos, if (command.diff) .report else .write) catch |err| switch (err) {
+    directory_package.refreshApplied(context, kosmos, if (diff) .report else .write) catch |err| switch (err) {
         error.Failed => return false,
         else => |other| return other,
     };

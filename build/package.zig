@@ -17,6 +17,60 @@ pub fn package(b: *std.Build) void {
 /// `package`, returning the module so a package's `build.zig` can add to it (build options
 /// naming a dependency's files); null when the build already failed.
 pub fn packageModule(b: *std.Build) ?*std.Build.Module {
+    const built = buildPackage(b, &.{}) orelse return null;
+    return built.module;
+}
+
+/// A frontend a package declares beside its own module: `<package>_frontend`, a module of its
+/// own so that packages using only the package's adapters never build or fetch what the
+/// frontend runs on (an interpreter).
+pub const FrontendOptions = struct {
+    /// The frontend module's root, relative to the package: "frontend/root.zig".
+    root: []const u8,
+    /// Dependencies only the frontend uses, marked `.lazy = true` in `build.zig.zon`; they are
+    /// fetched only by a build asking for the frontend.
+    lazy_dependencies: []const []const u8 = &.{},
+    /// Adds what `lazy_dependencies` provide to the frontend module (C sources, include paths),
+    /// given in the same order.
+    wire: ?*const fn (b: *std.Build, module: *std.Build.Module, dependencies: []const *std.Build.Dependency) void = null,
+};
+
+/// `package`, plus the frontend in `options`, built only with `-Dfrontend` (a config's script
+/// runner passes it) or when the package is built on its own, so its tests cover it.
+pub fn packageWithFrontend(b: *std.Build, options: FrontendOptions) void {
+    const is_root = b.pkg_hash.len == 0;
+    const wanted = b.option(bool, "frontend", "Build the package's frontend and fetch what it needs") orelse is_root;
+    const built = buildPackage(b, options.lazy_dependencies) orelse return;
+    if (!wanted) return;
+    const module = built.module;
+
+    const dependencies = b.allocator.alloc(*std.Build.Dependency, options.lazy_dependencies.len) catch @panic("OOM");
+    var missing = false;
+    for (options.lazy_dependencies, dependencies) |name, *dependency| {
+        if (b.lazyDependency(name, .{ .target = module.resolved_target.?, .optimize = module.optimize.? })) |found| {
+            dependency.* = found;
+        } else missing = true;
+    }
+    // Zig fetches every missing lazy dependency once this script returns, then runs it again.
+    if (missing) return;
+
+    const frontend = b.addModule(b.fmt("{s}_frontend", .{built.name}), .{
+        .root_source_file = b.path(options.root),
+        .target = module.resolved_target,
+        .optimize = module.optimize,
+    });
+    for (module.import_table.keys(), module.import_table.values()) |import_name, imported| frontend.addImport(import_name, imported);
+    frontend.addImport(built.name, module);
+    if (options.wire) |wire| wire(b, frontend, dependencies);
+    const tests = b.addTest(.{ .root_module = frontend });
+    built.test_step.dependOn(&b.addRunArtifact(tests).step);
+}
+
+/// A package's module, its manifest name and its `test` step.
+const Built = struct { name: []const u8, module: *std.Build.Module, test_step: *std.Build.Step };
+
+/// `packageModule`, leaving out the dependencies named in `skipped`.
+fn buildPackage(b: *std.Build, skipped: []const []const u8) ?Built {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const name = manifestName(b) catch |err| {
@@ -26,8 +80,11 @@ pub fn packageModule(b: *std.Build) ?*std.Build.Module {
 
     var imports: std.ArrayList(std.Build.Module.Import) = .empty;
     var grammars: std.ArrayList(*std.Build.Dependency) = .empty;
-    for (b.available_deps) |available| {
+    dependencies: for (b.available_deps) |available| {
         const dependency_name = available[0];
+        for (skipped) |skip| {
+            if (std.mem.eql(u8, skip, dependency_name)) continue :dependencies;
+        }
         const dependency = b.dependency(dependency_name, .{ .target = target, .optimize = optimize });
         if (isGrammar(b, dependency)) {
             grammars.append(b.allocator, dependency) catch @panic("OOM");
@@ -49,8 +106,9 @@ pub fn packageModule(b: *std.Build) ?*std.Build.Module {
     });
     for (grammars.items) |grammar| addGrammar(b, module, grammar);
     const tests = b.addTest(.{ .root_module = module });
-    b.step("test", "Run the package's tests").dependOn(&b.addRunArtifact(tests).step);
-    return module;
+    const test_step = b.step("test", "Run the package's tests");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+    return .{ .name = name, .module = module, .test_step = test_step };
 }
 
 /// Whether `dependency` is a tree-sitter grammar: it holds a generated `src/parser.c`.

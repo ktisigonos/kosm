@@ -20,10 +20,19 @@ pub const Source = struct {
     pub const Kind = enum { local, package };
 };
 
+/// A script kosmos in the config's `kosmoi/`, filled in by the generated main. What its tree
+/// holds is known only once its frontend reads it.
+pub const Script = struct {
+    /// As `kosm apply` spells it: "minimal".
+    name: []const u8,
+    /// Its file: "kosmoi/minimal.lua".
+    origin: []const u8,
+};
+
 /// Prints the listing for the process arguments (`[kosmos] [--config dir]`) and returns the exit
 /// status: 0, or 1 after printing what went wrong.
-pub fn list(init: std.process.Init, comptime sources: []const Source) !u8 {
-    const table = comptime collect(sources);
+pub fn list(init: std.process.Init, comptime sources: []const Source, comptime scripts: []const Script) !u8 {
+    const table = comptime collect(sources, scripts);
     const arena = init.arena.allocator();
     const arguments = try init.minimal.args.toSlice(arena);
     var stdout_buffer: [4096]u8 = undefined;
@@ -182,8 +191,8 @@ fn writeRow(writer: *std.Io.Writer, kosmos: Kosmos, width: usize) std.Io.Writer.
     try writer.print("{s}\n", .{kosmos.origin});
 }
 
-/// Every kosmos in `sources`, in order, and what each package provides.
-pub fn collect(comptime sources: []const Source) Table {
+/// Every kosmos in `sources`, in order, then every script, and what each package provides.
+pub fn collect(comptime sources: []const Source, comptime scripts: []const Script) Table {
     @setEvalBranchQuota(discovery.branch_quota);
     comptime var kosmoi: []const Kosmos = &.{};
     comptime var packages: []const Package = &.{};
@@ -200,6 +209,7 @@ pub fn collect(comptime sources: []const Source) Table {
         }
         if (source.kind == .package) packages = packages ++ .{Package{ .name = source.name, .provided = inspect.provided(source.name, source.module) }};
     }
+    inline for (scripts) |script| kosmoi = kosmoi ++ .{Kosmos{ .name = script.name, .file = script.name, .origin = script.origin, .apps = &.{} }};
     const final_kosmoi = kosmoi[0..kosmoi.len].*;
     const final_packages = packages[0..packages.len].*;
     const table: Table = .{ .kosmoi = &final_kosmoi, .packages = &final_packages };
@@ -279,7 +289,7 @@ const test_table = collect(&.{
     .{ .name = "base", .origin = "kosmoi/base.zig", .kind = .local, .module = Base },
     .{ .name = "frost", .origin = "kosmoi/frost.zig", .kind = .local, .module = Frost },
     .{ .name = "kosm_probe", .origin = "package kosm_probe", .kind = .package, .module = ProbePackage },
-});
+}, &.{.{ .name = "minimal", .origin = "kosmoi/minimal.lua" }});
 
 test "list prints every kosmos with its origin, then what each package provides" {
     var buffer: [512]u8 = undefined;
@@ -291,6 +301,7 @@ test "list prints every kosmos with its origin, then what each package provides"
         \\  frost.iced       kosmoi/frost.zig
         \\  frost.cold.deep  kosmoi/frost.zig
         \\  kosm_probe       package kosm_probe
+        \\  minimal          kosmoi/minimal.lua
         \\packages:
         \\  kosm_probe
         \\    app      kosm_probe.App
@@ -338,10 +349,17 @@ test "listing a variant shows only it, and an unknown name is an error" {
     try testing.expectError(error.UnknownKosmos, test_table.writeKosmos("frost.nope", &writer));
 }
 
+test "a script kosmos is listed by its name and file" {
+    var buffer: [512]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try test_table.writeKosmos("minimal", &writer);
+    try testing.expectEqualStrings("minimal  kosmoi/minimal.lua\n", writer.buffered());
+}
+
 test "an empty config lists nothing, saying so" {
     var buffer: [64]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
-    try collect(&.{}).writeAll(&writer);
+    try collect(&.{}, &.{}).writeAll(&writer);
     try testing.expectEqualStrings("kosmoi: none\npackages: none\n", writer.buffered());
 }
 

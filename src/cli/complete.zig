@@ -7,6 +7,7 @@ const Context = @import("Context.zig");
 const Packages = @import("Packages.zig");
 const manifest = @import("manifest.zig");
 const interface = @import("kosm_interface");
+const scripts = @import("scripts.zig");
 
 pub const Error = std.mem.Allocator.Error || std.Io.Writer.Error;
 
@@ -138,7 +139,14 @@ const KosmosCandidates = enum { parameters, paths };
 /// The parameters of `kosmos` as flags, or its `--set` paths each ending in `=`, as its
 /// runner reports them.
 fn writeKosmosCandidates(context: Context, kosmos: []const u8, wanted: KosmosCandidates) Error!void {
-    const reported = try runForCompletions(context, try context.arena.print("-Dkosmos={s}", .{kosmos}), runner_path) orelse return;
+    const is_script = scripts.isScript(context, kosmos) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return,
+    };
+    const reported = if (is_script)
+        try reportScript(context, kosmos) orelse return
+    else
+        try runForCompletions(context, try context.arena.print("-Dkosmos={s}", .{kosmos}), runner_path) orelse return;
     const kind = switch (wanted) {
         .parameters => "param",
         .paths => "set",
@@ -150,6 +158,24 @@ fn writeKosmosCandidates(context: Context, kosmos: []const u8, wanted: KosmosCan
         const text = fields.next() orelse continue;
         try context.stdout.print("{s}{s}\t{s}\n", .{ text, if (wanted == .paths) "=" else "", fields.rest() });
     }
+}
+
+/// What the script runner reports for script `kosmos`, building it first when it is stale;
+/// null when it does not build or cannot read the script.
+fn reportScript(context: Context, kosmos: []const u8) Error!?[]const u8 {
+    var quiet = context;
+    var discarded: std.Io.Writer.Discarding = .init(&.{});
+    quiet.stderr = &discarded.writer;
+    quiet.stdout = &discarded.writer;
+    const prepared = scripts.prepare(quiet) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
+    if (!prepared) return null;
+    return scripts.report(quiet, kosmos) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return null,
+    };
 }
 
 /// Builds the config with `option` and runs `program` asking for completions; null when the

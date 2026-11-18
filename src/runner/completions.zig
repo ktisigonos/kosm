@@ -17,6 +17,9 @@ pub const Candidate = struct {
 /// tell them apart.
 pub const parameter_kind = "param";
 pub const set_kind = "set";
+/// What a script runner puts before the Zig kosmos a script builds on, so the command line can
+/// keep that kosmos' manifest up to date.
+pub const base_kind = "base";
 
 /// One line per candidate of `kosmos`, a kosmos function: `param<TAB>--blur<TAB>true or false`
 /// for each parameter, then `set<TAB>kitty.fonts.font_size<TAB>a number` for each value
@@ -27,6 +30,12 @@ pub fn write(writer: *std.Io.Writer, comptime kosmos: anytype) std.Io.Writer.Err
         for (comptime parameters(function.param_types[0].?)) |candidate| try writer.print("{s}\t{s}\t{s}\n", .{ parameter_kind, candidate.text, candidate.description });
     }
     const Tree = discovery.Payload(function.return_type.?);
+    for (comptime setPaths(Tree, "")) |candidate| try writer.print("{s}\t{s}\t{s}\n", .{ set_kind, candidate.text, candidate.description });
+}
+
+/// One `set` line for each value `--set` can reach in a `Tree`, for a script building on no
+/// kosmos.
+pub fn writeSetPaths(writer: *std.Io.Writer, comptime Tree: type) std.Io.Writer.Error!void {
     for (comptime setPaths(Tree, "")) |candidate| try writer.print("{s}\t{s}\t{s}\n", .{ set_kind, candidate.text, candidate.description });
 }
 

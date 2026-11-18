@@ -6,6 +6,10 @@ pub const addConfigProject = @import("build/config_project.zig").addConfigProjec
 pub const package = package_build.package;
 /// `package`, returning the module so the package can add to it; null when the build failed.
 pub const packageModule = package_build.packageModule;
+/// `package` plus a frontend module built only when asked for: `@import("kosm").packageWithFrontend(b, .{ ... })`.
+pub const packageWithFrontend = package_build.packageWithFrontend;
+/// What `packageWithFrontend` takes.
+pub const FrontendOptions = package_build.FrontendOptions;
 
 const package_build = @import("build/package.zig");
 

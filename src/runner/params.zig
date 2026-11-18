@@ -89,6 +89,30 @@ pub fn absolutePaths(comptime Params: type, arena: std.mem.Allocator, working_di
     return copy;
 }
 
+/// Makes the relative path of every image or file that `layer`, a script's table for `Params`,
+/// sets in `params` absolute against `folder`, the script's own, as the command line's start
+/// from the working directory. Paths starting with `~` are kept for `Places.resolve`.
+pub fn absoluteLayerPaths(comptime Params: type, arena: std.mem.Allocator, params: *Params, layer: kosm.Loose, folder: []const u8) std.mem.Allocator.Error!void {
+    const entries = switch (layer.value) {
+        .table => |entries| entries,
+        else => return,
+    };
+    inline for (@typeInfo(Params).@"struct".field_names, @typeInfo(Params).@"struct".field_types) |name, Field| {
+        if (comptime isLoaded(Field)) {
+            const set = for (entries) |entry| {
+                if (std.mem.eql(u8, entry.key, name)) break true;
+            } else false;
+            if (set) {
+                if (@typeInfo(Field) == .optional) {
+                    if (@field(params, name)) |*loaded| loaded.path = try Places.fromCommandLine(arena, folder, loaded.path);
+                } else {
+                    @field(params, name).path = try Places.fromCommandLine(arena, folder, @field(params, name).path);
+                }
+            }
+        }
+    }
+}
+
 /// Whether `Params` has a `host` field that kosm fills from the hostname.
 pub fn hasHost(comptime Params: type) bool {
     if (!@hasField(Params, "host")) return false;
@@ -277,6 +301,26 @@ test "relative image and file paths on the command line become absolute, nothing
     try testing.expectEqualStrings("./Iosevka", arguments[3]);
     try testing.expectEqualStrings("~/a.jxl", arguments[5]);
     try testing.expectEqualStrings("./x", arguments[7]);
+}
+
+test "relative paths a script sets start from its folder, and only those it sets" {
+    const Params = struct {
+        script: kosm.File = .{ .path = "personal.lua" },
+        wallpaper: ?kosm.Image = null,
+        icon: ?kosm.Image = .{ .path = "icon.png" },
+    };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var params: Params = .{ .script = .{ .path = "~~/mine.lua" }, .wallpaper = .{ .path = "walls/dune.png" } };
+    const layer: kosm.Loose = .{ .value = .{ .table = &.{
+        .{ .key = "script", .value = .{ .value = .{ .string = "~~/mine.lua" } } },
+        .{ .key = "wallpaper", .value = .{ .value = .{ .string = "walls/dune.png" } } },
+    } } };
+    try absoluteLayerPaths(Params, arena.allocator(), &params, layer, "/config/kosmoi");
+    try testing.expectEqualStrings("~~/mine.lua", params.script.path);
+    try testing.expectEqualStrings("/config/kosmoi/walls/dune.png", params.wallpaper.?.path);
+    // A default the script leaves alone is still relative to the Zig kosmos' folder.
+    try testing.expectEqualStrings("icon.png", params.icon.?.path);
 }
 
 test "host comes from the hostname unless given as a flag" {
