@@ -130,7 +130,10 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, ada
         if (try lifetime.findDeadList(arena, tree, dead)) |path|
             return fail(diagnostics, "{s} points into a function that has returned, so what it holds is garbage: write lists of values known only at run time as kosm.keep(T, &.{{ ... }}), or as constants", .{path});
     }
-    for (arguments.assignments) |assignment| set.assign(&tree, assignment, diagnostics) catch return error.Reported;
+    for (arguments.assignments) |assignment| set.assign(arena, &tree, assignment, diagnostics) catch |err| switch (err) {
+        error.InvalidAssignment => return error.Reported,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
 
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();

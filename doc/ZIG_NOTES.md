@@ -55,6 +55,8 @@ When unsure about any std function, grep the std source for its definition befor
 - **`@frameAddress` may be unavailable in release builds:** to tell where a callee's (dead) stack lies, take `@intFromPtr(&local)` of a variable in the caller and make the callee `noinline`, so its frames always sit below that address (the stack grows down on every target kosm runs on).
 - **`{t}` prints an enum's tag name:** `writer.print("{t}", .{direction})` writes `up`, no `@tagName` needed.
 - **`type` is a plain field name, `error` is not:** `zig fmt` turns `@"type": Color` and `.@"type"` into `type: Color` and `.type`, but `error` still needs `@"error"`.
+- **A recursive comptime string builder needs `comptime` at each recursive `++`:** `describe(child) ++ " or null"` inside a non-comptime call is "unable to resolve comptime value"; write `comptime describe(child) ++ ...`.
+- **`&.{ ... }` holding run-time values lives in the enclosing function's frame:** a test helper returning `.{ .table = &.{.{ .key = key, .value = v }} }` hands back a dangling slice (a segfault later). Allocate nested literals built from parameters, or write them inline in the test body.
 
 ### std
 

@@ -118,51 +118,21 @@ fn hostFrom(comptime Host: type, hostname: []const u8, diagnostics: *kosm.Diagno
         fail(diagnostics, "the hostname '{s}' is not one of {s} ({s})", .{ hostname, @typeName(Enum), comptime enumList(Enum) });
 }
 
-/// Reads one value of `T` from text: what a flag or `--set` value may be. Images are read by
-/// `parse` alone, as only images in `Params` are loaded.
+/// Reads one value of `T` from text: what a flag may be. Images are read by `parse` alone, as
+/// only images in `Params` are loaded.
 pub fn parseValue(comptime T: type, text: []const u8) !T {
-    if (T == kosm.Color) return kosm.Color.parse(text);
-    if (T == kosm.ColorChoice) return kosm.ColorChoice.parse(text);
-    if (T == []const u8) return text;
-    return switch (@typeInfo(T)) {
-        .optional => |optional| try parseValue(optional.child, text),
-        .bool => if (std.mem.eql(u8, text, "true")) true else if (std.mem.eql(u8, text, "false")) false else error.InvalidBool,
-        .int => try std.fmt.parseInt(T, text, 10),
-        .float => blk: {
-            const number = try std.fmt.parseFloat(T, text);
-            if (!std.math.isFinite(number)) return error.InvalidFloat;
-            break :blk number;
-        },
-        .@"enum" => std.meta.stringToEnum(T, text) orelse error.InvalidEnum,
-        else => @compileError("kosmos parameter type " ++ @typeName(T) ++ " cannot be read from the command line; use a bool, number, enum, string or color"),
-    };
+    return kosm.assignment.text.parse(T, text);
 }
 
-/// What a value of `T` looks like, for "--x 'y' is not ...".
+/// What a flag's value looks like, for "--x 'y' is not ...".
 pub fn describe(comptime T: type) []const u8 {
     if (T == kosm.Image) return "an image's path";
     if (T == kosm.File) return "a file's path";
-    if (T == kosm.Color) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...))";
-    if (T == kosm.ColorChoice) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...)) or a hue (" ++ enumList(kosm.Palette.Hue) ++ ")";
-    if (T == []const u8) return "text";
-    return switch (@typeInfo(T)) {
-        .optional => |optional| describe(optional.child),
-        .bool => "true or false",
-        .int => "an integer that fits " ++ @typeName(T),
-        .float => "a number",
-        .@"enum" => "one of " ++ enumList(T),
-        else => @typeName(T),
-    };
+    return kosm.assignment.text.describe(Unwrapped(T));
 }
 
 /// Whether `parseValue` reads a `T` (not counting optionals): a color, text, bool, number or enum.
-pub fn isParseable(comptime T: type) bool {
-    if (T == kosm.Color or T == kosm.ColorChoice or T == []const u8) return true;
-    return switch (@typeInfo(T)) {
-        .bool, .int, .float, .@"enum" => true,
-        else => false,
-    };
-}
+pub const isParseable = kosm.assignment.text.isParseable;
 
 fn Unwrapped(comptime T: type) type {
     return switch (@typeInfo(T)) {
@@ -188,13 +158,7 @@ fn dashed(comptime name: []const u8) []const u8 {
     return &final;
 }
 
-fn enumList(comptime Enum: type) []const u8 {
-    comptime var list: []const u8 = "";
-    inline for (@typeInfo(Enum).@"enum".field_names, 0..) |name, index| {
-        list = list ++ (if (index == 0) "" else ", ") ++ name;
-    }
-    return list;
-}
+const enumList = kosm.assignment.text.enumList;
 
 fn fail(diagnostics: *kosm.Diagnostics, comptime format: []const u8, arguments: anytype) Error {
     diagnostics.set("", "", format, arguments);

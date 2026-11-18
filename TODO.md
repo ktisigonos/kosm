@@ -17,10 +17,6 @@ Steps 21a-21f: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-- **21b. Loose values into the app tree** `PLAN FIRST`
-  - Do: a public kosm function that puts a tree of untyped values (`kosm.Value` or what fits) into a kosmos' typed tree by reflection, shared with `--set`'s path assignment: unknown keys, wrong types, bad colors (hex or palette name), out-of-range numbers and lists all fail naming the path; nothing is half-applied. Every frontend uses it, so a frontend only parses its language.
-  - Done when: tests cover each kind of field and each error, and `--set` runs through the same code.
-
 - **21c. The frontend interface and the Lua kosmoi runner** `ASK` `PLAN FIRST`
   - Do: propose what a frontend package exports (load a script into a tree through 21a and 21b, and generate completion files from the types), how a config's kosmoi in another language are found (for example `kosmoi/personal.lua`) and named on the command line, and the one runner they share: it is compiled with every package and Zig kosmos in the config, so a script can call any of them, and is built by `kosm build`, `add` and `update`, never on a script edit.
   - Do: propose where generated completion files go: outside the user's dotfiles (kosm's data or cache folder), with one editor file in the config pointing at them (`.luarc.json` for Lua), written by `kosm init` and otherwise added by the user.

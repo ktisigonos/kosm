@@ -28,6 +28,16 @@ pub const Reloader = @import("Reloader.zig");
 pub const Plan = @import("Plan.zig");
 pub const commit = @import("commit.zig");
 pub const diff = @import("diff.zig");
+/// Loose values a frontend reads from a script, for `assign`.
+pub const Loose = @import("Loose.zig");
+/// What kosm counts as an app.
+pub const app = @import("app.zig");
+
+/// Puts loose values into a kosmos' typed tree, all or nothing:
+/// `kosm.assign(Apps, arena, &tree, loose, &diagnostics)`.
+pub const assign = assignment.assign;
+/// `assign` and the text reading it shares with `Params` flags.
+pub const assignment = @import("assignment.zig");
 
 /// A copy of a list of run-time values that outlives the function writing it, like
 /// `allocator.dupe`: `kosm.keep(kosm.Color, &.{ theme.palette.blue })`.
@@ -116,6 +126,10 @@ test {
     std.testing.refAllDecls(commit);
     std.testing.refAllDecls(diff);
     std.testing.refAllDecls(@import("template.zig"));
+    std.testing.refAllDecls(Loose);
+    std.testing.refAllDecls(app);
+    std.testing.refAllDecls(assignment);
+    std.testing.refAllDecls(assignment.text);
 }
 
 const test_palette: Palette = .{

@@ -8,21 +8,8 @@ const Target = @import("Target.zig");
 pub const branch_quota = 100_000;
 
 /// Whether `T` is an app: a struct with exactly `pub fn apply(self: T, output: *kosm.Output) !void`.
-/// `Modifier.apply(Color) Color` does not count.
 pub fn isApp(comptime T: type) bool {
-    @setEvalBranchQuota(branch_quota);
-    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "apply")) return false;
-    const function = switch (@typeInfo(@TypeOf(T.apply))) {
-        .@"fn" => |function| function,
-        else => return false,
-    };
-    if (function.is_generic or function.param_types.len != 2) return false;
-    if (function.param_types[0] != T or function.param_types[1] != *kosm.Output) return false;
-    const Return = function.return_type orelse return false;
-    return switch (@typeInfo(Return)) {
-        .error_union => |error_union| error_union.payload == void,
-        else => false,
-    };
+    return kosm.app.is(T);
 }
 
 /// Whether app `T` declares a reload. A `reload` of any other shape than
