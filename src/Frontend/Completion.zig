@@ -16,6 +16,8 @@ kosmoi: []const Kosmos,
 standalone: []const u8,
 /// The record of the theme input such a script gives.
 theme: []const u8,
+/// Every namespace of the library a script calls, globals (no dot in their name) included.
+namespaces: []const Namespace = &.{},
 
 /// A struct and its fields.
 pub const Record = @import("Completion/Record.zig");
@@ -23,6 +25,10 @@ pub const Record = @import("Completion/Record.zig");
 pub const Field = @import("Completion/Field.zig");
 /// A Zig kosmos and the records of its parameters and tree.
 pub const Kosmos = @import("Completion/Kosmos.zig");
+/// A function a script may call.
+pub const Function = @import("Completion/Function.zig");
+/// A namespace of the library a script calls.
+pub const Namespace = @import("Completion/Namespace.zig");
 /// A file a frontend writes for an editor: its path and contents.
 pub const File = @import("Completion/File.zig");
 
@@ -51,6 +57,8 @@ pub const Type = union(enum) {
     list: *const Type,
     /// This type, or null (`kosm.null` in a script) for "not set".
     optional: *const Type,
+    /// The namespace of this name.
+    namespace: []const u8,
 };
 
 /// The record named `name`, or null.

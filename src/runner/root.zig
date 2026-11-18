@@ -138,7 +138,8 @@ fn describeScriptTypes(arena: std.mem.Allocator, comptime target: ScriptTarget, 
     }
     const standalone = try builder.appsRecord(discovery.Standalone(target.apps), comptime discovery.standalonePackages(target.apps), "kosm.Standalone");
     const theme = try builder.declaredRecord(kosm.Theme.Input, "kosm", &.{ "Theme", "Input" });
-    return .{ .records = builder.records.items, .kosmoi = kosmoi.items, .standalone = standalone, .theme = theme };
+    const namespaces = try ScriptLibrary(target).describe(&builder);
+    return .{ .records = builder.records.items, .kosmoi = kosmoi.items, .standalone = standalone, .theme = theme, .namespaces = namespaces };
 }
 
 /// The names leading from a module's root to `declared`'s function: `&.{ "group", "iced" }`.

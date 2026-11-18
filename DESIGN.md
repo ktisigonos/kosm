@@ -101,12 +101,13 @@ there is undecided, so ask.
 
 ## Kosmoi written through a frontend
 
-- A **script kosmos** is a file `kosmoi/<name>.<extension>` that the frontend claiming its extension reads into loose values; its name is unique among every kosmos, module and package, and it has no variants. Zig stays the language of packages (apps, adapters, bases, looks, frontends); kosm core knows no frontend language, only the interface every frontend implements.
-- A script builds on a Zig kosmos or base (setting its `Params` below the command line's, then values on its tree), on another script, or on nothing: then it gives a theme input, and every app of the config that a theme alone builds is chosen by naming it.
+- A **script kosmos** is a file `kosmoi/<name>.<extension>` that the frontend claiming its extension reads into loose values; its name is unique among every kosmos, module and package. It may give variants as functions, which `kosm apply <name>.<variant>` builds. Zig stays the language of packages (apps, adapters, bases, looks, frontends); kosm core knows no frontend language, only the interface every frontend implements.
+- A script builds on a Zig kosmos or base (setting its `Params` below the command line's, then values on its tree), on another script, or on nothing: then it gives a theme input, and every app of the config that a theme alone builds is chosen by naming it. Or it builds its tree itself by calling Zig code, and returns it.
+- A script calls Zig code: every Zig kosmos (`kosmoi.personal(params)`), and every public function and value of `kosm` and of each module whose parameters a script can give, found by reflection, so package authors write no bindings. A value a call returns stays a typed Zig value the script holds by reference: setting its fields sets them as an assignment would, and giving it to a call or a field copies it.
 - A script reaches no files, environment or programs: its frontend gives it only the language's libraries that compute.
 - Errors name the script's line for every value it gives, and a value the script writes but the language reads as nothing (Lua's `nil`) fails instead of being dropped.
 - Scripts are read when kosm runs, like a file named in `Params`: editing one never compiles. One runner, holding every Zig kosmos, app and frontend of the config, runs every script; it is rebuilt only when Zig code it is built from changed since it was last built.
-- Completion for scripts is generated when that runner is built, into the config's `zig-out/completions/<language>/`, from every type a script may set with the doc comments of its Zig source; a type keeps its Zig name. One editor file in the config (`.luarc.json` for Lua) points at it; kosm creates it where it is missing and never rewrites it.
+- Completion for scripts is generated when that runner is built, into the config's `zig-out/completions/<language>/`, from every type a script may set and every function it may call, with the doc comments of their Zig source; a type keeps its Zig name. One editor file in the config (`.luarc.json` for Lua) points at it; kosm creates it where it is missing and never rewrites it.
 
 ## Non-goals
 

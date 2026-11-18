@@ -9,6 +9,7 @@ const discovery = @import("discovery.zig");
 const kosmos_call = @import("kosmos_call.zig");
 const lifetime = @import("lifetime.zig");
 const Runtime = @import("Runtime.zig");
+const completion_types = @import("completion_types.zig");
 
 const Call = kosm.Frontend.Call;
 const Function = kosm.Frontend.Function;
@@ -53,6 +54,64 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
         /// The table of `T`, a struct, union, array or list a handle holds.
         pub fn typeOf(comptime T: type) *const Handle.Type {
             return &TypeTable(T).table;
+        }
+
+        /// Describes every namespace but `kosmoi` for completion, and the methods of the records
+        /// that have some, by the rules the library is bound by.
+        pub fn describe(builder: *completion_types.Builder) completion_types.Error![]const kosm.Frontend.Completion.Namespace {
+            @setEvalBranchQuota(branch_quota);
+            var described: std.ArrayList(kosm.Frontend.Completion.Namespace) = .empty;
+            inline for (all_roots) |root| try describeSpace(builder, &described, root.module, root.name, root.name, &.{}, 0);
+            return described.items;
+        }
+
+        fn describeSpace(
+            builder: *completion_types.Builder,
+            described: *std.ArrayList(kosm.Frontend.Completion.Namespace),
+            comptime Space: type,
+            comptime name: []const u8,
+            comptime module: []const u8,
+            comptime path: []const []const u8,
+            comptime depth: usize,
+        ) completion_types.Error!void {
+            const Completion = kosm.Frontend.Completion;
+            const arena = builder.arena;
+            var functions: std.ArrayList(Completion.Function) = .empty;
+            var values: std.ArrayList(Completion.Field) = .empty;
+            var methods: std.ArrayList(Completion.Function) = .empty;
+            // Named by its declaration before its functions describe it under other names.
+            const record: ?[]const u8 = if (path.len != 0 and @typeInfo(Space) == .@"struct") try builder.declaredRecord(Space, module, path) else null;
+            inline for (comptime declNames(Space)) |decl_name| {
+                const decl = @field(Space, decl_name);
+                const Declared = @TypeOf(decl);
+                const full = name ++ "." ++ decl_name;
+                const decl_path = path ++ .{decl_name};
+                if (Declared == type) {
+                    if (depth < max_depth and comptime isWalkable(decl) and NamespaceOf(decl, full, depth + 1).namespace.entries.len != 0) {
+                        try describeSpace(builder, described, decl, full, module, decl_path, depth + 1);
+                        try values.append(arena, .{ .name = decl_name, .type = .{ .namespace = full } });
+                    }
+                } else if (@typeInfo(Declared) == .@"fn") {
+                    if (comptime !isKosmos(Space, decl_name) and isBindable(Declared)) {
+                        const written = try builder.sources.declarationPath(module, decl_path);
+                        const declaration = if (written) |found| try builder.sources.followAlias(found) else null;
+                        const function = try builder.describeFunction(Declared, decl_name, full, declaration);
+                        try functions.append(arena, function);
+                        if (comptime takesSelf(Declared, Space)) try methods.append(arena, function);
+                    }
+                } else if (comptime isData(Declared, 0)) {
+                    const declaration = try builder.sources.declarationPath(module, decl_path);
+                    const expression = if (declaration) |found| found.value else null;
+                    if (try builder.typeOf(Declared, full, expression, 0)) |value_type| {
+                        try values.append(arena, .{ .name = decl_name, .doc = if (declaration) |found| found.doc else null, .type = value_type });
+                    }
+                }
+            }
+            const doc = if (path.len == 0)
+                if (try builder.sources.module(module)) |root| try builder.sources.containerDoc(root) else null
+            else if (try builder.sources.declarationPath(module, path)) |found| found.doc else null;
+            try described.append(arena, .{ .name = name, .doc = doc, .functions = functions.items, .values = values.items });
+            if (record) |record_name| builder.addMethods(record_name, methods.items);
         }
 
         fn NamespaceOf(comptime Space: type, comptime name: []const u8, comptime depth: usize) type {
@@ -211,7 +270,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                 if (loose.value == .handle) {
                     if (loose.value.handle.as(Pointee)) |pointer| return pointer;
                 }
-                return given.fail("{s}: argument {d}: expected a {s}, got {s}", .{ full, position, nameOf(Pointee), try describe(given.arena, loose) });
+                return given.fail("{s}: argument {d}: expected a {s}, got {s}", .{ full, position, nameOf(Pointee), try describeGiven(given.arena, loose) });
             }
             var diagnostics: kosm.Diagnostics = .{};
             const label = try given.arena.print("argument {d}", .{position});
@@ -537,7 +596,7 @@ fn isListed(list: []const []const u8, name: []const u8) bool {
 }
 
 /// What a script gave, for "expected ..., got ...".
-fn describe(arena: std.mem.Allocator, loose: Loose) std.mem.Allocator.Error![]const u8 {
+fn describeGiven(arena: std.mem.Allocator, loose: Loose) std.mem.Allocator.Error![]const u8 {
     return switch (loose.value) {
         .table => "a table",
         .list => "a list",
@@ -765,4 +824,26 @@ test "a failing function, or one returning a list from its own stack, fails with
     try script.expectFailure(script.callAt(&.{ "test_package", "failing" }, &.{.{ .value = .{ .string = "luck" } }}), "test_package.failing: no luck today");
     try script.expectFailure(script.callAt(&.{ "test_package", "deadList" }, &.{.{ .value = .{ .string = "us" } }}), "test_package.deadList: what it returns at layouts points into a function that has returned, so it is garbage; it must keep run-time lists with kosm.keep");
     try script.expectFailure(script.callAt(&.{ "kosm", "Theme", "from" }, &.{.{ .value = .{ .integer = 1 } }}), "kosm.Theme.from: argument 1: expected a table of its fields (palette, mode, roles, code, diff), got the integer 1");
+}
+
+test "completion describes the namespaces, their functions and values, and records' methods" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var sources: @import("Sources.zig") = .{ .arena = arena, .io = testing.io, .modules = &.{} };
+    var builder: completion_types.Builder = .{ .arena = arena, .sources = &sources };
+    const namespaces = try TestLibrary.describe(&builder);
+    const package = for (namespaces) |namespace| {
+        if (std.mem.eql(u8, namespace.name, "test_package")) break namespace;
+    } else return error.TestMissingNamespace;
+    const from = for (package.functions) |function| {
+        if (std.mem.eql(u8, function.name, "from")) break function;
+    } else return error.TestMissingFunction;
+    try testing.expectEqualStrings("argument1", from.parameters[0].name);
+    try testing.expectEqualStrings("test_package.App", from.result.?.record);
+    try testing.expectEqualStrings("test_package.App", package.values[0].type.?.namespace);
+    const completion: kosm.Frontend.Completion = .{ .records = builder.records.items, .kosmoi = &.{}, .standalone = "", .theme = "" };
+    const app = completion.find("test_package.App").?;
+    try testing.expectEqual(2, app.methods.len);
+    try testing.expectEqualStrings("grown", app.methods[0].name);
 }

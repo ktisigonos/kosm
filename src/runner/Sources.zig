@@ -67,7 +67,16 @@ pub const Declaration = struct {
 pub const Function = struct {
     /// The first parameter's type, when it has one.
     parameter: ?Expression,
+    /// Every parameter, in order.
+    parameters: []const Parameter = &.{},
     return_type: ?Expression,
+};
+
+/// One parameter of a function as its source writes it.
+pub const Parameter = struct {
+    /// Null for one without a name (`_`).
+    name: ?[]const u8,
+    type: ?Expression,
 };
 
 /// One parsed file.
@@ -102,6 +111,24 @@ pub fn declarationPath(sources: *Sources, name: []const u8, path: []const []cons
     return null;
 }
 
+/// The function a constant declaration names (`pub const from = App.from;`), keeping the
+/// constant's doc when it has one; `found` itself when it is a function or names none.
+pub fn followAlias(sources: *Sources, found: Declaration) Error!Declaration {
+    var current = found;
+    var depth: usize = 0;
+    while (current.function == null) : (depth += 1) {
+        if (depth > max_depth) return found;
+        const value = current.value orelse return found;
+        const ast = &value.scope.file.ast;
+        if (ast.nodeTag(value.node) != .field_access) return found;
+        const left, const name_token = ast.nodeData(value.node).node_and_token;
+        const namespace = try sources.resolve(.{ .scope = value.scope, .node = left }, "", 0) orelse return found;
+        current = try sources.declaration(namespace, ast.tokenSlice(name_token)) orelse return found;
+    }
+    if (found.doc != null) current.doc = found.doc;
+    return current;
+}
+
 /// The declaration `name` written directly in `scope`, or null.
 pub fn declaration(sources: *Sources, scope: *const Container, name: []const u8) Error!?Declaration {
     const ast = &scope.file.ast;
@@ -123,13 +150,19 @@ pub fn declaration(sources: *Sources, scope: *const Container, name: []const u8)
         const name_token = prototype.name_token orelse continue;
         if (!std.mem.eql(u8, ast.tokenSlice(name_token), name)) continue;
         var parameters = prototype.iterate(ast);
-        const first = parameters.next();
+        var written: std.ArrayList(Parameter) = .empty;
+        while (parameters.next()) |parameter| try written.append(sources.arena, .{
+            .name = if (parameter.name_token) |token| ast.tokenSlice(token) else null,
+            .type = if (parameter.type_expr) |node| .{ .scope = scope, .node = node } else null,
+        });
+        const first: ?Parameter = if (written.items.len != 0) written.items[0] else null;
         return .{
             .name = try sources.qualified(scope.name, name),
             .doc = try sources.docBefore(scope.file, ast.firstToken(member)),
             .value = null,
             .function = .{
-                .parameter = if (first) |parameter| if (parameter.type_expr) |node| .{ .scope = scope, .node = node } else null else null,
+                .parameter = if (first) |parameter| parameter.type else null,
+                .parameters = written.items,
                 .return_type = if (prototype.ast.return_type.unwrap()) |node| .{ .scope = scope, .node = node } else null,
             },
         };
@@ -454,9 +487,14 @@ test "a kosmos function gives its parameter and return types, and what cannot be
             \\}
             \\pub const missing = @import("missing.zig");
             \\pub const other = kosm.Color;
+            \\/// The group's variant.
+            \\pub const alias = group.iced;
             \\
         },
     });
+    const alias = try sources.followAlias((try sources.declarationPath("app", &.{"alias"})).?);
+    try testing.expectEqualStrings("The group's variant.", alias.doc.?);
+    try testing.expectEqualStrings("params", alias.function.?.parameters[0].name.?);
     const iced = (try sources.declarationPath("app", &.{ "group", "iced" })).?;
     try testing.expectEqualStrings("A variant.", iced.doc.?);
     const function = iced.function.?;

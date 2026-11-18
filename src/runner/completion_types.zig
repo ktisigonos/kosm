@@ -109,8 +109,36 @@ pub const Builder = struct {
         return fields.items;
     }
 
+    /// Describes `F`, a function a script calls, declared at `declared` when its source is
+    /// known; `hint` names the records of types written inline in it.
+    pub fn describeFunction(builder: *Builder, comptime F: type, name: []const u8, hint: []const u8, declared: ?Sources.Declaration) Error!Completion.Function {
+        const info = @typeInfo(F).@"fn";
+        const prototype = if (declared) |found| found.function else null;
+        var parameters: std.ArrayList(Completion.Field) = .empty;
+        inline for (info.param_types, 0..) |maybe, index| {
+            const Parameter = maybe.?;
+            const source: ?Sources.Parameter = if (prototype) |known| if (index < known.parameters.len) known.parameters[index] else null else null;
+            const parameter_name = if (source) |known| known.name orelse try builder.arena.print("argument{d}", .{index + 1}) else try builder.arena.print("argument{d}", .{index + 1});
+            const parameter_info = @typeInfo(Parameter);
+            const Described = if (parameter_info == .pointer and parameter_info.pointer.size == .one) parameter_info.pointer.child else Parameter;
+            const expression = if (Described == Parameter) if (source) |known| known.type else null else null;
+            const parameter_type = try builder.typeOf(Described, try builder.arena.print("{s}.{s}", .{ hint, parameter_name }), expression, 0);
+            try parameters.append(builder.arena, .{ .name = parameter_name, .type = parameter_type });
+        }
+        const Result = Payload(info.return_type.?);
+        const result = if (Result == void) null else try builder.typeOf(Result, try builder.arena.print("{s}.result", .{hint}), if (prototype) |known| known.return_type else null, 0);
+        return .{ .name = name, .doc = if (declared) |found| found.doc else null, .parameters = parameters.items, .result = result };
+    }
+
+    /// Gives the record named `name` `methods`.
+    pub fn addMethods(builder: *Builder, name: []const u8, methods: []const Completion.Function) void {
+        for (builder.records.items) |*described| {
+            if (std.mem.eql(u8, described.name, name)) described.methods = methods;
+        }
+    }
+
     /// What a field of type `T` takes; null for a type a script cannot set, which is left out.
-    fn typeOf(builder: *Builder, comptime T: type, hint: []const u8, expression: ?Sources.Expression, depth: usize) Error!?Completion.Type {
+    pub fn typeOf(builder: *Builder, comptime T: type, hint: []const u8, expression: ?Sources.Expression, depth: usize) Error!?Completion.Type {
         // Unions are described inline, so a union holding itself is cut off here.
         if (depth > max_depth) return null;
         if (T == kosm.Color) return .color;
