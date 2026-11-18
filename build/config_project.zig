@@ -194,6 +194,7 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const dot = std.mem.findScalar(u8, name, '.');
     const function = if (dot) |index| name[index + 1 ..] else "kosmos";
     const kosmos = kosmosFile(b, entries, name) orelse return null;
+    const folder = kosmosFolder(b, kosmos) orelse return null;
     const reached = reachedLocals(b, entries, kosmos) catch |err| {
         fail(b, "cannot read the imports of {s}: {s}", .{ kosmos.origin, @errorName(err) });
         return null;
@@ -209,11 +210,20 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         \\    return runner.run(init, .{{
         \\        .name = "{f}",
         \\        .path = "{f}",
+        \\        .config = "{f}",
+        \\        .folder = "{f}",
         \\        .file = @import("{f}"),
         \\        .function = "{f}",
         \\        .adapter_sources = &.{{
         \\
-    , .{ std.zig.fmtString(name), std.zig.fmtString(kosmos.origin), std.zig.fmtString(kosmos.name), std.zig.fmtString(function) }) catch @panic("OOM");
+    , .{
+        std.zig.fmtString(name),
+        std.zig.fmtString(kosmos.origin),
+        std.zig.fmtString(b.root.joinString(b.allocator, "") catch @panic("OOM")),
+        std.zig.fmtString(folder),
+        std.zig.fmtString(kosmos.name),
+        std.zig.fmtString(function),
+    }) catch @panic("OOM");
     for (entries) |entry| {
         if (providesAdapters(entry, reached)) writer.print("            .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry.name) }) catch @panic("OOM");
     }
@@ -230,6 +240,24 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
     return b.addExecutable(.{ .name = "kosmos", .root_module = root_module });
+}
+
+/// The absolute folder of the module root holding a kosmos, where its relative paths start.
+/// Fails the build and returns null when the root is no file of the config or a package.
+fn kosmosFolder(b: *std.Build, kosmos: Entry) ?[]const u8 {
+    const root = kosmos.module.root_source_file orelse {
+        fail(b, "{s}: the module has no root file, so its folder is unknown", .{kosmos.origin});
+        return null;
+    };
+    const file = switch (root) {
+        .src_path => |source| source.owner.root.joinString(b.allocator, source.sub_path),
+        .dependency => |dependency| dependency.dependency.builder.root.joinString(b.allocator, dependency.sub_path),
+        else => {
+            fail(b, "{s}: the module's root is not a file of the config or a package, so its folder is unknown", .{kosmos.origin});
+            return null;
+        },
+    } catch @panic("OOM");
+    return std.Io.Dir.path.dirname(file) orelse file;
 }
 
 /// The local kosmos, app or adapter, or the installed package, holding kosmos `name` ("frost" or

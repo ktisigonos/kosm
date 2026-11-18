@@ -6,6 +6,11 @@ const Target = @This();
 name: []const u8,
 /// The kosmos file or directory for messages: "kosmoi/frost.zig" or "kosmoi/nord/".
 path: []const u8,
+/// The config project's absolute path, which `~~/` stands for.
+config: []const u8,
+/// The absolute path of the kosmos' folder: the folder of a kosmos file, a kosmos folder
+/// itself, or a package's folder. `~~kosmos/` and relative paths in the kosmos start here.
+folder: []const u8,
 /// The kosmos file's module.
 file: type,
 /// The kosmos in `file`, by its name after the file's ("iced", "cold.deep"); "kosmos" is the

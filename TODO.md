@@ -17,11 +17,6 @@ Steps 21a-21f: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-- **21a. A kosmos takes a file loaded by kosm** `PLAN FIRST`
-  - Do: a type a kosmos names in its `Params` (like `kosm.Image`; propose its name, `kosm.File` or another) whose bytes kosm reads before calling the kosmos, with `~/` and absolute paths as for images and errors naming the kosmos and the path. A file built anywhere else holds no bytes and reading it fails, like an image without pixels.
-  - Do: a kosmos can fail with a message of its own (a script's file, line and path, `personal.lua:42: hyprland.general.gaps_in: expected an integer, got "big"`) instead of kosm's bare "the kosmos function failed: <error name>". Propose how it reaches kosm's diagnostics without `Diagnostics` or allocators in what users write; a frontend package may see more than a user's kosmos does.
-  - Done when: a test kosmos reads a file named in its `Params`, a missing one fails naming the path, and a kosmos-reported message is printed as given, under tests.
-
 - **21b. Loose values into the app tree** `PLAN FIRST`
   - Do: a public kosm function that puts a tree of untyped values (`kosm.Value` or what fits) into a kosmos' typed tree by reflection, shared with `--set`'s path assignment: unknown keys, wrong types, bad colors (hex or palette name), out-of-range numbers and lists all fail naming the path; nothing is half-applied. Every frontend uses it, so a frontend only parses its language.
   - Done when: tests cover each kind of field and each error, and `--set` runs through the same code.

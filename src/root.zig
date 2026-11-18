@@ -5,6 +5,7 @@ const std = @import("std");
 pub const Color = @import("Color.zig");
 pub const Palette = @import("Palette.zig");
 pub const Image = @import("Image.zig");
+pub const File = @import("File.zig");
 pub const Modifier = @import("Modifier.zig");
 pub const Variations = @import("Variations.zig");
 pub const Theme = @import("Theme.zig");
@@ -31,6 +32,12 @@ pub const diff = @import("diff.zig");
 /// A copy of a list of run-time values that outlives the function writing it, like
 /// `allocator.dupe`: `kosm.keep(kosm.Color, &.{ theme.palette.blue })`.
 pub const keep = @import("keep.zig").keep;
+
+/// Stops a kosmos with a message of its own, printed as given:
+/// `return kosm.fail("personal.lua:{d}: expected an integer", .{line})`.
+pub const fail = failure.fail;
+/// `fail` and what kosm's runner reads of it.
+pub const failure = @import("failure.zig");
 
 /// Text written into a file verbatim, with no quoting or escaping.
 pub fn raw(text: []const u8) Raw {
@@ -76,6 +83,8 @@ test {
     std.testing.refAllDecls(@import("color_choice.zig"));
     std.testing.refAllDecls(Palette);
     std.testing.refAllDecls(Image);
+    std.testing.refAllDecls(File);
+    std.testing.refAllDecls(failure);
     std.testing.refAllDecls(@import("keep.zig"));
     std.testing.refAllDecls(Theme);
     std.testing.refAllDecls(Theme.Roles);

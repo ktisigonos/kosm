@@ -5,14 +5,15 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const params = @import("params.zig");
+const Places = @import("Places.zig");
 
 /// What loading needs from the runner.
 pub const Context = struct {
     /// Holds the pixels for the whole run.
     arena: std.mem.Allocator,
     io: std.Io,
-    /// What `~/` in an image's path stands for.
-    home: []const u8,
+    /// The folders an image's path may start from.
+    places: Places,
     /// The folder decoded images are cached in; null caches nothing.
     cache: ?[]const u8,
     diagnostics: *kosm.Diagnostics,
@@ -119,9 +120,10 @@ fn loadFile(context: Context, comptime name: []const u8, path: []const u8, full_
 }
 
 fn resolve(context: Context, comptime name: []const u8, path: []const u8) Error![]const u8 {
-    if (std.mem.startsWith(u8, path, "~/")) return std.Io.Dir.path.join(context.arena, &.{ context.home, path[2..] });
-    if (std.Io.Dir.path.isAbsolute(path)) return path;
-    return fail(context, name, path, "image paths start with ~/ or /", .{});
+    return context.places.resolve(context.arena, path) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnknownPlace => return fail(context, name, path, Places.unknown_place_message, .{}),
+    };
 }
 
 /// The cache entry of the image at `full_path` as `stat` describes it; a changed size or
@@ -267,7 +269,7 @@ const Fixture = struct {
         return .{
             .arena = fixture.arena_state.allocator(),
             .io = testing.io,
-            .home = fixture.root,
+            .places = .{ .home = fixture.root, .config = fixture.root, .kosmos = fixture.root },
             .cache = cache,
             .diagnostics = &fixture.diagnostics,
             .stderr = &fixture.stderr.writer,
@@ -310,7 +312,7 @@ test "an image is decoded once, then read from the cache until it changes" {
     try testing.expectEqualStrings("#0000ff", changed.wallpaper.pixels[0].hex().slice());
 }
 
-test "a missing image, a relative path and an image ImageMagick cannot read name the parameter and the file" {
+test "a missing image, an unknown place and an image ImageMagick cannot read name the parameter and the file" {
     var fixture: Fixture = try .init();
     defer fixture.deinit();
     const Params = struct { wallpaper: kosm.Image };
@@ -320,9 +322,9 @@ test "a missing image, a relative path and an image ImageMagick cannot read name
     try testing.expectEqualStrings("~/missing.jxl", fixture.diagnostics.file);
     try testing.expectEqualStrings("Params.wallpaper: cannot read the image: FileNotFound", fixture.diagnostics.message());
 
-    var relative: Params = .{ .wallpaper = .{ .path = "missing.jxl" } };
-    try testing.expectError(error.Reported, fill(Params, &relative, fixture.context(null)));
-    try testing.expectEqualStrings("Params.wallpaper: image paths start with ~/ or /", fixture.diagnostics.message());
+    var unknown: Params = .{ .wallpaper = .{ .path = "~~kosmso/missing.jxl" } };
+    try testing.expectError(error.Reported, fill(Params, &unknown, fixture.context(null)));
+    try testing.expectEqualStrings("Params.wallpaper: " ++ Places.unknown_place_message, fixture.diagnostics.message());
 
     if (!hasMagick()) return error.SkipZigTest;
     try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "broken.png", .data = "not a png" });

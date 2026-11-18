@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const kosm = @import("kosm");
+const Places = @import("Places.zig");
 
 /// Errors from `parse`; `diagnostics` holds the message.
 pub const Error = error{InvalidParams};
@@ -35,7 +36,7 @@ pub fn parse(comptime Params: type, arguments: []const []const u8, hostname: []c
         const text = arguments[index + 1];
         inline for (fields.field_names, fields.field_types, 0..) |name, Field, field_position| {
             if (field_position == field_index) {
-                @field(params, name) = if (comptime isImage(Field))
+                @field(params, name) = if (comptime isLoaded(Field))
                     .{ .path = text }
                 else
                     parseValue(Field, text) catch
@@ -53,6 +54,32 @@ pub fn parse(comptime Params: type, arguments: []const []const u8, hostname: []c
 /// before calling the kosmos.
 pub fn isImage(comptime T: type) bool {
     return T == kosm.Image or T == ?kosm.Image;
+}
+
+/// Whether a `Params` field of type `T` is an image or a file: a flag gives its path, and kosm
+/// loads it before calling the kosmos.
+pub fn isLoaded(comptime T: type) bool {
+    return isImage(T) or T == kosm.File or T == ?kosm.File;
+}
+
+/// A copy of `arguments` in which the relative path of every image or file flag is absolute
+/// against `working_directory`, so a repeated apply reads the same file from anywhere. Anything
+/// `parse` would reject is kept as it is, for `parse` to report.
+pub fn absolutePaths(comptime Params: type, arena: std.mem.Allocator, working_directory: []const u8, arguments: []const []const u8) std.mem.Allocator.Error![]const []const u8 {
+    const copy = try arena.dupe([]const u8, arguments);
+    var index: usize = 0;
+    while (index + 1 < copy.len) : (index += 2) {
+        const flag = copy[index];
+        if (!std.mem.startsWith(u8, flag, "--")) continue;
+        const field_index = fieldIndex(Params, flag[2..]) orelse continue;
+        const fields = @typeInfo(Params).@"struct";
+        inline for (fields.field_types, 0..) |Field, field_position| {
+            if (comptime isLoaded(Field)) {
+                if (field_position == field_index) copy[index + 1] = try Places.fromCommandLine(arena, working_directory, copy[index + 1]);
+            }
+        }
+    }
+    return copy;
 }
 
 /// Whether `Params` has a `host` field that kosm fills from the hostname.
@@ -113,7 +140,8 @@ pub fn parseValue(comptime T: type, text: []const u8) !T {
 
 /// What a value of `T` looks like, for "--x 'y' is not ...".
 pub fn describe(comptime T: type) []const u8 {
-    if (T == kosm.Image) return "an image's path (absolute or ~/)";
+    if (T == kosm.Image) return "an image's path";
+    if (T == kosm.File) return "a file's path";
     if (T == kosm.Color) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...))";
     if (T == kosm.ColorChoice) return "a color (#rrggbb, rgb(...), hsl(...) or oklch(...)) or a hue (" ++ enumList(kosm.Palette.Hue) ++ ")";
     if (T == []const u8) return "text";
@@ -255,6 +283,29 @@ test "an image flag gives the image's path, and an optional image defaults to nu
     try testing.expectEqualStrings("/a.png", given.wallpaper.path);
     try testing.expectEqualStrings("~/b.jxl", given.lock.?.path);
     try testing.expectEqual(0, given.wallpaper.pixels.len);
+}
+
+test "a file flag gives the file's path, read later" {
+    const Params = struct { script: kosm.File = .{ .path = "personal.lua" } };
+    var diagnostics: kosm.Diagnostics = .{};
+    const given = try parse(Params, &.{ "--script", "~~kosmos/test.lua" }, "", &diagnostics);
+    try testing.expectEqualStrings("~~kosmos/test.lua", given.script.path);
+    try testing.expectEqual(null, given.script.bytes);
+}
+
+test "relative image and file paths on the command line become absolute, nothing else does" {
+    const Params = struct {
+        script: kosm.File = .{ .path = "personal.lua" },
+        wallpaper: ?kosm.Image = null,
+        font: []const u8 = "",
+    };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const arguments = try absolutePaths(Params, arena.allocator(), "/work", &.{ "--script", "./test.lua", "--font", "./Iosevka", "--wallpaper", "~/a.jxl", "--unknown", "./x" });
+    try testing.expectEqualStrings("/work/test.lua", arguments[1]);
+    try testing.expectEqualStrings("./Iosevka", arguments[3]);
+    try testing.expectEqualStrings("~/a.jxl", arguments[5]);
+    try testing.expectEqualStrings("./x", arguments[7]);
 }
 
 test "host comes from the hostname unless given as a flag" {

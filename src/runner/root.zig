@@ -9,7 +9,9 @@ const interface = @import("kosm_interface");
 const Arguments = @import("Arguments.zig");
 const completions = @import("completions.zig");
 const discovery = @import("discovery.zig");
+const files = @import("files.zig");
 const images = @import("images.zig");
+const Places = @import("Places.zig");
 const lifetime = @import("lifetime.zig");
 const params = @import("params.zig");
 const report = @import("report.zig");
@@ -57,7 +59,7 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
         return 0;
     }
 
-    const status: u8 = if (apply(init, kosmos, adapters, &diagnostics, streams)) 0 else |err| switch (err) {
+    const status: u8 = if (apply(init, kosmos, .{ .config = target.config, .kosmos = target.folder }, adapters, &diagnostics, streams)) 0 else |err| switch (err) {
         error.Reported => 1,
         else => return err,
     };
@@ -93,21 +95,30 @@ fn findTarget(comptime target: Target) discovery.Declared {
 /// Failed; `diagnostics` says why.
 const Reported = error{Reported};
 
-fn apply(init: std.process.Init, comptime kosmos: anytype, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+/// The folders `~~/` and `~~kosmos/` stand for, known when the runner is built.
+const Folders = struct {
+    config: []const u8,
+    kosmos: []const u8,
+};
+
+fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const arena = init.arena.allocator();
     const all_arguments = try init.minimal.args.toSlice(arena);
-    const arguments = Arguments.split(arena, all_arguments[1..]) catch |err| switch (err) {
+    const typed = Arguments.split(arena, all_arguments[1..]) catch |err| switch (err) {
         error.SetWithoutAssignment => return fail(diagnostics, "--set needs path=value", .{}),
         error.ConfigWithoutDirectory => return fail(diagnostics, "--config needs a directory", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
+    const working_directory = std.process.currentPathAlloc(init.io, arena) catch |err|
+        return fail(diagnostics, "cannot read the working directory, which relative paths given as parameters start from: {s}", .{@errorName(err)});
+    const arguments = try typed.withParameters(arena, try params.absolutePaths(ParamsOf(kosmos), arena, working_directory, typed.parameters));
 
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
     var kosmos_stack: lifetime.Stack = undefined;
     var tree = try callKosmos(kosmos, arguments.parameters, diagnostics, &kosmos_stack, .{
         .arena = arena,
         .io = init.io,
-        .home = home,
+        .places = .{ .home = home, .config = folders.config, .kosmos = folders.kosmos },
         .cache = if (arguments.config) |config| try std.Io.Dir.path.join(arena, &.{ config, images.cache_folder }) else null,
         .diagnostics = diagnostics,
         .stderr = streams.stderr,
@@ -221,12 +232,19 @@ fn ownerOf(plan: *const kosm.Plan, display_path: []const u8) []const u8 {
     return "";
 }
 
-/// Calls `kosmos` with its `Params` parsed from `arguments` and their images loaded, on its own
-/// stack, which `kosmos_stack` is set to. Never inlined, so the parameters are parsed in stack
-/// below its caller's.
+/// The `Params` type `kosmos` takes, or an empty struct when it takes none.
+fn ParamsOf(comptime kosmos: anytype) type {
+    const function = @typeInfo(@TypeOf(kosmos)).@"fn";
+    return if (function.param_types.len == 0) struct {} else function.param_types[0].?;
+}
+
+/// Calls `kosmos` with its `Params` parsed from `arguments` and their images and files loaded,
+/// on its own stack, which `kosmos_stack` is set to. Never inlined, so the parameters are parsed
+/// in stack below its caller's. A kosmos failing through `kosm.fail` reports its own message.
 noinline fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics, kosmos_stack: *lifetime.Stack, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
     const function = @typeInfo(@TypeOf(kosmos)).@"fn";
     var returned: function.return_type.? = undefined;
+    kosm.failure.clear();
     if (function.param_types.len == 0) {
         if (arguments.len != 0) return fail(diagnostics, "it takes no parameters, got '{s}'", .{arguments[0]});
         kosmos_stack.* = try callOnKosmosStack(kosmos, .{}, &returned, diagnostics);
@@ -236,10 +254,16 @@ noinline fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, 
         const hostname = if (comptime params.hasHost(Params)) try readHostname(&hostname_buffer, diagnostics) else "";
         var parsed = params.parse(Params, arguments, hostname, diagnostics) catch return error.Reported;
         try images.fill(Params, &parsed, image_context);
+        try files.fill(Params, &parsed, .{ .arena = image_context.arena, .io = image_context.io, .places = image_context.places, .diagnostics = diagnostics });
         kosmos_stack.* = try callOnKosmosStack(kosmos, .{parsed}, &returned, diagnostics);
     }
     if (@typeInfo(@TypeOf(returned)) != .error_union) return returned;
-    return returned catch |err| fail(diagnostics, "the kosmos function failed: {s}", .{@errorName(err)});
+    return returned catch |err| {
+        if (@as(anyerror, err) == error.KosmosFailed) {
+            if (kosm.failure.message()) |message| return fail(diagnostics, "{s}", .{message});
+        }
+        return fail(diagnostics, "the kosmos function failed: {s}", .{@errorName(err)});
+    };
 }
 
 /// How deep the stack a kosmos runs on may grow. Kosmoi build whole apps by value, and a Debug
@@ -283,6 +307,8 @@ test {
     std.testing.refAllDecls(completions);
     std.testing.refAllDecls(params);
     std.testing.refAllDecls(images);
+    std.testing.refAllDecls(files);
+    std.testing.refAllDecls(Places);
     std.testing.refAllDecls(lifetime);
     std.testing.refAllDecls(walk);
 }
@@ -522,4 +548,84 @@ test "a failed commit records nothing" {
     const tree = .{ .kitty = ReloadingApp{ .file = "~/locked/a.lines", .reloads = &reloads } };
     try testing.expectError(error.Reported, planAndRecord(&arena, tree, home, false, recorded, &diagnostics, &output));
     try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "state", .{}));
+}
+
+const ScriptParams = struct { script: kosm.File = .{ .path = "./kosmos.txt" } };
+const ScriptTree = struct { script: []const u8 };
+
+fn scriptKosmos(given: ScriptParams) !ScriptTree {
+    const bytes = try given.script.contents();
+    if (std.mem.eql(u8, bytes, "big\n")) return kosm.fail("kosmos.txt:1: hyprland.general.gaps_in: expected an integer, got \"{s}\"", .{"big"});
+    if (std.mem.eql(u8, bytes, "broken\n")) return error.Broken;
+    return .{ .script = bytes };
+}
+
+/// Calls `scriptKosmos` with `arguments`, the kosmos' folder being `folder`.
+fn callScriptKosmos(arena: std.mem.Allocator, folder: []const u8, arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !ScriptTree {
+    var stack: lifetime.Stack = undefined;
+    var stderr: std.Io.Writer.Allocating = .init(arena);
+    return callKosmos(scriptKosmos, arguments, diagnostics, &stack, .{
+        .arena = arena,
+        .io = testing.io,
+        .places = .{ .home = folder, .config = folder, .kosmos = folder },
+        .cache = null,
+        .diagnostics = diagnostics,
+        .stderr = &stderr.writer,
+    });
+}
+
+test "a kosmos reads the file its Params name, next to it by default" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var folder_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try tmpPath(&tmp, &folder_buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kosmos.txt", .data = "return {}\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "other.txt", .data = "other\n" });
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "test" };
+
+    try testing.expectEqualStrings("return {}\n", (try callScriptKosmos(arena.allocator(), folder, &.{}, &diagnostics)).script);
+    const other = try std.Io.Dir.path.join(arena.allocator(), &.{ folder, "other.txt" });
+    try testing.expectEqualStrings("other\n", (try callScriptKosmos(arena.allocator(), folder, &.{ "--script", other }, &diagnostics)).script);
+}
+
+test "a missing file fails naming its path before the kosmos runs" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var folder_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try tmpPath(&tmp, &folder_buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "test" };
+
+    try testing.expectError(error.Reported, callScriptKosmos(arena.allocator(), folder, &.{ "--script", "~~kosmos/missing.txt" }, &diagnostics));
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+    try diagnostics.write(&output.writer);
+    try testing.expectEqualStrings("error: kosmos 'test', file ~~kosmos/missing.txt: Params.script: cannot read the file: FileNotFound\n", output.written());
+}
+
+test "a kosmos failing through kosm.fail is reported with its own message, other errors by name" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var folder_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const folder = try tmpPath(&tmp, &folder_buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kosmos.txt", .data = "big\n" });
+    var reported: kosm.Diagnostics = .{ .kosmos = "personal" };
+    try testing.expectError(error.Reported, callScriptKosmos(arena.allocator(), folder, &.{}, &reported));
+    try reported.write(&output.writer);
+    try testing.expectEqualStrings("error: kosmos 'personal': kosmos.txt:1: hyprland.general.gaps_in: expected an integer, got \"big\"\n", output.written());
+
+    output.clearRetainingCapacity();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kosmos.txt", .data = "broken\n" });
+    var named: kosm.Diagnostics = .{ .kosmos = "personal" };
+    try testing.expectError(error.Reported, callScriptKosmos(arena.allocator(), folder, &.{}, &named));
+    try named.write(&output.writer);
+    try testing.expectEqualStrings("error: kosmos 'personal': the kosmos function failed: Broken\n", output.written());
 }

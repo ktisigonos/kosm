@@ -10,9 +10,11 @@ const Palette = @import("Palette.zig");
 const Theme = @import("Theme.zig");
 const Analysis = @import("Image/Analysis.zig");
 
-/// Where the image is: an absolute path, or one starting with `~/` for the home directory. A
-/// folder stands for a random picture in it or its subfolders, picked anew on every apply; kosm
-/// then sets this to that picture's path, so the wallpaper can follow it.
+/// Where the image is: `~/` for the home directory, `~~/` for the config, `~~kosmos/` for the
+/// kosmos' own folder, an absolute path, or a relative one. A default in a kosmos is relative to
+/// the kosmos' folder, a path given on the command line to the working directory. A folder
+/// stands for a random picture in it or its subfolders, picked anew on every apply; kosm then
+/// sets this to that picture's path, so the wallpaper can follow it.
 path: []const u8,
 /// The image's pixels, shrunk. Kosm fills them in for every image in a kosmos' `Params`
 /// before calling it; an image built anywhere else has none, and taking colors from it fails.

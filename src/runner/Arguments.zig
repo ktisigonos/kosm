@@ -49,6 +49,28 @@ pub fn split(arena: std.mem.Allocator, arguments: []const []const u8) Error!Argu
     return .{ .diff = diff, .config = config, .assignments = assignments.items, .parameters = parameters.items, .recorded = recorded.items };
 }
 
+/// These arguments with `parameters` in place of the kosmos' parameters (as many, in the same
+/// order), in the record as well.
+pub fn withParameters(arguments: Arguments, arena: std.mem.Allocator, parameters: []const []const u8) std.mem.Allocator.Error!Arguments {
+    std.debug.assert(parameters.len == arguments.parameters.len);
+    const recorded = try arena.dupe([]const u8, arguments.recorded);
+    var parameter_index: usize = 0;
+    var index: usize = 0;
+    while (index < recorded.len) : (index += 1) {
+        // `split` takes every --set and its assignment out of the parameters.
+        if (std.mem.eql(u8, recorded[index], "--set")) {
+            index += 1;
+            continue;
+        }
+        recorded[index] = parameters[parameter_index];
+        parameter_index += 1;
+    }
+    var replaced = arguments;
+    replaced.parameters = parameters;
+    replaced.recorded = recorded;
+    return replaced;
+}
+
 const testing = std.testing;
 
 test "diff, config and every set are taken out, parameters keep their order" {
@@ -80,4 +102,17 @@ test "a trailing --set or --config is an error" {
     defer arena.deinit();
     try testing.expectError(error.SetWithoutAssignment, split(arena.allocator(), &.{ "--diff", "--set" }));
     try testing.expectError(error.ConfigWithoutDirectory, split(arena.allocator(), &.{"--config"}));
+}
+
+test "replaced parameters reach the record in their places between the sets" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const arguments = try split(arena.allocator(), &.{ "--script", "x.lua", "--set", "kitty=null", "--blur", "false" });
+    const replaced = try arguments.withParameters(arena.allocator(), &.{ "--script", "/work/x.lua", "--blur", "false" });
+    try testing.expectEqualStrings("/work/x.lua", replaced.parameters[1]);
+    try testing.expectEqual(6, replaced.recorded.len);
+    try testing.expectEqualStrings("/work/x.lua", replaced.recorded[1]);
+    try testing.expectEqualStrings("--set", replaced.recorded[2]);
+    try testing.expectEqualStrings("kitty=null", replaced.recorded[3]);
+    try testing.expectEqualStrings("false", replaced.recorded[5]);
 }
