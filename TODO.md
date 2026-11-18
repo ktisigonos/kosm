@@ -8,6 +8,43 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 
 ---
 
+Steps 21a-21f: kosmoi written in Lua, through a **frontend**. Decided with the human:
+- A **frontend** lets users write kosmoi in a language other than Zig, like an adapter lets kosm write a format. It is an ordinary package, written like a third-party one; kosm core knows no frontend language, only the interface every frontend implements. Lua comes first; TOML, JSON or C# may follow later, each optional, so a large runtime (.NET) is acceptable.
+- One package per language, `kosm_<language>`, holds everything kosm does with that language: its adapter and its frontend, each a Zig module of its own. `kosm_lua` (today the Lua adapter) gains the Lua frontend. Apps depending on a package only for its adapter (`kosm_hyprland`, `kosm_nvim` on `kosm_lua`) must not fetch the frontend's interpreter: make it a lazy dependency, and verify that this holds before relying on it.
+- Lua kosmoi build on Zig ones: a Lua kosmos calls a Zig kosmos or base like a function and assigns its overrides on top. Zig stays the language of packages (apps, adapters, bases, looks, frontends).
+- No compiling on a Lua edit: the script is read when kosm runs, so only adding, updating or editing Zig code (packages, Zig kosmoi) rebuilds. Per-package binaries are not done: Zig has no stable ABI, and a rebuild on `add`/`update`/Zig edits is fast enough.
+- Kosmoi keep doing no IO themselves: kosm loads the script, like an image named in `Params`, so missing files, `~/`, caching and errors work as for every other input.
+- Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
+- Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
+
+- **21a. A kosmos takes a file loaded by kosm** `PLAN FIRST`
+  - Do: a type a kosmos names in its `Params` (like `kosm.Image`; propose its name, `kosm.File` or another) whose bytes kosm reads before calling the kosmos, with `~/` and absolute paths as for images and errors naming the kosmos and the path. A file built anywhere else holds no bytes and reading it fails, like an image without pixels.
+  - Do: a kosmos can fail with a message of its own (a script's file, line and path, `personal.lua:42: hyprland.general.gaps_in: expected an integer, got "big"`) instead of kosm's bare "the kosmos function failed: <error name>". Propose how it reaches kosm's diagnostics without `Diagnostics` or allocators in what users write; a frontend package may see more than a user's kosmos does.
+  - Done when: a test kosmos reads a file named in its `Params`, a missing one fails naming the path, and a kosmos-reported message is printed as given, under tests.
+
+- **21b. Loose values into the app tree** `PLAN FIRST`
+  - Do: a public kosm function that puts a tree of untyped values (`kosm.Value` or what fits) into a kosmos' typed tree by reflection, shared with `--set`'s path assignment: unknown keys, wrong types, bad colors (hex or palette name), out-of-range numbers and lists all fail naming the path; nothing is half-applied. Every frontend uses it, so a frontend only parses its language.
+  - Done when: tests cover each kind of field and each error, and `--set` runs through the same code.
+
+- **21c. The frontend interface and the Lua kosmoi runner** `ASK` `PLAN FIRST`
+  - Do: propose what a frontend package exports (load a script into a tree through 21a and 21b, and generate completion files from the types), how a config's kosmoi in another language are found (for example `kosmoi/personal.lua`) and named on the command line, and the one runner they share: it is compiled with every package and Zig kosmos in the config, so a script can call any of them, and is built by `kosm build`, `add` and `update`, never on a script edit.
+  - Do: propose where generated completion files go: outside the user's dotfiles (kosm's data or cache folder), with one editor file in the config pointing at them (`.luarc.json` for Lua), written by `kosm init` and otherwise added by the user.
+  - Done when: the human has agreed on the plan, and a dummy frontend in a test loads a script into a tree and applies it with `--diff`.
+
+- **21d. The Lua frontend, data only** `ASK`
+  - Do: propose the Lua implementation (PUC Lua 5.4, 5.5, LuaJIT or another) as a dependency of `kosm_lua`, lazy as decided above; then build the frontend module: a Lua kosmos returns a table of theme inputs and app overrides, put into the tree through 21b. Errors carry the script's file and line.
+  - Do: check that `kosm_hyprland` and `kosm_nvim` build without fetching the interpreter.
+  - Done when: a Lua kosmos overriding a few values of the human's base applies with `--diff`, editing it reapplies without compiling, and bad values fail naming file, line and path.
+
+- **21e. Lua completion**
+  - Do: the Lua frontend generates LuaLS annotation files (`---@class`, `---@field` with the `///` doc comments) for every app, base, look, Zig kosmos and its `Params` in the config, at build time per 21c.
+  - Done when: in an editor with LuaLS, a Lua kosmos completes app fields with their docs, including a Zig kosmos of the config right after `kosm build`.
+
+- **21f. Calls from Lua** `PLAN FIRST`
+  - Do: a Lua kosmos calls Zig functions: a Zig kosmos or base (`kosmoi.personal(params)`) returning a tree it overrides, `from` after changed inputs, theme building, modifiers and variations, and Lua variants as plain function calls. Bindings are generated from the Zig declarations by reflection inside kosm; package authors write none. Completion covers the calls.
+  - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor.
+
+
 - **18h. Equibop theme** `ASK`
   - Do: find out how Equibop (the Vesktop-based Discord client) takes a theme (Vencord's QuickCSS or a CSS file in its themes folder, Discord's CSS variables, live reload) and propose `kosm_equibop` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Equibop takes the kosmos' colors and fonts.
