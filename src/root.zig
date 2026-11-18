@@ -49,6 +49,9 @@ pub const assignment = @import("assignment.zig");
 /// A copy of a list of run-time values that outlives the function writing it, like
 /// `allocator.dupe`: `kosm.keep(kosm.Color, &.{ theme.palette.blue })`.
 pub const keep = @import("keep.zig").keep;
+/// A list whose length is known only at run time that outlives the function filling it, like
+/// `allocator.alloc`: `kosm.keepList(kosm.Color, count)`; its items are undefined until set.
+pub const keepList = @import("keep.zig").keepList;
 /// Text formatted from run-time values that outlives the function writing it:
 /// `kosm.keepPrint("{s} {d}", .{ family, size })`.
 pub const keepPrint = @import("keep.zig").keepPrint;
