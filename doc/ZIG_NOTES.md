@@ -160,3 +160,5 @@ When unsure about any std function, grep the std source for its definition befor
 - **`zig build` keeps building the other steps after one fails,** then exits nonzero; to learn which succeeded, let each install a marker that depends on it. `--summary all` prints `compile exe <name> debug native cached` (mode in lower case) for a cache hit.
 - `std.Io.File.Atomic` keeps its temp file and, with `make_path` or a path in a folder, that folder open until `replace`/`deinit`; holding thousands at once hits the open file limit (`ProcessFdQuotaExceeded`). Write and close, then rename.
 - **Lexical path resolution is `std.Io.Dir.path.resolveAlloc(gpa, &.{ base, path })`:** there is no plain `resolve`; it collapses `.` and `..` without touching the filesystem.
+- **`@src()` only works inside a function:** a field default `at: std.builtin.SourceLocation = @src()` is "'@src' outside function scope", so a struct default cannot learn the file it was written in.
+- **A `.path` dependency's `builder.root` is relative to the consumer's build root** (`../kosm`), while fetched ones are absolute; `std.Io.Dir.path.resolveAlloc(gpa, &.{ consumer_root, path })` makes both absolute.

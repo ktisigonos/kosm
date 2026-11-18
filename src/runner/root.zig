@@ -59,7 +59,7 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
         return 0;
     }
 
-    const status: u8 = if (apply(init, kosmos, .{ .config = target.config, .kosmos = target.folder }, adapters, &diagnostics, streams)) 0 else |err| switch (err) {
+    const status: u8 = if (apply(init, kosmos, .{ .config = target.config, .kosmos = target.folder, .named = target.folders }, adapters, &diagnostics, streams)) 0 else |err| switch (err) {
         error.Reported => 1,
         else => return err,
     };
@@ -95,10 +95,11 @@ fn findTarget(comptime target: Target) discovery.Declared {
 /// Failed; `diagnostics` says why.
 const Reported = error{Reported};
 
-/// The folders `~~/` and `~~kosmos/` stand for, known when the runner is built.
+/// The folders `~~/`, `~~kosmos/` and `~~<name>/` stand for, known when the runner is built.
 const Folders = struct {
     config: []const u8,
     kosmos: []const u8,
+    named: []const Places.Folder,
 };
 
 fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
@@ -118,7 +119,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, ada
     var tree = try callKosmos(kosmos, arguments.parameters, diagnostics, &kosmos_stack, .{
         .arena = arena,
         .io = init.io,
-        .places = .{ .home = home, .config = folders.config, .kosmos = folders.kosmos },
+        .places = .{ .home = home, .config = folders.config, .kosmos = folders.kosmos, .folders = folders.named },
         .cache = if (arguments.config) |config| try std.Io.Dir.path.join(arena, &.{ config, images.cache_folder }) else null,
         .diagnostics = diagnostics,
         .stderr = streams.stderr,

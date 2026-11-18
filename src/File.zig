@@ -6,8 +6,10 @@ const File = @This();
 const std = @import("std");
 
 /// Where the file is: `~/` for the home directory, `~~/` for the config, `~~kosmos/` for the
-/// kosmos' own folder, an absolute path, or a relative one. A default in a kosmos is relative to
-/// the kosmos' folder, a path given on the command line to the working directory.
+/// applied kosmos' folder, `~~<name>/` for a package's or local module's folder
+/// (`~~kosm_krystallos/`), an absolute path, or a relative one. A relative default is relative
+/// to the applied kosmos' folder, a path given on the command line to the working directory.
+/// Once read, kosm sets this to the absolute path, which any program can open.
 path: []const u8,
 /// The file's bytes. Kosm reads them for every file in a kosmos' `Params` before calling it;
 /// a file built anywhere else holds none (null; an empty file is `""`), and reading it fails.

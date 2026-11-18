@@ -21,7 +21,8 @@ pub const Error = error{Reported} || std.mem.Allocator.Error;
 /// naming a disk image by mistake.
 const size_limit = 16 * 1024 * 1024;
 
-/// Reads the bytes of every `kosm.File` (or non-null `?kosm.File`) field of `params_value`.
+/// Reads the bytes of every `kosm.File` (or non-null `?kosm.File`) field of `params_value`, and
+/// makes its path absolute, so the kosmos can hand it to any program.
 pub fn fill(comptime Params: type, params_value: *Params, context: Context) Error!void {
     const fields = @typeInfo(Params).@"struct";
     inline for (fields.field_names, fields.field_types) |name, Field| {
@@ -36,7 +37,7 @@ pub fn fill(comptime Params: type, params_value: *Params, context: Context) Erro
 fn read(context: Context, comptime name: []const u8, file: *kosm.File) Error!void {
     const full_path = context.places.resolve(context.arena, file.path) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.UnknownPlace => return fail(context, name, file.path, Places.unknown_place_message, .{}),
+        error.UnknownPlace => return fail(context, name, file.path, "{s}", .{try context.places.unknownPlaceMessage(context.arena, file.path)}),
     };
     file.bytes = std.Io.Dir.cwd().readFileAlloc(context.io, full_path, context.arena, .limited(size_limit)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -44,6 +45,7 @@ fn read(context: Context, comptime name: []const u8, file: *kosm.File) Error!voi
         error.StreamTooLong => return fail(context, name, file.path, "the file is larger than {d} MiB", .{size_limit / (1024 * 1024)}),
         else => return fail(context, name, file.path, "cannot read the file: {s}", .{@errorName(err)}),
     };
+    file.path = full_path;
 }
 
 fn fail(context: Context, comptime name: []const u8, path: []const u8, comptime format: []const u8, arguments: anytype) error{Reported} {
@@ -96,6 +98,7 @@ test "the files a kosmos names are read, an empty one too, and a null optional i
     var params_value: Params = .{};
     try fill(Params, &params_value, fixture.context());
     try testing.expectEqualStrings("return {}\n", try params_value.script.contents());
+    try testing.expectEqualStrings(try std.Io.Dir.path.join(fixture.arena_state.allocator(), &.{ fixture.root, "personal.lua" }), params_value.script.path);
     try testing.expectEqualStrings("", try params_value.empty.?.contents());
     try testing.expectEqual(null, params_value.unused);
 }
@@ -117,5 +120,5 @@ test "a missing file, a folder and an unknown place fail naming the parameter an
 
     var unknown: Params = .{ .script = .{ .path = "~nobody/x.lua" } };
     try testing.expectError(error.Reported, fill(Params, &unknown, fixture.context()));
-    try testing.expectEqualStrings("Params.script: " ++ Places.unknown_place_message, fixture.diagnostics.message());
+    try testing.expect(std.mem.startsWith(u8, fixture.diagnostics.message(), "Params.script: ~nobody/ names no folder kosm knows: use ~/ (home)"));
 }

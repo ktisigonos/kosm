@@ -2,6 +2,8 @@
 
 const Target = @This();
 
+const Places = @import("Places.zig");
+
 /// The kosmos as `kosm apply` spells it: "frost", "frost.iced" or "frost.cold.deep".
 name: []const u8,
 /// The kosmos file or directory for messages: "kosmoi/frost.zig" or "kosmoi/nord/".
@@ -11,6 +13,8 @@ config: []const u8,
 /// The absolute path of the kosmos' folder: the folder of a kosmos file, a kosmos folder
 /// itself, or a package's folder. `~~kosmos/` and relative paths in the kosmos start here.
 folder: []const u8,
+/// The folder of every package and local kosmos, app or adapter, which `~~<name>/` stands for.
+folders: []const Places.Folder,
 /// The kosmos file's module.
 file: type,
 /// The kosmos in `file`, by its name after the file's ("iced", "cold.deep"); "kosmos" is the

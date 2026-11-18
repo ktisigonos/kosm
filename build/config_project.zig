@@ -108,13 +108,20 @@ const Entry = struct {
     local: ?Local = null,
 };
 
-/// Every module name in the config, refusing a name used twice.
+/// The name `~~kosmos/` takes in paths, which no module may have.
+const reserved_name = "kosmos";
+
+/// Every module name in the config, refusing a name used twice or the reserved one.
 const Names = struct {
     b: *std.Build,
     modules: std.ArrayList(Entry) = .empty,
 
     /// Adds `entry`, or fails the build and returns false when its name is taken.
     fn add(names: *Names, entry: Entry) bool {
+        if (std.mem.eql(u8, entry.name, reserved_name)) {
+            fail(names.b, "{s} is named '{s}', which paths take for the applied kosmos' folder (~~{s}/); rename it", .{ entry.origin, reserved_name, reserved_name });
+            return false;
+        }
         for (names.modules.items) |existing| {
             if (std.mem.eql(u8, existing.name, entry.name)) {
                 fail(names.b, "'{s}' names both {s} and {s}; kosmoi, apps, adapters and packages need unique names", .{ entry.name, existing.origin, entry.origin });
@@ -194,7 +201,7 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const dot = std.mem.findScalar(u8, name, '.');
     const function = if (dot) |index| name[index + 1 ..] else "kosmos";
     const kosmos = kosmosFile(b, entries, name) orelse return null;
-    const folder = kosmosFolder(b, kosmos) orelse return null;
+    const folder = moduleFolder(b, kosmos) orelse return null;
     const reached = reachedLocals(b, entries, kosmos) catch |err| {
         fail(b, "cannot read the imports of {s}: {s}", .{ kosmos.origin, @errorName(err) });
         return null;
@@ -214,7 +221,7 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         \\        .folder = "{f}",
         \\        .file = @import("{f}"),
         \\        .function = "{f}",
-        \\        .adapter_sources = &.{{
+        \\        .folders = &.{{
         \\
     , .{
         std.zig.fmtString(name),
@@ -224,6 +231,15 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         std.zig.fmtString(kosmos.name),
         std.zig.fmtString(function),
     }) catch @panic("OOM");
+    for (entries) |entry| {
+        const entry_folder = moduleFolder(b, entry) orelse return null;
+        writer.print("            .{{ .name = \"{f}\", .path = \"{f}\" }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry_folder) }) catch @panic("OOM");
+    }
+    writer.writeAll(
+        \\        },
+        \\        .adapter_sources = &.{
+        \\
+    ) catch @panic("OOM");
     for (entries) |entry| {
         if (providesAdapters(entry, reached)) writer.print("            .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry.name) }) catch @panic("OOM");
     }
@@ -242,22 +258,33 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     return b.addExecutable(.{ .name = "kosmos", .root_module = root_module });
 }
 
-/// The absolute folder of the module root holding a kosmos, where its relative paths start.
-/// Fails the build and returns null when the root is no file of the config or a package.
-fn kosmosFolder(b: *std.Build, kosmos: Entry) ?[]const u8 {
-    const root = kosmos.module.root_source_file orelse {
-        fail(b, "{s}: the module has no root file, so its folder is unknown", .{kosmos.origin});
+/// The absolute folder of a package, or of a local module's root file: what `~~<name>/` stands
+/// for, and for a kosmos where its relative paths start. Fails the build and returns null when the root is no file of
+/// the config or a package.
+fn moduleFolder(b: *std.Build, entry: Entry) ?[]const u8 {
+    const root = entry.module.root_source_file orelse {
+        fail(b, "{s}: the module has no root file, so its folder is unknown", .{entry.origin});
         return null;
     };
+    // A package's folder is its own root, where its manifest and files sit, wherever its
+    // module's root file is; a local module's is the folder holding its root file.
+    const sub_path = if (entry.kind == .package) "" else switch (root) {
+        .src_path => |source| source.sub_path,
+        .dependency => |dependency| dependency.sub_path,
+        else => "",
+    };
     const file = switch (root) {
-        .src_path => |source| source.owner.root.joinString(b.allocator, source.sub_path),
-        .dependency => |dependency| dependency.dependency.builder.root.joinString(b.allocator, dependency.sub_path),
+        .src_path => |source| source.owner.root.joinString(b.allocator, sub_path),
+        .dependency => |dependency| dependency.dependency.builder.root.joinString(b.allocator, sub_path),
         else => {
-            fail(b, "{s}: the module's root is not a file of the config or a package, so its folder is unknown", .{kosmos.origin});
+            fail(b, "{s}: the module's root is not a file of the config or a package, so its folder is unknown", .{entry.origin});
             return null;
         },
     } catch @panic("OOM");
-    return std.Io.Dir.path.dirname(file) orelse file;
+    const folder = if (entry.kind == .package) file else std.Io.Dir.path.dirname(file) orelse file;
+    // A `.path` dependency's root is relative to the config's.
+    const config_root = b.root.joinString(b.allocator, "") catch @panic("OOM");
+    return std.Io.Dir.path.resolveAlloc(b.allocator, &.{ config_root, folder }) catch @panic("OOM");
 }
 
 /// The local kosmos, app or adapter, or the installed package, holding kosmos `name` ("frost" or

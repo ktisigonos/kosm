@@ -45,7 +45,8 @@ pub fn fill(comptime Params: type, params_value: *Params, context: Context) Erro
     }
 }
 
-/// Loads `image`'s pixels. A folder is first replaced by a random picture in it.
+/// Loads `image`'s pixels and makes its path absolute, so the kosmos can hand it to any program.
+/// A folder is first replaced by a random picture in it.
 fn load(context: Context, comptime name: []const u8, image: *kosm.Image) Error!void {
     var full_path = try resolve(context, name, image.path);
     var stat = std.Io.Dir.cwd().statFile(context.io, full_path, .{}) catch |err|
@@ -59,6 +60,7 @@ fn load(context: Context, comptime name: []const u8, image: *kosm.Image) Error!v
     }
     if (stat.kind != .file) return fail(context, name, image.path, "the image is neither a file nor a folder", .{});
     image.pixels = try loadFile(context, name, image.path, full_path, stat);
+    image.path = full_path;
 }
 
 /// File extensions of the pictures a folder is picked from, lowercase.
@@ -122,7 +124,7 @@ fn loadFile(context: Context, comptime name: []const u8, path: []const u8, full_
 fn resolve(context: Context, comptime name: []const u8, path: []const u8) Error![]const u8 {
     return context.places.resolve(context.arena, path) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
-        error.UnknownPlace => return fail(context, name, path, Places.unknown_place_message, .{}),
+        error.UnknownPlace => return fail(context, name, path, "{s}", .{try context.places.unknownPlaceMessage(context.arena, path)}),
     };
 }
 
@@ -324,7 +326,7 @@ test "a missing image, an unknown place and an image ImageMagick cannot read nam
 
     var unknown: Params = .{ .wallpaper = .{ .path = "~~kosmso/missing.jxl" } };
     try testing.expectError(error.Reported, fill(Params, &unknown, fixture.context(null)));
-    try testing.expectEqualStrings("Params.wallpaper: " ++ Places.unknown_place_message, fixture.diagnostics.message());
+    try testing.expect(std.mem.startsWith(u8, fixture.diagnostics.message(), "Params.wallpaper: ~~kosmso/ names no folder kosm knows: use ~/ (home)"));
 
     if (!hasMagick()) return error.SkipZigTest;
     try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "broken.png", .data = "not a png" });
@@ -343,7 +345,7 @@ test "a folder gives a random picture in it or its subfolders, whose path the im
     const Params = struct { wallpaper: kosm.Image = .{ .path = "~/pictures" } };
     var params_value: Params = .{};
     try fill(Params, &params_value, fixture.context(null));
-    try testing.expectEqualStrings("~/pictures/nested/red.ppm", params_value.wallpaper.path);
+    try testing.expectEqualStrings(try std.Io.Dir.path.join(fixture.arena_state.allocator(), &.{ fixture.root, "pictures/nested/red.ppm" }), params_value.wallpaper.path);
     try testing.expectEqualStrings("#ff0000", params_value.wallpaper.pixels[0].hex().slice());
 }
 

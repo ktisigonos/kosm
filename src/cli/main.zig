@@ -757,6 +757,16 @@ const test_frost = test_header ++ testAdapter("frost") ++
     \\}
     \\
 ;
+/// A kosmos reading a file in another local module's folder, which reports the path and bytes
+/// it got.
+const test_reader =
+    \\const kosm = @import("kosm");
+    \\
+    \\pub fn kosmos(params: struct { note: kosm.File = .{ .path = "~~my_bar/note.txt" } }) !struct { bar: @import("my_bar").Writer } {
+    \\    return kosm.fail("read {s}: {s}", .{ params.note.path, try params.note.contents() });
+    \\}
+    \\
+;
 /// A kosmos nothing imports, which does not compile.
 const test_broken =
     \\const kosm = @import("kosm");
@@ -764,7 +774,7 @@ const test_broken =
     \\
 ;
 
-test "local packages provide their adapters and kosmoi wherever they live, and only what an apply reaches is built" {
+test "local packages provide their adapters, kosmoi and folders wherever they live, and only what an apply reaches is built" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -799,6 +809,8 @@ test "local packages provide their adapters and kosmoi wherever they live, and o
         .{ "project/apps/my_bar/root.zig", test_my_bar_root },
         .{ "project/kosmoi/frost.zig", test_frost },
         .{ "project/apps/broken.zig", test_broken },
+        .{ "project/kosmoi/reader.zig", test_reader },
+        .{ "project/apps/my_bar/note.txt", "bar note" },
     };
     for (files) |file| {
         try tmp.dir.createDirPath(testing.io, std.Io.Dir.path.dirname(file[0]).?);
@@ -811,7 +823,15 @@ test "local packages provide their adapters and kosmoi wherever they live, and o
     try testing.expect(std.mem.find(u8, try testApplyDiff(context, "frost"), "+frost written\n") != null);
     try testing.expect(std.mem.find(u8, try testApplyDiff(context, "my_bar"), "+bar written\n") != null);
 
+    const built = try context.runZig(&.{ "build", "-Dkosmos=reader" });
+    try testing.expect(built.term.success());
+    const read = try context.run(&.{ try std.Io.Dir.path.join(arena, &.{ context.config, runner_path }), "--diff", "--config", context.config });
+    try testing.expect(!read.term.success());
+    const note = try std.Io.Dir.path.join(arena, &.{ context.config, "apps/my_bar/note.txt" });
+    try testing.expectEqualStrings(try arena.print("error: kosmos 'reader': read {s}: bar note\n", .{note}), read.stderr);
+
     try tmp.dir.deleteFile(testing.io, "project/apps/broken.zig");
+    try tmp.dir.deleteFile(testing.io, "project/kosmoi/reader.zig");
     // The starting kosmos needs the real official packages, so it can't be listed here.
     try tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
     stdout.clearRetainingCapacity();
