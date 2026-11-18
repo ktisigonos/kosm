@@ -127,7 +127,7 @@ const Walker = struct {
                     const field = &@field(target.*, name);
                     const default = comptime attributes.defaultValue(Field);
                     if (default) |default_value| field.* = default_value;
-                    if (findEntry(entries, name)) |given| {
+                    if (try walker.merged(entries, name)) |given| {
                         try walker.push(name);
                         defer walker.pop();
                         if (default == null) try walker.fresh(Field, field, given) else try walker.overlay(Field, field, given);
@@ -159,6 +159,34 @@ const Walker = struct {
             },
             else => return walker.unsupported(T),
         }
+    }
+
+    /// The value `entries` give `key`, or null. A key given several times as tables is one table
+    /// of all their entries in order, so a field with no default can be built from parts;
+    /// otherwise the last one wins, as `overlay` sets them in order.
+    fn merged(walker: *Walker, entries: []const Loose.Entry, key: []const u8) Error!?Loose {
+        var found: ?Loose = null;
+        var count: usize = 0;
+        var all_tables = true;
+        for (entries) |entry| {
+            if (!std.mem.eql(u8, entry.key, key)) continue;
+            if (found == null) found = entry.value;
+            count += 1;
+            if (entry.value.value != .table) all_tables = false;
+        }
+        if (count <= 1) return found;
+        if (!all_tables) return findLastEntry(entries, key);
+        var combined: std.ArrayList(Loose.Entry) = .empty;
+        for (entries) |entry| {
+            if (!std.mem.eql(u8, entry.key, key)) continue;
+            // An inner value without an origin of its own keeps its table's.
+            for (entry.value.value.table) |inner| {
+                var kept = inner;
+                if (kept.value.origin == null) kept.value.origin = entry.value.origin;
+                try combined.append(walker.arena, kept);
+            }
+        }
+        return .{ .value = .{ .table = combined.items }, .origin = found.?.origin };
     }
 
     const UnionMode = enum { overlay, fresh };
@@ -346,11 +374,12 @@ fn isWholeNumber(float: f64) bool {
     return float == @trunc(float) and @abs(float) < limit;
 }
 
-fn findEntry(entries: []const Loose.Entry, key: []const u8) ?Loose {
+fn findLastEntry(entries: []const Loose.Entry, key: []const u8) ?Loose {
+    var found: ?Loose = null;
     for (entries) |entry| {
-        if (std.mem.eql(u8, entry.key, key)) return entry.value;
+        if (std.mem.eql(u8, entry.key, key)) found = entry.value;
     }
-    return null;
+    return found;
 }
 
 /// From here on a number given is shown in scientific notation, not as all its digits.
@@ -568,6 +597,25 @@ test "lists replace the whole list, and each item needs the fields without defau
     try fixture.expectFailure(fixture.kitty("layouts", .{ .list = missing }), "terminal.kitty.layouts[1]: missing 'layout', which has no default");
     try fixture.expectFailure(fixture.kitty("corners", .{ .list = &.{looseOf(.{ .integer = 1 })} }), "terminal.kitty.corners: expected a list of 2 items, got a list of 1 items");
     try fixture.expectFailure(fixture.kitty("layouts", .{ .string = "us" }), "terminal.kitty.layouts: expected a list, got the string 'us'");
+}
+
+test "a key given twice as tables builds a field without a default from both, other values keep the last" {
+    const Pair = struct { first: u8, second: u8 };
+    const Holder = struct { pair: Pair, name: []const u8 };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var diagnostics: Diagnostics = .{};
+    var holder: ?Holder = null;
+    const given = looseOf(.{ .table = &.{
+        entryOf("pair", .{ .table = &.{entryOf("first", .{ .integer = 1 })} }),
+        entryOf("name", .{ .string = "a" }),
+        entryOf("pair", .{ .table = &.{entryOf("second", .{ .integer = 2 })} }),
+        entryOf("name", .{ .string = "b" }),
+    } });
+    try assign(?Holder, arena.allocator(), &holder, given, &diagnostics);
+    try testing.expectEqual(1, holder.?.pair.first);
+    try testing.expectEqual(2, holder.?.pair.second);
+    try testing.expectEqualStrings("b", holder.?.name);
 }
 
 test "a kosm.Value takes any value but text and null" {
