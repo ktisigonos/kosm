@@ -9,6 +9,8 @@ const Loose = @import("Loose.zig");
 const Value = @import("value.zig").Value;
 const app = @import("app.zig");
 const Handle = @import("Frontend/Handle.zig");
+const Image = @import("Image.zig");
+const File = @import("File.zig");
 
 /// Deep copies, so a value copied from a handle owns its lists.
 pub const copy = @import("assignment/copy.zig");
@@ -73,6 +75,9 @@ const Walker = struct {
         defer walker.origin = outer_origin;
         if (loose.value == .handle) return walker.fromHandle(T, target, loose);
         if (comptime isLeaf(T)) return walker.fresh(T, target, loose);
+        if (comptime isLoaded(T)) {
+            if (pathOf(loose)) |_| return walker.fresh(T, target, loose);
+        }
         switch (@typeInfo(T)) {
             .optional => |optional| {
                 if (isNull(loose)) {
@@ -120,6 +125,12 @@ const Walker = struct {
         const outer_origin = walker.enter(loose);
         defer walker.origin = outer_origin;
         if (loose.value == .handle) return walker.fromHandle(T, target, loose);
+        if (comptime isLoaded(T)) {
+            if (pathOf(loose)) |path| {
+                target.* = .{ .path = try walker.arena.dupe(u8, path) };
+                return;
+            }
+        }
         if (T == Value) {
             target.* = try walker.toValue(loose);
             return;
@@ -396,6 +407,19 @@ const Walker = struct {
         return error.InvalidAssignment;
     }
 };
+
+/// Types kosm loads before the kosmos runs, which a path given as text alone names.
+fn isLoaded(comptime T: type) bool {
+    return T == Image or T == File;
+}
+
+/// The text of a string or `--set`'s text, or null.
+fn pathOf(loose: Loose) ?[]const u8 {
+    return switch (loose.value) {
+        .string, .text => |given| given,
+        else => null,
+    };
+}
 
 /// Types set as one value, never field by field.
 fn isLeaf(comptime T: type) bool {
@@ -759,6 +783,18 @@ test "a handle sets a deep copy of its value into a field of its type, optional 
     try fixture.assignLoose(fixture.kitty("border", .{ .handle = .{ .pointer = &color, .type = &color_type } }));
     try testing.expectEqualStrings("#ff0000", fixture.kittyApp().border.?.hex().slice());
     try fixture.expectFailure(fixture.kitty("font", .{ .handle = handle }), "terminal.kitty.font: expected text or null, got a Layout");
+}
+
+test "an image or file is named by its path alone, or set field by field" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    const Params = struct { wallpaper: Image = .{ .path = "default.png" }, notes: ?File = null };
+    var params: Params = .{};
+    try assign(Params, fixture.arena.allocator(), &params, looseOf(.{ .table = &.{ entryOf("wallpaper", .{ .string = "dune.png" }), entryOf("notes", .{ .text = "notes.txt" }) } }), &fixture.diagnostics);
+    try testing.expectEqualStrings("dune.png", params.wallpaper.path);
+    try testing.expectEqualStrings("notes.txt", params.notes.?.path);
+    try assign(Params, fixture.arena.allocator(), &params, looseOf(.{ .table = &.{entryOf("wallpaper", .{ .table = &.{entryOf("path", .{ .string = "sea.png" })} })} }), &fixture.diagnostics);
+    try testing.expectEqualStrings("sea.png", params.wallpaper.path);
 }
 
 test "build starts from the type's defaults and names the value as a whole" {
