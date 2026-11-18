@@ -8,6 +8,7 @@ const Palette = @import("../Palette.zig");
 const Value = @import("../value.zig").Value;
 const Image = @import("../Image.zig");
 const File = @import("../File.zig");
+const kosmos = @import("../kosmos.zig");
 
 /// Reads one value of `T` from text: a color, text, bool, number or enum, or an optional of one.
 /// The returned text points into `text`.
@@ -46,6 +47,7 @@ pub fn describe(comptime T: type) []const u8 {
     if (T == Value) return "a value to write (a table, list, string, number or boolean)";
     if (T == []const u8) return "text";
     if (T == Image or T == File) return "a path, or a table of its fields (" ++ comptime fieldList(T) ++ ")";
+    if (comptime kosmos.is(T)) return "the name of a kosmos giving a " ++ @typeName(T.Tree);
     return switch (@typeInfo(T)) {
         .optional => |optional| comptime describe(optional.child) ++ " or null",
         .bool => "true or false",

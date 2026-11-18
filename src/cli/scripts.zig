@@ -75,6 +75,20 @@ pub fn report(context: Context, name: []const u8) Error!?[]const u8 {
     return if (result.term.success()) result.stdout else null;
 }
 
+/// Whether the Zig kosmos whose built runner is `kosmos_runner` builds on another kosmos, which
+/// only the runner of scripts can build, as that runner says. A runner that cannot answer is
+/// left to report why when it applies.
+pub fn buildsOnKosmoi(context: Context, kosmos_runner: []const u8) Error!bool {
+    var environ: std.process.Environ.Map = if (context.environ_map) |map| try map.clone(context.arena) else .init(context.arena);
+    try environ.put(interface.runner_variable, "1");
+    var asking = context;
+    asking.environ_map = &environ;
+    // `--diff` goes along so that a runner too old to answer still writes nothing.
+    const result = try asking.run(&.{ kosmos_runner, "--diff" });
+    if (!result.term.success()) return false;
+    return std.mem.eql(u8, std.mem.trim(u8, result.stdout, "\n"), interface.script_runner);
+}
+
 /// The Zig kosmos script `name` builds on, through any scripts below it, as its built runner
 /// reports it; null when it builds on none or cannot be read.
 pub fn baseOf(context: Context, name: []const u8) Error!?[]const u8 {
@@ -278,8 +292,10 @@ const test_frost =
     \\
 ;
 
-/// A kosmos folder holding a Zig kosmos and its variant `iced`.
+/// A kosmos folder holding a Zig kosmos, its variant `iced`, `melted` building on the script
+/// variant `snow.nord`, and `circle` building on a script building on it.
 const test_snow =
+    \\const kosm = @import("kosm");
     \\const kitty = @import("kosm_kitty");
     \\
     \\pub const Tree = struct { kitty: kitty.App };
@@ -292,12 +308,27 @@ const test_snow =
     \\    return kosmos();
     \\}
     \\
+    \\pub fn melted(params: struct { on: kosm.Kosmos(Tree) = .{ .name = "snow.nord" } }) !Tree {
+    \\    var tree = try params.on.tree();
+    \\    tree.kitty.fonts.font_size = tree.kitty.fonts.font_size.? * 2;
+    \\    return tree;
+    \\}
+    \\
+    \\pub fn circle(params: struct { on: kosm.Kosmos(Tree) = .{ .name = "snow.thaw" } }) !Tree {
+    \\    return params.on.tree();
+    \\}
+    \\
 ;
 
 /// Runs script kosmos `name` with `--diff`; returns stdout, or stderr when it failed.
 fn testDiff(context: Context, name: []const u8) ![]const u8 {
+    return testDiffWith(context, name, &.{});
+}
+
+/// `testDiff` with `arguments` before `--diff`.
+fn testDiffWith(context: Context, name: []const u8, arguments: []const []const u8) ![]const u8 {
     const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, runner_path });
-    const applied = try context.run(&.{ runner, name, "--diff", "--config", context.config });
+    const applied = try context.run(try std.mem.concat(context.arena, []const u8, &.{ &.{ runner, name }, arguments, &.{ "--diff", "--config", context.config } }));
     return if (applied.term.success()) applied.stdout else applied.stderr;
 }
 
@@ -343,6 +374,7 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/root.zig", .data = test_snow });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/nord.kosmos", .data = "base snow\nset kitty.fonts.font_size=21\n" });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/iced.kosmos", .data = "base snow\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/thaw.kosmos", .data = "base snow.circle\n" });
 
     try testing.expect(try isScript(context, "on"));
     try testing.expect(!try isScript(context, "frost"));
@@ -365,6 +397,20 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     // A script in a kosmos' folder is its variant, and may not share a Zig variant's name.
     try testing.expect(std.mem.find(u8, try testDiff(context, "snow.nord"), "+font_size 21\n") != null);
     try testing.expectEqualStrings("error: kosmos 'snow.iced': 'snow.iced' names both kosmoi/snow/iced.kosmos and a kosmos of kosmoi/snow/; rename one\n", try testDiff(context, "snow.iced"));
+
+    // A Zig kosmos builds on a script's tree, its own values on top; kosmoi building on each
+    // other in a circle, on a tree of another type or on nothing fail naming them.
+    try testing.expect(std.mem.find(u8, try testDiff(context, "snow.melted"), "+font_size 42\n") != null);
+    try testing.expectEqualStrings("error: kosmos 'snow.circle': Params.on: kosmos 'snow.thaw': the kosmoi build on each other in a circle: snow.circle -> snow.thaw -> snow.circle\n", try testDiff(context, "snow.circle"));
+    try testing.expect(std.mem.startsWith(u8, try testDiffWith(context, "snow.melted", &.{ "--on", "frost" }), "error: kosmos 'snow.melted': Params.on: kosmos 'frost': 'frost' gives a "));
+    try testing.expectEqualStrings("error: kosmos 'snow.melted': Params.on: kosmos 'alone': kosmoi/alone.kosmos builds on no kosmos, so its tree is not a root.Tree; build it on a kosmos giving one\n", try testDiffWith(context, "snow.melted", &.{ "--on", "alone" }));
+    try testing.expect(std.mem.startsWith(u8, try testDiffWith(context, "snow.melted", &.{ "--on", "missing" }), "error: kosmos 'snow.melted': Params.on: kosmos 'missing': there is no such kosmos; Zig kosmoi: "));
+    // Its own runner sends it to the runner of scripts.
+    try testing.expect(try context.runBuild(&.{ "build", "-Dkosmos=snow.melted" }));
+    const kosmos_runner = try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" });
+    try testing.expect(try buildsOnKosmoi(context, kosmos_runner));
+    try testing.expect(try context.runBuild(&.{ "build", "-Dkosmos=snow" }));
+    try testing.expect(!try buildsOnKosmoi(context, kosmos_runner));
 
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/on.kosmos", .data = "base frost\nparam size=13\n" });
     try testing.expect(!try isStale(context));

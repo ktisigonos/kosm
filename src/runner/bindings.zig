@@ -198,14 +198,13 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                     var diagnostics: kosm.Diagnostics = .{ .kosmos = entry.name };
                     var stack: lifetime.Stack = undefined;
                     const layers: []const kosmos_call.Layer = if (arguments.len == 0) &.{} else &.{.{ .values = arguments[0], .folder = runtime.scripts_folder }};
-                    var tree = kosmos_call.callKosmos(kosmos, .{ .arguments = &.{}, .layers = layers }, &diagnostics, &stack, .{
-                        .arena = runtime.arena,
-                        .io = runtime.io,
-                        .places = .{ .home = runtime.home, .config = runtime.config, .kosmos = entry.folder, .folders = runtime.folders },
-                        .cache = runtime.cache,
-                        .diagnostics = &diagnostics,
-                        .stderr = runtime.stderr,
-                    }) catch |err| return reported(given, err, full, &diagnostics);
+                    const depth = runtime.building.depth();
+                    defer runtime.building.restore(depth);
+                    runtime.building.enter(runtime.arena, entry.name, &diagnostics) catch |err| return reported(given, err, full, &diagnostics);
+                    const scripts_folder = runtime.scripts_folder;
+                    // Scripts the kosmos builds on point it at their own folders while they load.
+                    defer runtime.scripts_folder = scripts_folder;
+                    var tree = kosmos_call.callKosmos(kosmos, .{ .arguments = &.{}, .layers = layers, .kosmoi = runtime.kosmoi }, &diagnostics, &stack, runtime.loading(entry.folder, &diagnostics)) catch |err| return reported(given, err, full, &diagnostics);
                     kosmos_call.refuseDeadLists(given.arena, tree, &.{ .below(@intFromPtr(&tree)), stack }, &diagnostics) catch |err| return reported(given, err, full, &diagnostics);
                     return owned(Tree, given, tree);
                 }

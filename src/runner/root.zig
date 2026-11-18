@@ -54,6 +54,11 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
         return 1;
     }
 
+    if (init.environ_map.get(interface.runner_variable) != null) {
+        if (comptime kosmos_call.buildsOnKosmoi(ParamsOf(kosmos))) try streams.stdout.writeAll(interface.script_runner ++ "\n");
+        try streams.stdout.flush();
+        return 0;
+    }
     if (init.environ_map.get(interface.completions_variable) != null) {
         try completions.write(streams.stdout, kosmos);
         try streams.stdout.flush();
@@ -62,7 +67,7 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
 
     const all_arguments = try init.minimal.args.toSlice(init.arena.allocator());
     const folders: Folders = .{ .config = target.config, .kosmos = target.folder, .named = target.folders };
-    return finishRun(apply(init, kosmos, all_arguments[1..], folders, adapters, &diagnostics, streams, .{}), &diagnostics, streams);
+    return finishRun(apply(init, kosmos, all_arguments[1..], folders, adapters, &diagnostics, streams, .{}, null), &diagnostics, streams);
 }
 
 /// Runs the script kosmos named by the first process argument, with the rest as `run` takes
@@ -164,20 +169,21 @@ fn writeOutput(io: std.Io, arena: std.mem.Allocator, folder: []const u8, file: k
         return fail(diagnostics, "cannot write {s}: {s}", .{ path, @errorName(err) });
 }
 
-/// The chain of script kosmos `diagnostics.kosmos`, read through the frontends.
-/// Scripts' calls run with `runtime`.
-fn resolveScript(init: std.process.Init, comptime target: ScriptTarget, diagnostics: *kosm.Diagnostics, runtime: *Runtime) !script.Chain {
+/// The chain of script kosmos `name`, read through the frontends. Scripts' calls run with
+/// `runtime`.
+fn resolveScript(comptime target: ScriptTarget, runtime: *Runtime, name: []const u8, diagnostics: *kosm.Diagnostics) !script.Chain {
     return script.resolve(.{
-        .arena = init.arena.allocator(),
-        .io = init.io,
+        .arena = runtime.arena,
+        .io = runtime.io,
         .config = target.config,
         .frontends = comptime discovery.frontends(target.adapter_sources),
         .modules = comptime moduleNames(target.kosmoi),
         .kosmoi = comptime kosmosNames(target.kosmoi),
         .library = ScriptLibrary(target).library(runtime),
         .calls_folder = &runtime.scripts_folder,
+        .building = &runtime.building,
         .diagnostics = diagnostics,
-    }, diagnostics.kosmos);
+    }, name);
 }
 
 /// Every module, kosmos and value of the config a script may call.
@@ -223,7 +229,7 @@ fn treeTypes(comptime sources: []const ScriptTarget.KosmosSource) []const type {
 fn writeScriptCompletions(init: std.process.Init, comptime target: ScriptTarget, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const stdout = streams.stdout;
     var runtime = try scriptRuntime(init, target, &.{}, streams.stderr, diagnostics);
-    const chain = try resolveScript(init, target, diagnostics, &runtime);
+    const chain = try resolveScript(target, &runtime, diagnostics.kosmos, diagnostics);
     if (chain.tree) |tree| {
         inline for (comptime treeTypes(target.kosmoi)) |Tree| {
             if (tree.as(Tree) != null) return completions.writeSetPaths(stdout, Tree);
@@ -325,12 +331,13 @@ const Layers = struct {
 
 /// Calls `kosmos` with the command line's parameters on top of `layers.params`, assigns
 /// `layers.overrides`, then the `--set`s, and plans and delivers the tree.
-fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []const []const u8, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, layers: Layers) !void {
+/// `kosmoi` builds the kosmoi its `Params` name, in the runner of scripts.
+fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []const []const u8, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, layers: Layers, kosmoi: ?kosmos_call.Builder) !void {
     const arena = init.arena.allocator();
     const arguments = try readArguments(init, ParamsOf(kosmos), raw_arguments, diagnostics);
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
     var kosmos_stack: lifetime.Stack = undefined;
-    var tree = try kosmos_call.callKosmos(kosmos, .{ .arguments = arguments.parameters, .layers = layers.params }, diagnostics, &kosmos_stack, .{
+    var tree = try kosmos_call.callKosmos(kosmos, .{ .arguments = arguments.parameters, .layers = layers.params, .kosmoi = kosmoi }, diagnostics, &kosmos_stack, .{
         .arena = arena,
         .io = init.io,
         .places = .{ .home = home, .config = folders.config, .kosmos = folders.kosmos, .folders = folders.named },
@@ -341,11 +348,16 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []cons
     // Its parameters were parsed in the stack below `tree`, and the kosmos ran in its own; both
     // are dead now that it returned.
     try kosmos_call.refuseDeadLists(arena, tree, &.{ .below(@intFromPtr(&tree)), kosmos_stack }, diagnostics);
-    for (layers.overrides) |overrides| kosm.assign(@TypeOf(tree), arena, &tree, overrides, diagnostics) catch |err| switch (err) {
+    try assignOverrides(arena, &tree, layers.overrides, diagnostics);
+    try finish(init, &tree, arguments, home, adapters, diagnostics, streams);
+}
+
+/// Assigns each of `overrides` in `tree`, the lowest script's first.
+fn assignOverrides(arena: std.mem.Allocator, tree: anytype, overrides: []const kosm.Loose, diagnostics: *kosm.Diagnostics) !void {
+    for (overrides) |given| kosm.assign(@TypeOf(tree.*), arena, tree, given, diagnostics) catch |err| switch (err) {
         error.InvalidAssignment => return error.Reported,
         error.OutOfMemory => return error.OutOfMemory,
     };
-    try finish(init, &tree, arguments, home, adapters, diagnostics, streams);
 }
 
 /// Reads the script kosmos `diagnostics.kosmos` and applies it on what it builds on.
@@ -353,7 +365,18 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
     const arena = init.arena.allocator();
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var runtime = try scriptRuntime(init, target, raw_arguments, streams.stderr, diagnostics);
-    const chain = try resolveScript(init, target, diagnostics, &runtime);
+    runtime.kosmoi = KosmosBuilder(target).of(&runtime);
+    // A Zig kosmos building on another is applied here, where every kosmos can be built; a
+    // script of its name is read instead, which fails naming both.
+    const is_script = try script.locate(KosmosBuilder(target).scriptContext(&runtime, diagnostics), diagnostics.kosmos) != null;
+    inline for (comptime kosmos_call.zigKosmoi(target.kosmoi)) |entry| {
+        if (!is_script and std.mem.eql(u8, diagnostics.kosmos, entry.name)) {
+            try runtime.building.enter(arena, entry.name, diagnostics);
+            const folders: Folders = .{ .config = target.config, .kosmos = entry.folder, .named = target.folders };
+            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, .{}, runtime.kosmoi);
+        }
+    }
+    const chain = try resolveScript(target, &runtime, diagnostics.kosmos, diagnostics);
     if (chain.tree) |tree| {
         inline for (comptime treeTypes(target.kosmoi)) |Tree| {
             if (tree.as(Tree)) |built| return applyBuilt(init, built.*, raw_arguments, adapters, diagnostics, streams, chain.scripts);
@@ -364,11 +387,105 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
     const layers = try Layers.of(arena, chain.scripts);
     inline for (comptime kosmos_call.zigKosmoi(target.kosmoi)) |entry| {
         if (std.mem.eql(u8, base, entry.name)) {
+            try runtime.building.enter(arena, entry.name, diagnostics);
             const folders: Folders = .{ .config = target.config, .kosmos = entry.folder, .named = target.folders };
-            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, layers);
+            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, layers, runtime.kosmoi);
         }
     }
     return fail(diagnostics, "{s} builds on '{s}', but there is no such kosmos; Zig kosmoi: {s}", .{ chain.scripts[0].path, base, comptime zigKosmosNames(target.kosmoi) });
+}
+
+/// Builds a kosmos named in a `kosm.Kosmos` field, Zig or script, with every kosmos `target`
+/// holds to build on, and keeps its tree for the whole run.
+fn KosmosBuilder(comptime target: ScriptTarget) type {
+    return struct {
+        fn of(runtime: *Runtime) kosmos_call.Builder {
+            return .{ .state = runtime, .build = build };
+        }
+
+        fn build(state: *anyopaque, name: []const u8, tree: *const anyopaque, tree_name: []const u8, diagnostics: *kosm.Diagnostics) images.Error!*const anyopaque {
+            const runtime: *Runtime = @ptrCast(@alignCast(state));
+            const depth = runtime.building.depth();
+            defer runtime.building.restore(depth);
+            const scripts_folder = runtime.scripts_folder;
+            defer runtime.scripts_folder = scripts_folder;
+            if (zigKosmos(name)) |index| return buildZig(runtime, index, .{}, tree, tree_name, diagnostics);
+            const location = try script.locate(scriptContext(runtime, diagnostics), name);
+            if (location == null) return fail(diagnostics, "there is no such kosmos; Zig kosmoi: {s}, and scripts are files in {s}/", .{ comptime zigKosmosNames(target.kosmoi), script.directory });
+            const chain = try resolveScript(target, runtime, name, diagnostics);
+            if (chain.tree) |handle| return buildOnTree(runtime, handle, chain.scripts, tree, tree_name, diagnostics);
+            const base = chain.base orelse
+                return fail(diagnostics, "{s} builds on no kosmos, so its tree is not a {s}; build it on a kosmos giving one", .{ chain.scripts[0].path, tree_name });
+            const index = zigKosmos(base) orelse
+                return fail(diagnostics, "{s} builds on '{s}', but there is no such kosmos; Zig kosmoi: {s}", .{ chain.scripts[0].path, base, comptime zigKosmosNames(target.kosmoi) });
+            return buildZig(runtime, index, try Layers.of(runtime.arena, chain.scripts), tree, tree_name, diagnostics);
+        }
+
+        const kosmoi = kosmos_call.zigKosmoi(target.kosmoi);
+
+        fn zigKosmos(name: []const u8) ?usize {
+            inline for (kosmoi, 0..) |entry, index| {
+                if (std.mem.eql(u8, name, entry.name)) return index;
+            }
+            return null;
+        }
+
+        /// Calls Zig kosmos `kosmoi[index]` on `layers`, once its tree is known to be the wanted one.
+        fn buildZig(runtime: *Runtime, index: usize, layers: Layers, tree: *const anyopaque, tree_name: []const u8, diagnostics: *kosm.Diagnostics) images.Error!*const anyopaque {
+            inline for (kosmoi, 0..) |entry, entry_index| {
+                if (entry_index == index) {
+                    const kosmos = @field(entry.Namespace, entry.function);
+                    const Tree = discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?);
+                    if (kosm.Frontend.Handle.id(Tree) != tree)
+                        return fail(diagnostics, "'{s}' gives a {s}, not a {s}", .{ entry.name, @typeName(Tree), tree_name });
+                    try runtime.building.enter(runtime.arena, entry.name, diagnostics);
+                    var stack: lifetime.Stack = undefined;
+                    var built = try kosmos_call.callKosmos(kosmos, .{ .arguments = &.{}, .layers = layers.params, .kosmoi = runtime.kosmoi }, diagnostics, &stack, runtime.loading(entry.folder, diagnostics));
+                    try kosmos_call.refuseDeadLists(runtime.arena, built, &.{ .below(@intFromPtr(&built)), stack }, diagnostics);
+                    try assignOverrides(runtime.arena, &built, layers.overrides, diagnostics);
+                    return keep(runtime, Tree, built);
+                }
+            }
+            unreachable; // `index` comes from `zigKosmos`.
+        }
+
+        /// The tree the lowest of `scripts` built by calling Zig code, with the overrides of the
+        /// scripts above it.
+        fn buildOnTree(runtime: *Runtime, handle: kosm.Frontend.Handle, scripts: []const script.Loaded, tree: *const anyopaque, tree_name: []const u8, diagnostics: *kosm.Diagnostics) images.Error!*const anyopaque {
+            if (handle.type.id != tree)
+                return fail(diagnostics, "{s} returns a {s}, not a {s}", .{ scripts[0].path, handle.type.name, tree_name });
+            for (scripts[1..]) |loaded| {
+                if (loaded.script.params != null)
+                    return fail(diagnostics, "{s}: it sets parameters, but {s} builds its own tree and takes none", .{ loaded.path, scripts[0].path });
+            }
+            const layers = try Layers.of(runtime.arena, scripts[1..]);
+            inline for (comptime treeTypes(target.kosmoi)) |Tree| {
+                if (handle.as(Tree)) |built| {
+                    var copy = built.*;
+                    try assignOverrides(runtime.arena, &copy, layers.overrides, diagnostics);
+                    return keep(runtime, Tree, copy);
+                }
+            }
+            return notATree(diagnostics, scripts[0].path, handle);
+        }
+
+        fn keep(runtime: *Runtime, comptime Tree: type, built: Tree) std.mem.Allocator.Error!*const anyopaque {
+            const kept = try runtime.arena.create(Tree);
+            kept.* = built;
+            return kept;
+        }
+
+        fn scriptContext(runtime: *Runtime, diagnostics: *kosm.Diagnostics) script.Context {
+            return .{
+                .arena = runtime.arena,
+                .io = runtime.io,
+                .config = target.config,
+                .frontends = comptime discovery.frontends(target.adapter_sources),
+                .modules = comptime moduleNames(target.kosmoi),
+                .diagnostics = diagnostics,
+            };
+        }
+    };
 }
 
 fn notATree(diagnostics: *kosm.Diagnostics, path: []const u8, tree: kosm.Frontend.Handle) Reported {
@@ -388,10 +505,7 @@ fn applyBuilt(init: std.process.Init, tree: anytype, raw_arguments: []const []co
             return fail(diagnostics, "{s}: it sets parameters, but {s} builds its own tree and takes none", .{ loaded.path, scripts[0].path });
     }
     var built = tree;
-    for (layers.overrides) |overrides| kosm.assign(@TypeOf(built), arena, &built, overrides, diagnostics) catch |err| switch (err) {
-        error.InvalidAssignment => return error.Reported,
-        error.OutOfMemory => return error.OutOfMemory,
-    };
+    try assignOverrides(arena, &built, layers.overrides, diagnostics);
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
     try finish(init, &built, arguments, home, adapters, diagnostics, streams);
 }

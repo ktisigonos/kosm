@@ -45,6 +45,8 @@ pub fn parseOnto(comptime Params: type, start: Params, host_set: bool, arguments
             if (field_position == field_index) {
                 @field(params, name) = if (comptime isLoaded(Field))
                     .{ .path = text }
+                else if (comptime kosm.isKosmos(Unwrapped(Field)))
+                    .{ .name = text }
                 else
                     parseValue(Field, text) catch
                         return fail(diagnostics, "{s} '{s}' is not {s}", .{ flag, text, comptime describe(Field) });
@@ -159,6 +161,7 @@ pub fn parseValue(comptime T: type, text: []const u8) !T {
 pub fn describe(comptime T: type) []const u8 {
     if (T == kosm.Image) return "an image's path";
     if (T == kosm.File) return "a file's path";
+    if (comptime kosm.isKosmos(Unwrapped(T))) return "the name of a kosmos giving a " ++ @typeName(Unwrapped(T).Tree);
     return kosm.assignment.text.describe(Unwrapped(T));
 }
 

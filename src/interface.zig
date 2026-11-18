@@ -5,7 +5,7 @@ const std = @import("std");
 
 /// Bumped whenever the command line and the runner change how they talk to each other
 /// (arguments, environment, output the command line reads).
-pub const version: u32 = 2;
+pub const version: u32 = 3;
 
 /// The environment variable the command line passes its `version` to the runner in.
 pub const environment_variable = "KOSM_INTERFACE";
@@ -14,6 +14,15 @@ pub const environment_variable = "KOSM_INTERFACE";
 /// instead of doing its work: a runner prints its kosmos' parameters and `--set` paths and
 /// applies nothing, and the lister prints every kosmos' name.
 pub const completions_variable = "KOSM_COMPLETIONS";
+
+/// Set by the command line to ask a kosmos' runner which runner applies it: the runner prints
+/// `script_runner` when the kosmos builds on another kosmos, which only the runner of scripts
+/// can build, and nothing otherwise, and applies nothing.
+pub const runner_variable = "KOSM_RUNNER";
+
+/// What a runner asked through `runner_variable` prints for a kosmos the runner of scripts
+/// applies.
+pub const script_runner = "scripts";
 
 /// Prints an error naming both numbers to `stderr` and returns false when `environ` holds
 /// another interface number than this build's. Without the variable (the runner started by
@@ -45,5 +54,5 @@ test "only another interface number is an error, naming both" {
 
     try environ.put(environment_variable, "999");
     try testing.expect(!try check(&environ, &stderr.writer));
-    try testing.expect(std.mem.startsWith(u8, stderr.written(), "error: the kosm command speaks interface 999, but the kosm this config builds with speaks interface 2;"));
+    try testing.expect(std.mem.startsWith(u8, stderr.written(), "error: the kosm command speaks interface 999, but the kosm this config builds with speaks interface 3;"));
 }

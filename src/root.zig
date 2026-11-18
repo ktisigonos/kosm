@@ -6,6 +6,11 @@ pub const Color = @import("Color.zig");
 pub const Palette = @import("Palette.zig");
 pub const Image = @import("Image.zig");
 pub const File = @import("File.zig");
+/// Another kosmos a kosmos builds on, named in its `Params`: `kosm.Kosmos(Apps)`.
+pub const Kosmos = kosmos_file.Kosmos;
+/// Whether a type is a `Kosmos` of some tree.
+pub const isKosmos = kosmos_file.is;
+const kosmos_file = @import("kosmos.zig");
 pub const Modifier = @import("Modifier.zig");
 pub const Variations = @import("Variations.zig");
 pub const Theme = @import("Theme.zig");
@@ -135,6 +140,7 @@ test {
     std.testing.refAllDecls(assignment.copy);
     std.testing.refAllDecls(Frontend);
     std.testing.refAllDecls(Frontend.Handle);
+    std.testing.refAllDecls(kosmos_file);
 }
 
 const test_palette: Palette = .{

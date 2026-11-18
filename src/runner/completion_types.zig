@@ -144,6 +144,7 @@ pub const Builder = struct {
         if (T == kosm.Color) return .color;
         if (T == kosm.ColorChoice) return .color_or_hue;
         if (T == kosm.Image or T == kosm.File) return .path;
+        if (comptime kosm.isKosmos(T)) return .text;
         if (T == kosm.Value) return .value;
         if (T == []const u8) return .text;
         switch (@typeInfo(T)) {

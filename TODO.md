@@ -32,9 +32,10 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Left for the human: push kosm, `kosm update` in the config, then try completion in the editor.
   - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor.
 
-- **21h. Zig builds on scripts** `PLAN FIRST`
-  - Do: a Zig kosmos, look or base builds on a script kosmos (or look or base) as it builds on a Zig one, getting its tree as a typed Zig value. A script kosmos gets a folder, whose Zig files are its variants, as a Zig kosmos' folder holds script variants today; propose the folder's layout (its script as `kosmoi/<name>/root.<extension>`?). Kosmoi do no IO, so kosm runs the script before the Zig code, the way it loads an image named in `Params` (proposal: a `Params` field `kosm.Kosmos(Apps)` naming the script). Kosmoi calling each other in a loop fail naming the chain. Propose the spelling first.
-  - Done when: a Zig variant of `personal` builds on `personal.nord` and applies with `--diff`.
+- **21h. Script kosmoi with Zig variants** `PLAN FIRST`
+  - Do: a script kosmos gets a folder, as a Zig kosmos has one: `kosmoi/frost/root.<extension>` is the script kosmos `frost` with its script variants, and a `kosmoi/frost/root.zig` beside it holds Zig variants (`frost.iced`, building on `frost` through `kosm.Kosmos`) and declares no `kosmos` itself. A folder holds one root per language, exactly one of them gives the kosmos, and a variant's name stays unique across them. Touches the build's name checks (a module and a script sharing the folder's name), `script.locate`, the command line's `isScript` (a Zig variant there is not a script), `kosm list`, completion and `kosm build`.
+  - Do: `kosm build` also builds the runner of scripts when a Zig kosmos builds on another, so its first apply builds nothing.
+  - Done when: a script kosmos in a folder with a Zig variant built on it applies both with `--diff`, and both are listed and completed.
 
 - **21i. Nothing compile-time in what kosmoi call**
   - Do: every function bases, looks and kosmoi export for building on takes ordinary values, so every frontend can call it: `kosm_base.from(comptime look, ...)` and `fromTheme` gain run-time forms, compile-time ones kept only where Zig needs them. A look written in Lua then becomes a base.

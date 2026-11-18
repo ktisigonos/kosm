@@ -11,6 +11,7 @@ const app = @import("app.zig");
 const Handle = @import("Frontend/Handle.zig");
 const Image = @import("Image.zig");
 const File = @import("File.zig");
+const kosmos = @import("kosmos.zig");
 
 /// Deep copies, so a value copied from a handle owns its lists.
 pub const copy = @import("assignment/copy.zig");
@@ -74,7 +75,7 @@ const Walker = struct {
         const outer_origin = walker.enter(loose);
         defer walker.origin = outer_origin;
         if (loose.value == .handle) return walker.fromHandle(T, target, loose);
-        if (comptime isLeaf(T)) return walker.fresh(T, target, loose);
+        if (comptime isLeaf(T) or kosmos.is(T)) return walker.fresh(T, target, loose);
         if (comptime isLoaded(T)) {
             if (pathOf(loose)) |_| return walker.fresh(T, target, loose);
         }
@@ -125,6 +126,11 @@ const Walker = struct {
         const outer_origin = walker.enter(loose);
         defer walker.origin = outer_origin;
         if (loose.value == .handle) return walker.fromHandle(T, target, loose);
+        if (comptime kosmos.is(T)) {
+            const name = pathOf(loose) orelse return walker.expected(T, loose);
+            target.* = .{ .name = try walker.arena.dupe(u8, name) };
+            return;
+        }
         if (comptime isLoaded(T)) {
             if (pathOf(loose)) |path| {
                 target.* = .{ .path = try walker.arena.dupe(u8, path) };
@@ -795,6 +801,20 @@ test "an image or file is named by its path alone, or set field by field" {
     try testing.expectEqualStrings("notes.txt", params.notes.?.path);
     try assign(Params, fixture.arena.allocator(), &params, looseOf(.{ .table = &.{entryOf("wallpaper", .{ .table = &.{entryOf("path", .{ .string = "sea.png" })} })} }), &fixture.diagnostics);
     try testing.expectEqualStrings("sea.png", params.wallpaper.path);
+}
+
+test "a kosmos to build on is named by its name alone" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    const Tree = struct { size: u32 = 0 };
+    const Params = struct { on: kosmos.Kosmos(Tree) = .{ .name = "personal" }, also: ?kosmos.Kosmos(Tree) = null };
+    var params: Params = .{};
+    try assign(Params, fixture.arena.allocator(), &params, looseOf(.{ .table = &.{ entryOf("on", .{ .string = "personal.nord" }), entryOf("also", .{ .text = "frost" }) } }), &fixture.diagnostics);
+    try testing.expectEqualStrings("personal.nord", params.on.name);
+    try testing.expectEqualStrings("frost", params.also.?.name);
+    try testing.expectEqual(null, params.on.built);
+    try testing.expectError(error.InvalidAssignment, assign(Params, fixture.arena.allocator(), &params, looseOf(.{ .table = &.{entryOf("on", .{ .table = &.{entryOf("name", .{ .string = "x" })} })} }), &fixture.diagnostics));
+    try testing.expect(std.mem.endsWith(u8, fixture.diagnostics.message(), "on: expected the name of a kosmos giving a assignment.test.a kosmos to build on is named by its name alone.Tree, got a table"));
 }
 
 test "build starts from the type's defaults and names the value as a whole" {

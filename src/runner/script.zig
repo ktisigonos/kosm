@@ -32,6 +32,10 @@ pub const Context = struct {
     /// Set to each script's folder while its frontend reads it, so that relative paths the
     /// script gives to its calls start there.
     calls_folder: ?*[]const u8 = null,
+    /// The kosmoi being built, which each script read is added to, so that a script building
+    /// on a Zig kosmos naming it fails naming the circle. The caller restores it once the
+    /// script's tree is built.
+    building: ?*kosmos_call.Building = null,
     diagnostics: *kosm.Diagnostics,
 };
 
@@ -150,6 +154,7 @@ pub fn resolve(context: Context, name: []const u8) Error!Chain {
             break current;
         };
         try checkName(context, current[0..location.name_length], location.path);
+        if (context.building) |building| try building.enter(context.arena, current, context.diagnostics);
         const variant = if (location.name_length < current.len) try splitVariant(context.arena, current[location.name_length + 1 ..]) else &.{};
         const script = try load(context, current, location, variant);
         try loaded.append(context.arena, script);

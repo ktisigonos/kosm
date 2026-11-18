@@ -206,30 +206,49 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
         else => |other| return other,
     };
     const runner_arguments = if (is_script) script: {
-        // A script is read when the runner starts, so only changed Zig code builds anything.
-        const prepared = scripts.prepare(context) catch |err| switch (err) {
-            error.Failed => return 1,
-            else => |other| return other,
-        };
-        if (!prepared) return 1;
-        try stderr.flush();
+        if (!try prepareScripts(context)) return 1;
         const base = scripts.baseOf(context, command.kosmos) catch |err| switch (err) {
             error.Failed => return 1,
             else => |other| return other,
         };
         if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff, stderr)) return 1;
-        const runner = try std.Io.Dir.path.join(arena, &.{ config, scripts.runner_path });
-        break :script try std.mem.concat(arena, []const u8, &.{ &.{ runner, command.kosmos }, command.runner_arguments, &.{ "--config", config } });
+        break :script try scriptRunnerArguments(arena, config, command);
     } else zig: {
         if (!try build(context, command.kosmos)) return 1;
         if (!try refreshManifest(init, builds, config, command.kosmos, command.diff, stderr)) return 1;
         const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
+        const builds_on_kosmoi = scripts.buildsOnKosmoi(context, runner) catch |err| switch (err) {
+            error.Failed => return 1,
+            else => |other| return other,
+        };
+        // Only the runner of scripts holds every kosmos one may build on.
+        if (builds_on_kosmoi) {
+            if (!try prepareScripts(context)) return 1;
+            break :zig try scriptRunnerArguments(arena, config, command);
+        }
         break :zig try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
     };
     const runner = runner_arguments[0];
     const err = std.process.replace(init.io, .{ .argv = runner_arguments, .environ_map = builds.environ });
     try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
     return 1;
+}
+
+/// Builds the runner of scripts when it is stale; returns whether it is ready. A script is read
+/// when the runner starts, so only changed Zig code builds anything.
+fn prepareScripts(context: Context) !bool {
+    const prepared = scripts.prepare(context) catch |err| switch (err) {
+        error.Failed => return false,
+        else => |other| return other,
+    };
+    try context.stderr.flush();
+    return prepared;
+}
+
+/// The command line running `command`'s kosmos in the runner of scripts.
+fn scriptRunnerArguments(arena: std.mem.Allocator, config: []const u8, command: Apply) ![]const []const u8 {
+    const runner = try std.Io.Dir.path.join(arena, &.{ config, scripts.runner_path });
+    return std.mem.concat(arena, []const u8, &.{ &.{ runner, command.kosmos }, command.runner_arguments, &.{ "--config", config } });
 }
 
 /// Brings the manifest of directory kosmos `kosmos` up to date, or on `diff` only says what

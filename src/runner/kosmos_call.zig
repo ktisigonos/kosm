@@ -20,6 +20,43 @@ pub const Given = struct {
     arguments: []const []const u8,
     /// Tables script kosmoi set, the lowest first.
     layers: []const Layer = &.{},
+    /// Builds the kosmoi its `kosm.Kosmos` fields name; null in a runner that cannot, where
+    /// naming one fails.
+    kosmoi: ?Builder = null,
+};
+
+/// Builds a kosmos by name for a `kosm.Kosmos` field, in a runner holding every kosmos.
+pub const Builder = struct {
+    state: *anyopaque,
+    /// Builds kosmos `name`, which must give a tree of identity `tree` (`kosm.Frontend.Handle.id`),
+    /// called `tree_name` in messages, and returns it, kept for the whole run.
+    build: *const fn (state: *anyopaque, name: []const u8, tree: *const anyopaque, tree_name: []const u8, diagnostics: *kosm.Diagnostics) images.Error!*const anyopaque,
+};
+
+/// The kosmoi being built, the outermost first, so one building on itself fails naming the
+/// circle instead of building forever.
+pub const Building = struct {
+    names: std.ArrayList([]const u8) = .empty,
+
+    /// Marks kosmos `name` as being built; fails when it already is.
+    pub fn enter(building: *Building, arena: std.mem.Allocator, name: []const u8, diagnostics: *kosm.Diagnostics) (Reported || std.mem.Allocator.Error)!void {
+        for (building.names.items) |earlier| {
+            if (!std.mem.eql(u8, earlier, name)) continue;
+            try building.names.append(arena, name);
+            return fail(diagnostics, "the kosmoi build on each other in a circle: {s}", .{try std.mem.join(arena, " -> ", building.names.items)});
+        }
+        try building.names.append(arena, name);
+    }
+
+    /// How many kosmoi are being built, to `restore` once those entered after are done.
+    pub fn depth(building: Building) usize {
+        return building.names.items.len;
+    }
+
+    /// Marks every kosmos entered since `depth` was `earlier` as built.
+    pub fn restore(building: *Building, earlier: usize) void {
+        building.names.shrinkRetainingCapacity(earlier);
+    }
 };
 
 /// A table of `Params` a script sets.
@@ -57,6 +94,7 @@ pub noinline fn callKosmos(comptime kosmos: anytype, given: Given, diagnostics: 
         var parsed = params.parseOnto(Params, start, host_set, given.arguments, hostname, diagnostics) catch return error.Reported;
         try images.fill(Params, &parsed, image_context);
         try files.fill(Params, &parsed, .{ .arena = image_context.arena, .io = image_context.io, .places = image_context.places, .diagnostics = diagnostics });
+        try buildKosmoi(Params, &parsed, given.kosmoi, image_context.arena, diagnostics);
         kosmos_stack.* = try callOnKosmosStack(kosmos, .{parsed}, &returned, diagnostics);
     }
     if (@typeInfo(@TypeOf(returned)) != .error_union) return returned;
@@ -66,6 +104,42 @@ pub noinline fn callKosmos(comptime kosmos: anytype, given: Given, diagnostics: 
         }
         return fail(diagnostics, "the kosmos function failed: {s}", .{@errorName(err)});
     };
+}
+
+/// Builds the kosmos every `kosm.Kosmos` (or non-null `?kosm.Kosmos`) field of `params_value`
+/// names, through `builder`.
+fn buildKosmoi(comptime Params: type, params_value: *Params, builder: ?Builder, arena: std.mem.Allocator, diagnostics: *kosm.Diagnostics) images.Error!void {
+    const fields = @typeInfo(Params).@"struct";
+    inline for (fields.field_names, fields.field_types) |name, Field| {
+        if (comptime kosm.isKosmos(Field)) {
+            try buildKosmos(Field, &@field(params_value, name), name, builder, arena, diagnostics);
+        } else if (comptime @typeInfo(Field) == .optional and kosm.isKosmos(@typeInfo(Field).optional.child)) {
+            if (@field(params_value, name)) |*kosmos| try buildKosmos(@TypeOf(kosmos.*), kosmos, name, builder, arena, diagnostics);
+        }
+    }
+}
+
+fn buildKosmos(comptime Kosmos: type, kosmos: *Kosmos, comptime field: []const u8, builder: ?Builder, arena: std.mem.Allocator, diagnostics: *kosm.Diagnostics) images.Error!void {
+    const known = builder orelse return fail(diagnostics, "Params." ++ field ++ ": '{s}' can only be built by the runner of scripts, which `kosm apply` runs a kosmos building on another in", .{kosmos.name});
+    var inner: kosm.Diagnostics = .{ .kosmos = kosmos.name };
+    const built = known.build(known.state, kosmos.name, kosm.Frontend.Handle.id(Kosmos.Tree), @typeName(Kosmos.Tree), &inner) catch |err| switch (err) {
+        error.Reported => {
+            const file = if (inner.file.len == 0) "" else try std.fmt.allocPrint(arena, ", file {s}", .{inner.file});
+            const app = if (inner.app.len == 0) "" else try std.fmt.allocPrint(arena, ", app {s}", .{inner.app});
+            return fail(diagnostics, "Params." ++ field ++ ": kosmos '{s}'{s}{s}: {s}", .{ kosmos.name, app, file, inner.message() });
+        },
+        else => |other| return other,
+    };
+    kosmos.built = @ptrCast(@alignCast(built));
+}
+
+/// Whether `Params` names a kosmos to build on, which only the runner of scripts can build.
+pub fn buildsOnKosmoi(comptime Params: type) bool {
+    inline for (@typeInfo(Params).@"struct".field_types) |Field| {
+        if (kosm.isKosmos(Field)) return true;
+        if (@typeInfo(Field) == .optional and kosm.isKosmos(@typeInfo(Field).optional.child)) return true;
+    }
+    return false;
 }
 
 /// How deep the stack a kosmos runs on may grow. Kosmoi build whole apps by value, and a Debug
