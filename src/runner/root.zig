@@ -15,11 +15,14 @@ const Places = @import("Places.zig");
 const lifetime = @import("lifetime.zig");
 const params = @import("params.zig");
 const report = @import("report.zig");
+const script = @import("script.zig");
 const set = @import("set.zig");
 const walk = @import("walk.zig");
 
 /// The kosmos a build applies.
 pub const Target = @import("Target.zig");
+/// What the script runner holds.
+pub const ScriptTarget = @import("ScriptTarget.zig");
 /// Reports what an installed package provides, for `kosm add` and `kosm update`.
 pub const inspect = @import("inspect.zig").inspect;
 /// Lists every kosmos and installed package in a config, for `kosm list`.
@@ -39,35 +42,73 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     const kosmos = @field(declared.Namespace, declared.function);
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var diagnostics: kosm.Diagnostics = .{ .kosmos = target.name };
-    var stdout_buffer: [4096]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
-    var stderr_buffer: [1024]u8 = undefined;
-    var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
-    const streams: Streams = .{
-        .stdout = &stdout.interface,
-        .stderr = &stderr.interface,
-        .stdout_mode = try .detect(init.io, .stdout(), isSet(init.environ_map, "NO_COLOR"), isSet(init.environ_map, "CLICOLOR_FORCE")),
-    };
-    if (!try interface.check(init.environ_map, &stderr.interface)) {
-        try stderr.interface.flush();
+    var terminal: Terminal = .{};
+    const streams = try terminal.open(init);
+    if (!try interface.check(init.environ_map, streams.stderr)) {
+        try streams.stderr.flush();
         return 1;
     }
 
     if (init.environ_map.get(interface.completions_variable) != null) {
-        try completions.write(&stdout.interface, kosmos);
-        try stdout.interface.flush();
+        try completions.write(streams.stdout, kosmos);
+        try streams.stdout.flush();
         return 0;
     }
 
-    const status: u8 = if (apply(init, kosmos, .{ .config = target.config, .kosmos = target.folder, .named = target.folders }, adapters, &diagnostics, streams)) 0 else |err| switch (err) {
+    const all_arguments = try init.minimal.args.toSlice(init.arena.allocator());
+    const folders: Folders = .{ .config = target.config, .kosmos = target.folder, .named = target.folders };
+    return finishRun(apply(init, kosmos, all_arguments[1..], folders, adapters, &diagnostics, streams, .{}), &diagnostics, streams);
+}
+
+/// Runs the script kosmos named by the first process argument, with the rest as `run` takes
+/// them: reads it and every script below it, then applies it on its Zig kosmos, or on none.
+/// Returns the exit status: 0 on success, 1 after printing what went wrong.
+pub fn runScript(init: std.process.Init, comptime target: ScriptTarget) !u8 {
+    var terminal: Terminal = .{};
+    const streams = try terminal.open(init);
+    if (!try interface.check(init.environ_map, streams.stderr)) {
+        try streams.stderr.flush();
+        return 1;
+    }
+    const all_arguments = try init.minimal.args.toSlice(init.arena.allocator());
+    if (all_arguments.len < 2) {
+        try streams.stderr.writeAll("error: the script runner needs the name of a script kosmos\n");
+        try streams.stderr.flush();
+        return 1;
+    }
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = all_arguments[1] };
+    return finishRun(applyScript(init, target, all_arguments[2..], &diagnostics, streams), &diagnostics, streams);
+}
+
+/// The exit status of an apply that returned `result`, after printing its failure.
+fn finishRun(result: anytype, diagnostics: *kosm.Diagnostics, streams: Streams) !u8 {
+    const status: u8 = if (result) 0 else |err| switch (err) {
         error.Reported => 1,
         else => return err,
     };
-    try stdout.interface.flush();
-    if (status != 0) try diagnostics.write(&stderr.interface);
-    try stderr.interface.flush();
+    try streams.stdout.flush();
+    if (status != 0) try diagnostics.write(streams.stderr);
+    try streams.stderr.flush();
     return status;
 }
+
+/// The buffered standard streams a runner reports on; `open` it where it stays.
+const Terminal = struct {
+    stdout_buffer: [4096]u8 = undefined,
+    stderr_buffer: [1024]u8 = undefined,
+    stdout: std.Io.File.Writer = undefined,
+    stderr: std.Io.File.Writer = undefined,
+
+    fn open(terminal: *Terminal, init: std.process.Init) !Streams {
+        terminal.stdout = std.Io.File.stdout().writer(init.io, &terminal.stdout_buffer);
+        terminal.stderr = std.Io.File.stderr().writer(init.io, &terminal.stderr_buffer);
+        return .{
+            .stdout = &terminal.stdout.interface,
+            .stderr = &terminal.stderr.interface,
+            .stdout_mode = try .detect(init.io, .stdout(), isSet(init.environ_map, "NO_COLOR"), isSet(init.environ_map, "CLICOLOR_FORCE")),
+        };
+    }
+};
 
 /// Whether the environment variable `name` is set and not empty, as no-color.org asks.
 fn isSet(environ: *const std.process.Environ.Map, name: []const u8) bool {
@@ -102,21 +143,34 @@ const Folders = struct {
     named: []const Places.Folder,
 };
 
-fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
-    const arena = init.arena.allocator();
-    const all_arguments = try init.minimal.args.toSlice(arena);
-    const typed = Arguments.split(arena, all_arguments[1..]) catch |err| switch (err) {
-        error.SetWithoutAssignment => return fail(diagnostics, "--set needs path=value", .{}),
-        error.ConfigWithoutDirectory => return fail(diagnostics, "--config needs a directory", .{}),
-        error.OutOfMemory => return error.OutOfMemory,
-    };
-    const working_directory = std.process.currentPathAlloc(init.io, arena) catch |err|
-        return fail(diagnostics, "cannot read the working directory, which relative paths given as parameters start from: {s}", .{@errorName(err)});
-    const arguments = try typed.withParameters(arena, try params.absolutePaths(ParamsOf(kosmos), arena, working_directory, typed.parameters));
+/// What script kosmoi set on top of the Zig kosmos they build on, the lowest script first; empty
+/// when a Zig kosmos is applied itself.
+const Layers = struct {
+    /// Tables for the kosmos' `Params`, set before the command line's parameters.
+    params: []const kosm.Loose = &.{},
+    /// Tables for the tree, set before the command line's `--set`s.
+    overrides: []const kosm.Loose = &.{},
 
+    /// The params and overrides of `scripts`, each naming its script when its frontend did not.
+    fn of(arena: std.mem.Allocator, scripts: []const script.Loaded) std.mem.Allocator.Error!Layers {
+        var params_list: std.ArrayList(kosm.Loose) = .empty;
+        var overrides: std.ArrayList(kosm.Loose) = .empty;
+        for (scripts) |loaded| {
+            if (loaded.script.params) |given| try params_list.append(arena, script.withOrigin(given, loaded.path));
+            if (loaded.script.overrides) |given| try overrides.append(arena, script.withOrigin(given, loaded.path));
+        }
+        return .{ .params = params_list.items, .overrides = overrides.items };
+    }
+};
+
+/// Calls `kosmos` with the command line's parameters on top of `layers.params`, assigns
+/// `layers.overrides`, then the `--set`s, and plans and delivers the tree.
+fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []const []const u8, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, layers: Layers) !void {
+    const arena = init.arena.allocator();
+    const arguments = try readArguments(init, ParamsOf(kosmos), raw_arguments, diagnostics);
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
     var kosmos_stack: lifetime.Stack = undefined;
-    var tree = try callKosmos(kosmos, arguments.parameters, diagnostics, &kosmos_stack, .{
+    var tree = try callKosmos(kosmos, .{ .arguments = arguments.parameters, .layers = layers.params }, diagnostics, &kosmos_stack, .{
         .arena = arena,
         .io = init.io,
         .places = .{ .home = home, .config = folders.config, .kosmos = folders.kosmos, .folders = folders.named },
@@ -126,11 +180,87 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, ada
     });
     // Its parameters were parsed in the stack below `tree`, and the kosmos ran in its own; both
     // are dead now that it returned.
-    for ([_]lifetime.Stack{ .below(@intFromPtr(&tree)), kosmos_stack }) |dead| {
-        if (try lifetime.findDeadList(arena, tree, dead)) |path|
+    try refuseDeadLists(arena, tree, &.{ .below(@intFromPtr(&tree)), kosmos_stack }, diagnostics);
+    for (layers.overrides) |overrides| kosm.assign(@TypeOf(tree), arena, &tree, overrides, diagnostics) catch |err| switch (err) {
+        error.InvalidAssignment => return error.Reported,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    try finish(init, &tree, arguments, home, adapters, diagnostics, streams);
+}
+
+/// Reads the script kosmos `diagnostics.kosmos` and applies it on what it builds on.
+fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_arguments: []const []const u8, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+    const arena = init.arena.allocator();
+    const adapters = comptime discovery.adapters(target.adapter_sources);
+    const chain = try script.resolve(.{
+        .arena = arena,
+        .io = init.io,
+        .config = target.config,
+        .frontends = comptime discovery.frontends(target.adapter_sources),
+        .modules = comptime moduleNames(target.kosmoi),
+        .diagnostics = diagnostics,
+    }, diagnostics.kosmos);
+    const base = chain.base orelse return applyStandalone(init, target, raw_arguments, adapters, diagnostics, streams, chain.scripts);
+    const layers = try Layers.of(arena, chain.scripts);
+    inline for (comptime zigKosmoi(target.kosmoi)) |entry| {
+        if (std.mem.eql(u8, base, entry.name)) {
+            const folders: Folders = .{ .config = target.config, .kosmos = entry.folder, .named = target.folders };
+            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, layers);
+        }
+    }
+    return fail(diagnostics, "{s} builds on '{s}', but there is no such kosmos; Zig kosmoi: {s}", .{ chain.scripts[0].path, base, comptime zigKosmosNames(target.kosmoi) });
+}
+
+/// Builds the tree of a kosmos with no Zig kosmos below it from its scripts alone, then
+/// plans and delivers it.
+fn applyStandalone(init: std.process.Init, comptime target: ScriptTarget, raw_arguments: []const []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, scripts: []const script.Loaded) !void {
+    const Tree = discovery.Standalone(target.apps);
+    const Build = struct {
+        fn build(arena: std.mem.Allocator, given: []const script.Loaded, build_diagnostics: *kosm.Diagnostics) script.Error!Tree {
+            return script.standalone(Tree, comptime discovery.standaloneModules(target.apps), arena, given, build_diagnostics);
+        }
+    };
+    const arena = init.arena.allocator();
+    const arguments = try readArguments(init, struct {}, raw_arguments, diagnostics);
+    if (arguments.parameters.len != 0)
+        return fail(diagnostics, "it builds on no kosmos, so it takes no parameters, got '{s}'", .{arguments.parameters[0]});
+    const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
+    var built: script.Error!Tree = undefined;
+    const stack = try callOnKosmosStack(Build.build, .{ arena, scripts, diagnostics }, &built, diagnostics);
+    var tree = built catch |err| switch (err) {
+        error.Reported => return error.Reported,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    try refuseDeadLists(arena, tree, &.{stack}, diagnostics);
+    try finish(init, &tree, arguments, home, adapters, diagnostics, streams);
+}
+
+/// Sorts the runner's arguments, with the relative paths of `Params`' files and images made
+/// absolute against the working directory.
+fn readArguments(init: std.process.Init, comptime Params: type, raw_arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !Arguments {
+    const arena = init.arena.allocator();
+    const typed = Arguments.split(arena, raw_arguments) catch |err| switch (err) {
+        error.SetWithoutAssignment => return fail(diagnostics, "--set needs path=value", .{}),
+        error.ConfigWithoutDirectory => return fail(diagnostics, "--config needs a directory", .{}),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    const working_directory = std.process.currentPathAlloc(init.io, arena) catch |err|
+        return fail(diagnostics, "cannot read the working directory, which relative paths given as parameters start from: {s}", .{@errorName(err)});
+    return typed.withParameters(arena, try params.absolutePaths(Params, arena, working_directory, typed.parameters));
+}
+
+/// Fails naming the first list in `tree` that points into one of `dead`.
+fn refuseDeadLists(arena: std.mem.Allocator, tree: anytype, dead: []const lifetime.Stack, diagnostics: *kosm.Diagnostics) !void {
+    for (dead) |stack| {
+        if (try lifetime.findDeadList(arena, tree, stack)) |path|
             return fail(diagnostics, "{s} points into a function that has returned, so what it holds is garbage: write lists of values known only at run time as kosm.keep(T, &.{{ ... }}), or as constants", .{path});
     }
-    for (arguments.assignments) |assignment| set.assign(arena, &tree, assignment, diagnostics) catch |err| switch (err) {
+}
+
+/// Assigns the `--set`s inside `tree`, a pointer to the built tree, then plans and delivers it.
+fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+    const arena = init.arena.allocator();
+    for (arguments.assignments) |assignment| set.assign(arena, tree, assignment, diagnostics) catch |err| switch (err) {
         error.InvalidAssignment => return error.Reported,
         error.OutOfMemory => return error.OutOfMemory,
     };
@@ -139,8 +269,8 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, ada
     defer plan.deinit();
     var warnings: kosm.Warnings = .init(arena);
     const context: walk.Context = .{ .allocator = arena, .home = home, .adapters = adapters.list, .adapter_clashes = adapters.clashes, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings };
-    try planWarning(tree, context, streams.stderr);
-    try deliver(tree, &plan, .{
+    try planWarning(tree.*, context, streams.stderr);
+    try deliver(tree.*, &plan, .{
         .gpa = init.gpa,
         .arena = arena,
         .io = init.io,
@@ -150,6 +280,44 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, folders: Folders, ada
         .diagnostics = diagnostics,
         .streams = streams,
     });
+}
+
+/// One Zig kosmos the script runner holds, and the folder of the module declaring it.
+const ZigKosmos = struct {
+    /// As `kosm apply` spells it: "frost", "frost.iced".
+    name: []const u8,
+    Namespace: type,
+    function: []const u8,
+    folder: []const u8,
+};
+
+/// Every kosmos every module in `sources` declares.
+fn zigKosmoi(comptime sources: []const ScriptTarget.KosmosSource) []const ZigKosmos {
+    @setEvalBranchQuota(discovery.branch_quota);
+    comptime var found: []const ZigKosmos = &.{};
+    inline for (sources) |source| {
+        inline for (comptime discovery.declaredKosmoi(source.module)) |declared| {
+            const name = comptime if (declared.name.len == 0) source.name else source.name ++ "." ++ declared.name;
+            found = found ++ .{ZigKosmos{ .name = name, .Namespace = declared.Namespace, .function = declared.function, .folder = source.folder }};
+        }
+    }
+    const final = found[0..found.len].*;
+    return &final;
+}
+
+/// The names of every kosmos in `sources`, comma-separated, or "none".
+fn zigKosmosNames(comptime sources: []const ScriptTarget.KosmosSource) []const u8 {
+    comptime var names: []const u8 = "";
+    inline for (comptime zigKosmoi(sources)) |entry| names = names ++ (if (names.len == 0) "" else ", ") ++ entry.name;
+    return if (names.len == 0) "none" else names;
+}
+
+/// The import name of every module in `sources`.
+fn moduleNames(comptime sources: []const ScriptTarget.KosmosSource) []const []const u8 {
+    comptime var names: []const []const u8 = &.{};
+    inline for (sources) |source| names = names ++ .{source.name};
+    const final = names[0..names.len].*;
+    return &final;
 }
 
 /// Plans every app in `tree`, then prints the warnings gathered, also when planning failed, so
@@ -242,21 +410,39 @@ fn ParamsOf(comptime kosmos: anytype) type {
     return if (function.param_types.len == 0) struct {} else function.param_types[0].?;
 }
 
-/// Calls `kosmos` with its `Params` parsed from `arguments` and their images and files loaded,
-/// on its own stack, which `kosmos_stack` is set to. Never inlined, so the parameters are parsed
-/// in stack below its caller's. A kosmos failing through `kosm.fail` reports its own message.
-noinline fn callKosmos(comptime kosmos: anytype, arguments: []const []const u8, diagnostics: *kosm.Diagnostics, kosmos_stack: *lifetime.Stack, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
+/// What a kosmos' `Params` are read from.
+const Given = struct {
+    /// The command line's parameters, which win.
+    arguments: []const []const u8,
+    /// Tables a script kosmos sets, the lowest first.
+    layers: []const kosm.Loose = &.{},
+};
+
+/// Calls `kosmos` with its `Params` read from `given` and their images and files loaded, on its
+/// own stack, which `kosmos_stack` is set to. Never inlined, so the parameters are parsed in
+/// stack below its caller's. A kosmos failing through `kosm.fail` reports its own message.
+noinline fn callKosmos(comptime kosmos: anytype, given: Given, diagnostics: *kosm.Diagnostics, kosmos_stack: *lifetime.Stack, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
     const function = @typeInfo(@TypeOf(kosmos)).@"fn";
     var returned: function.return_type.? = undefined;
     kosm.failure.clear();
     if (function.param_types.len == 0) {
-        if (arguments.len != 0) return fail(diagnostics, "it takes no parameters, got '{s}'", .{arguments[0]});
+        if (given.arguments.len != 0) return fail(diagnostics, "it takes no parameters, got '{s}'", .{given.arguments[0]});
+        if (given.layers.len != 0) return fail(diagnostics, "the kosmos it builds on takes no parameters, but a script sets some", .{});
         kosmos_stack.* = try callOnKosmosStack(kosmos, .{}, &returned, diagnostics);
     } else {
         const Params = function.param_types[0].?;
+        var start: Params = .{};
+        var host_set = false;
+        for (given.layers) |layer| {
+            kosm.assign(Params, image_context.arena, &start, layer, diagnostics) catch |err| switch (err) {
+                error.InvalidAssignment => return error.Reported,
+                error.OutOfMemory => return error.OutOfMemory,
+            };
+            host_set = host_set or script.setsKey(layer, "host");
+        }
         var hostname_buffer: [std.posix.HOST_NAME_MAX]u8 = undefined;
         const hostname = if (comptime params.hasHost(Params)) try readHostname(&hostname_buffer, diagnostics) else "";
-        var parsed = params.parse(Params, arguments, hostname, diagnostics) catch return error.Reported;
+        var parsed = params.parseOnto(Params, start, host_set, given.arguments, hostname, diagnostics) catch return error.Reported;
         try images.fill(Params, &parsed, image_context);
         try files.fill(Params, &parsed, .{ .arena = image_context.arena, .io = image_context.io, .places = image_context.places, .diagnostics = diagnostics });
         kosmos_stack.* = try callOnKosmosStack(kosmos, .{parsed}, &returned, diagnostics);
@@ -315,6 +501,7 @@ test {
     std.testing.refAllDecls(Places);
     std.testing.refAllDecls(lifetime);
     std.testing.refAllDecls(walk);
+    std.testing.refAllDecls(script);
 }
 
 const testing = std.testing;
@@ -568,7 +755,7 @@ fn scriptKosmos(given: ScriptParams) !ScriptTree {
 fn callScriptKosmos(arena: std.mem.Allocator, folder: []const u8, arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !ScriptTree {
     var stack: lifetime.Stack = undefined;
     var stderr: std.Io.Writer.Allocating = .init(arena);
-    return callKosmos(scriptKosmos, arguments, diagnostics, &stack, .{
+    return callKosmos(scriptKosmos, .{ .arguments = arguments }, diagnostics, &stack, .{
         .arena = arena,
         .io = testing.io,
         .places = .{ .home = folder, .config = folder, .kosmos = folder },

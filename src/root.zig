@@ -30,6 +30,8 @@ pub const commit = @import("commit.zig");
 pub const diff = @import("diff.zig");
 /// Loose values a frontend reads from a script, for `assign`.
 pub const Loose = @import("Loose.zig");
+/// Support for writing kosmoi in a language other than Zig.
+pub const Frontend = @import("Frontend.zig");
 /// What kosm counts as an app.
 pub const app = @import("app.zig");
 

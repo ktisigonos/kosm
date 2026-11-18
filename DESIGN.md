@@ -28,6 +28,7 @@ there is undecided, so ask.
 - **package:** anything `kosm add` fetches; it may hold apps, adapters, kosmoi and a base kosmoi build on.
 - **app:** support for one program (`kosm_hyprland` exports `App`, `from`, `App.apply`).
 - **adapter:** support for one file format (Lua, TOML, JSON).
+- **frontend:** support for writing kosmoi in a language other than Zig (Lua), the way an adapter lets kosm write a format.
 - **kosmos:** a rice, a function returning a tree of apps. It is what kosm applies.
 - **base:** turns a look into apps; the official one is `kosm_base`, and a user's own base holds it and adds apps.
 - **look:** what makes a base look nice (Krystallos, Everforest): a theme, fonts, the base's shared values, and a tweak of the official base's apps. A look builds no apps, so it works on any base holding the official one.
@@ -94,8 +95,16 @@ there is undecided, so ask.
 - Kosm's own packages live in repositories of their own, like anyone's. `kosm init` adds every official package to a new config, with a starting kosmos that uses them.
 - The base kosmos is the package `kosm_base`: `from(look, apps)` returns the official apps chosen, each an optional field, then applies the look's tweak. Its default look is literal: black is `#000000`, red `#ff0000`, rounding 0. Its shared values (rounding, gaps, border, padding, cursor, keyboard layouts and the like) are set once and read by every app with that setting; a value is shared once two apps use it or very likely will. Personal settings (shaders, keyboard layouts, editor) default to null, so the program's own default applies.
 - A kosmos chooses its base, its look and its apps (all, none, only some, or all but some; the others are never applied), then assigns its overrides. Overrides given as loose values (a script's tables, `--set`) for an app it did not choose are checked against the app's fields, then dropped, so a kosmos may keep settings for every app it ever uses. A user's own base holds `kosm_base`'s in a struct of its own beside its added apps, which follow the look through the theme's roles. The starting kosmos builds on `kosm_base`.
+- One package per language, `kosm_<language>`, holds everything kosm does with it: its adapter and its frontend, each a Zig module of its own. An app depending on such a package only for its adapter never fetches the frontend's interpreter.
 - A build holds one copy of each package: what a config (or a package built on its own) lists itself wins over the copy a package pins, and packages pinning different copies of a package it doesn't list fail the build naming them.
 - Zig is pinned to a tagged release, never master.
+
+## Kosmoi written through a frontend
+
+- A **script kosmos** is a file `kosmoi/<name>.<extension>` that the frontend claiming its extension reads into loose values; its name is unique among every kosmos, module and package, and it has no variants. Zig stays the language of packages (apps, adapters, bases, looks, frontends); kosm core knows no frontend language, only the interface every frontend implements.
+- A script builds on a Zig kosmos or base (setting its `Params` below the command line's, then values on its tree), on another script, or on nothing: then it gives a theme input, and every app of the config that a theme alone builds is chosen by naming it.
+- Scripts are read when kosm runs, like a file named in `Params`: editing one never compiles. One runner, holding every Zig kosmos, app and frontend of the config, runs every script; it is rebuilt only when Zig code it is built from changed since it was last built.
+- Completion for scripts is generated when that runner is built, into the config's `zig-out/completions/<language>/`; one editor file in the config (`.luarc.json` for Lua) points at it.
 
 ## Non-goals
 

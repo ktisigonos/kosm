@@ -15,13 +15,20 @@ const reserved_names = [_][]const u8{ "diff", "config", "set" };
 /// Flags may be spelled `--border-size` or `--border_size`. A `host` enum field not given as
 /// a flag is set from `hostname`. Returned strings point into `arguments`.
 pub fn parse(comptime Params: type, arguments: []const []const u8, hostname: []const u8, diagnostics: *kosm.Diagnostics) Error!Params {
+    return parseOnto(Params, .{}, false, arguments, hostname, diagnostics);
+}
+
+/// `parse` starting from `start` instead of the defaults, as a script kosmos sets parameters
+/// before the command line. `host_set` says whether `start` already holds a chosen `host`, which
+/// the hostname then leaves alone.
+pub fn parseOnto(comptime Params: type, start: Params, host_set: bool, arguments: []const []const u8, hostname: []const u8, diagnostics: *kosm.Diagnostics) Error!Params {
     comptime checkParams(Params);
     const fields = @typeInfo(Params).@"struct";
     if (comptime fields.field_names.len == 0) {
         if (arguments.len != 0) return fail(diagnostics, "it takes no parameters, got '{s}'", .{arguments[0]});
         return .{};
     }
-    var params: Params = .{};
+    var params = start;
     var given: [fields.field_names.len]bool = @splat(false);
     var index: usize = 0;
     while (index < arguments.len) : (index += 2) {
@@ -45,7 +52,7 @@ pub fn parse(comptime Params: type, arguments: []const []const u8, hostname: []c
         }
     }
     if (comptime hasHost(Params)) {
-        if (!given[fieldIndex(Params, "host").?]) params.host = try hostFrom(@FieldType(Params, "host"), hostname, diagnostics);
+        if (!host_set and !given[fieldIndex(Params, "host").?]) params.host = try hostFrom(@FieldType(Params, "host"), hostname, diagnostics);
     }
     return params;
 }

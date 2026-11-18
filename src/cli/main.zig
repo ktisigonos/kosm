@@ -1,5 +1,6 @@
 //! The `kosm` command: `kosm init`, `kosm apply`, which builds the one kosmos in the config
-//! project with `zig build` and runs it, `kosm list`, `kosm colors`, `kosm new`,
+//! project with `zig build` and runs it (a script kosmos runs on the runner every script shares,
+//! rebuilt only when Zig code changed), `kosm list`, `kosm colors`, `kosm new`,
 //! `kosm current`, the package commands `kosm add`, `kosm remove` and `kosm update`, `kosm clean`,
 //! `kosm build`, and
 //! `kosm source` and `kosm relay`, the native messaging host browser extensions use. Applying a directory kosmos also refreshes its own
@@ -18,6 +19,7 @@ const build_command = @import("build_kosmoi.zig");
 const complete_command = @import("complete.zig");
 const completions = @import("completions.zig");
 const new_command = @import("new.zig");
+const scripts = @import("scripts.zig");
 const source_command = @import("source.zig");
 const relay_command = @import("relay.zig");
 const Sources = @import("Sources.zig");
@@ -197,10 +199,29 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
     const config = try configPath(init, command.config, stderr) orelse return 1;
     try stderr.flush();
 
-    if (!try build(builds.context(init, config, stderr, stderr), command.kosmos)) return 1;
-    if (!try refreshManifest(init, builds, config, command, stderr)) return 1;
-    const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
-    const runner_arguments = try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
+    var context = builds.context(init, config, stderr, stderr);
+    context.show_build_output = true;
+    const is_script = scripts.isScript(context, command.kosmos) catch |err| switch (err) {
+        error.Failed => return 1,
+        else => |other| return other,
+    };
+    const runner_arguments = if (is_script) script: {
+        // A script is read when the runner starts, so only changed Zig code builds anything.
+        const prepared = scripts.prepare(context) catch |err| switch (err) {
+            error.Failed => return 1,
+            else => |other| return other,
+        };
+        if (!prepared) return 1;
+        try stderr.flush();
+        const runner = try std.Io.Dir.path.join(arena, &.{ config, scripts.runner_path });
+        break :script try std.mem.concat(arena, []const u8, &.{ &.{ runner, command.kosmos }, command.runner_arguments, &.{ "--config", config } });
+    } else zig: {
+        if (!try build(context, command.kosmos)) return 1;
+        if (!try refreshManifest(init, builds, config, command, stderr)) return 1;
+        const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
+        break :zig try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
+    };
+    const runner = runner_arguments[0];
     const err = std.process.replace(init.io, .{ .argv = runner_arguments, .environ_map = builds.environ });
     try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
     return 1;
@@ -556,6 +577,7 @@ test {
     std.testing.refAllDecls(colors_command);
     std.testing.refAllDecls(clean_command);
     std.testing.refAllDecls(build_command);
+    std.testing.refAllDecls(scripts);
     std.testing.refAllDecls(complete_command);
     std.testing.refAllDecls(completions);
     std.testing.refAllDecls(relay_command);

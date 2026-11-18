@@ -6,7 +6,10 @@
 //! `zig-out/bin/colors`, which prints the palettes that kosmos' file declares. `-Dprebuild=frost`
 //! (repeatable) compiles the runner of each named kosmos without installing it, so a later
 //! `-Dkosmos=` of it is a cache hit, and installs `zig-out/prebuilt/<name>`, an empty file,
-//! for each one that compiled. `check` compiles every local one, so editors see the config's imports.
+//! for each one that compiled. `-Dscripts` builds `zig-out/bin/scripts`, the one runner every
+//! script kosmos (`kosmoi/<name>.<extension>`, read by a frontend) shares, holding every kosmos,
+//! app and frontend of the config. `check` compiles every local one, so editors see the config's
+//! imports.
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -27,6 +30,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const list = b.option(bool, "list", "Build the listing of every kosmos and package, for kosm list") orelse false;
     const colors_name = b.option([]const u8, "colors", "The kosmos whose palettes to print, for kosm colors");
     const prebuilt_names = b.option([]const []const u8, "prebuild", "A kosmos whose runner to compile without installing it, for kosm build; repeat it for several");
+    const scripts = b.option(bool, "scripts", "Build the runner every script kosmos shares, for kosm apply and kosm build") orelse false;
 
     var names: Names = .{ .b = b };
     inline for (@typeInfo(@TypeOf(manifest.dependencies)).@"struct".field_names) |name| {
@@ -58,11 +62,13 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
         }
     }
 
+    if (!checkScriptNames(b, names.modules.items)) return;
     addEditorCheck(b, names.modules.items);
     if (inspected_names) |inspected| addInspector(b, target, optimize, kosm_dependency, names.modules.items, inspected);
     if (list) addLister(b, target, optimize, kosm_dependency, names.modules.items);
     if (colors_name) |name| addColors(b, target, optimize, kosm_dependency, names.modules.items, name);
     if (prebuilt_names) |prebuilt| addPrebuilt(b, target, optimize, kosm_dependency, names.modules.items, prebuilt);
+    if (scripts) addScriptRunner(b, target, optimize, kosm_dependency, names.modules.items);
     const name = kosmos_name orelse return;
     const runner = addRunner(b, target, optimize, kosm_dependency, names.modules.items, name) orelse return;
     b.installArtifact(runner);
@@ -231,10 +237,7 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         std.zig.fmtString(kosmos.name),
         std.zig.fmtString(function),
     }) catch @panic("OOM");
-    for (entries) |entry| {
-        const entry_folder = moduleFolder(b, entry) orelse return null;
-        writer.print("            .{{ .name = \"{f}\", .path = \"{f}\" }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry_folder) }) catch @panic("OOM");
-    }
+    if (!writeFolders(b, writer, entries)) return null;
     writer.writeAll(
         \\        },
         \\        .adapter_sources = &.{
@@ -256,6 +259,104 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
     return b.addExecutable(.{ .name = "kosmos", .root_module = root_module });
+}
+
+/// Writes one `Places.Folder` line per entry; fails the build and returns false when a
+/// module's folder is unknown.
+fn writeFolders(b: *std.Build, writer: *std.Io.Writer, entries: []const Entry) bool {
+    for (entries) |entry| {
+        const entry_folder = moduleFolder(b, entry) orelse return false;
+        writer.print("            .{{ .name = \"{f}\", .path = \"{f}\" }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry_folder) }) catch @panic("OOM");
+    }
+    return true;
+}
+
+/// Generates the main of the runner every script kosmos shares and installs it as `scripts`:
+/// it holds every kosmos, every app a kosmos without a base may choose, and every adapter and
+/// frontend, so a script may build on any of them.
+fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry) void {
+    var source: std.Io.Writer.Allocating = .init(b.allocator);
+    const writer = &source.writer;
+    writer.print(
+        \\const std = @import("std");
+        \\const runner = @import("kosm_runner");
+        \\
+        \\pub fn main(init: std.process.Init) !u8 {{
+        \\    return runner.runScript(init, .{{
+        \\        .config = "{f}",
+        \\        .folders = &.{{
+        \\
+    , .{std.zig.fmtString(b.root.joinString(b.allocator, "") catch @panic("OOM"))}) catch @panic("OOM");
+    if (!writeFolders(b, writer, entries)) return;
+    writer.writeAll(
+        \\        },
+        \\        .kosmoi = &.{
+        \\
+    ) catch @panic("OOM");
+    for (entries) |entry| {
+        if (!canHoldKosmoi(entry)) continue;
+        const folder = moduleFolder(b, entry) orelse return;
+        const origin = if (entry.kind == .package) b.fmt("package {s}", .{entry.name}) else entry.origin;
+        writer.print("            .{{ .name = \"{f}\", .origin = \"{f}\", .folder = \"{f}\", .module = @import(\"{f}\") }},\n", .{
+            std.zig.fmtString(entry.name), std.zig.fmtString(origin), std.zig.fmtString(folder), std.zig.fmtString(entry.name),
+        }) catch @panic("OOM");
+    }
+    writer.writeAll(
+        \\        },
+        \\        .apps = &.{
+        \\
+    ) catch @panic("OOM");
+    for (entries) |entry| {
+        if (!canHoldKosmoi(entry) or (entry.kind != .package and entry.kind != .app)) continue;
+        writer.print("            .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry.name) }) catch @panic("OOM");
+    }
+    writer.writeAll(
+        \\        },
+        \\        .adapter_sources = &.{
+        \\
+    ) catch @panic("OOM");
+    for (entries) |entry| {
+        if (!canHoldKosmoi(entry)) continue;
+        writer.print("            .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(entry.name), std.zig.fmtString(entry.name) }) catch @panic("OOM");
+    }
+    writer.writeAll(
+        \\        },
+        \\    });
+        \\}
+        \\
+    ) catch @panic("OOM");
+
+    const files = b.addWriteFiles();
+    const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source.written()), .target = target, .optimize = optimize });
+    root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
+    for (entries) |entry| root_module.addImport(entry.name, entry.module);
+    b.installArtifact(b.addExecutable(.{ .name = "scripts", .root_module = root_module }));
+}
+
+/// Fails the build and returns false when a script kosmos in `kosmoi/` shares its name with a
+/// module, which `kosm apply` could not tell apart.
+fn checkScriptNames(b: *std.Build, entries: []const Entry) bool {
+    const io = b.graph.io;
+    const full_path = b.root.joinString(b.allocator, "kosmoi") catch @panic("OOM");
+    var dir = std.Io.Dir.cwd().openDir(io, full_path, .{ .iterate = true }) catch return true;
+    defer dir.close(io);
+    var iterator = dir.iterate();
+    while (iterator.next(io) catch |err| {
+        fail(b, "cannot read kosmoi/: {s}", .{@errorName(err)});
+        return false;
+    }) |file| {
+        if (file.kind != .file and file.kind != .sym_link) continue;
+        if (std.mem.startsWith(u8, file.name, ".") or std.mem.endsWith(u8, file.name, ".zig")) continue;
+        const dot = std.mem.findScalar(u8, file.name, '.') orelse continue;
+        const name = file.name[0..dot];
+        for (entries) |entry| {
+            if (std.mem.eql(u8, entry.name, name)) {
+                fail(b, "'{s}' names both the script kosmoi/{s} and {s}; kosmoi, apps, adapters and packages need unique names", .{ name, file.name, entry.origin });
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 /// The absolute folder of a package, or of a local module's root file: what `~~<name>/` stands

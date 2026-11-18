@@ -199,6 +199,92 @@ pub fn adapters(comptime sources: []const Target.AdapterSource) Adapters {
     return .{ .list = &final_list, .clashes = &final_clashes };
 }
 
+/// A frontend and the package declaring it, as the user spells it.
+pub const DeclaredFrontend = struct {
+    package: []const u8,
+    frontend: kosm.Frontend,
+};
+
+/// Every public `kosm.Frontend` constant declared at the top of each module in `sources`. A
+/// frontend reached twice (a re-export) counts once.
+pub fn frontends(comptime sources: []const Target.AdapterSource) []const DeclaredFrontend {
+    @setEvalBranchQuota(branch_quota);
+    comptime var found: []const DeclaredFrontend = &.{};
+    inline for (sources) |source| {
+        inline for (@typeInfo(source.module).@"struct".decl_names) |name| {
+            if (@TypeOf(@field(source.module, name)) == kosm.Frontend) {
+                const frontend = @field(source.module, name);
+                const known = for (found) |existing| {
+                    if (std.meta.eql(existing.frontend, frontend)) break true;
+                } else false;
+                if (!known) found = found ++ .{DeclaredFrontend{ .package = source.package, .frontend = frontend }};
+            }
+        }
+    }
+    const final = found[0..found.len].*;
+    return &final;
+}
+
+/// A module that may export an app, and its name as the user imports it.
+pub const AppSource = struct {
+    package: []const u8,
+    module: type,
+};
+
+/// The prefix official packages share, which a kosmos without a base leaves out of its app
+/// names (`kosm_kitty` gives `kitty`).
+const official_prefix = "kosm_";
+
+/// The field a kosmos without a base names `package`'s app by.
+pub fn appName(comptime package: []const u8) []const u8 {
+    if (std.mem.startsWith(u8, package, official_prefix) and package.len > official_prefix.len) return package[official_prefix.len..];
+    return package;
+}
+
+/// Whether `Module` exports an app a theme alone builds: `App`, and `from(theme: kosm.Theme) App`.
+fn buildsFromTheme(comptime Module: type) bool {
+    if (!@hasDecl(Module, "App") or @TypeOf(Module.App) != type) return false;
+    if (!isApp(Module.App) or !@hasDecl(Module, "from")) return false;
+    return @TypeOf(Module.from) == fn (kosm.Theme) Module.App;
+}
+
+/// The tree of a kosmos without a base: one optional field per app in `sources` that a theme
+/// alone builds, named by `appName`, each null (not applied) by default. Two packages giving the
+/// same name are a compile error naming both.
+pub fn Standalone(comptime sources: []const AppSource) type {
+    @setEvalBranchQuota(branch_quota);
+    comptime var names: []const []const u8 = &.{};
+    comptime var packages: []const []const u8 = &.{};
+    comptime var types: []const type = &.{};
+    inline for (sources) |source| {
+        if (comptime !buildsFromTheme(source.module)) continue;
+        const name = comptime appName(source.package);
+        inline for (names, packages) |existing, package| {
+            if (comptime std.mem.eql(u8, existing, name))
+                @compileError("packages '" ++ package ++ "' and '" ++ source.package ++ "' both give a kosmos without a base the app '" ++ name ++ "'; remove one of them");
+        }
+        names = names ++ .{name};
+        packages = packages ++ .{source.package};
+        types = types ++ .{?source.module.App};
+    }
+    comptime var attributes: [names.len]std.lang.Type.Struct.FieldAttributes = undefined;
+    inline for (types, 0..) |Field, index| {
+        const default: Field = null;
+        attributes[index] = .{ .default_value_ptr = &default };
+    }
+    return @Struct(.auto, null, names, types[0..names.len], &attributes);
+}
+
+/// The module exporting each field's app in `Standalone(sources)`, in field order.
+pub fn standaloneModules(comptime sources: []const AppSource) []const type {
+    comptime var modules: []const type = &.{};
+    inline for (sources) |source| {
+        if (comptime buildsFromTheme(source.module)) modules = modules ++ .{source.module};
+    }
+    const final = modules[0..modules.len].*;
+    return &final;
+}
+
 fn indexOfName(list: []const kosm.Adapter, name: []const u8) ?usize {
     for (list, 0..) |adapter, index| {
         if (std.mem.eql(u8, adapter.name, name)) return index;

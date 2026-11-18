@@ -1,11 +1,13 @@
 //! `kosm build`: compiles the runners of the kosmoi the command line or `kosm.zon` picks (every
 //! kosmos in `kosmoi/` by default) in one `zig build`, so the next `kosm apply` of any of them
-//! compiles nothing until a file changes.
+//! compiles nothing until a file changes. Unless only some kosmoi are named, it also builds the
+//! runner every script kosmos shares, when `kosmoi/` holds one.
 
 const std = @import("std");
 const Context = @import("Context.zig");
 const Settings = @import("Settings.zig");
 const interface = @import("kosm_interface");
+const scripts = @import("scripts.zig");
 
 pub const Error = Context.RunError;
 
@@ -29,7 +31,10 @@ pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
             try joinNames(context.arena, listed),
         }),
     };
-    if (names.len == 0) return context.stdout.writeAll("no kosmoi to build\n");
+    const with_scripts = chosen != .only and try scripts.any(context);
+    if (names.len == 0 and !with_scripts) return context.stdout.writeAll("no kosmoi to build\n");
+    const scripts_built = !with_scripts or try buildScripts(context);
+    if (names.len == 0) return if (scripts_built) {} else error.Failed;
     try context.stdout.print("building {d} kosmo{s}: {s}\n", .{ names.len, if (names.len == 1) "s" else "i", try std.mem.join(context.arena, ", ", names) });
     try context.stdout.flush();
 
@@ -52,7 +57,7 @@ pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
         }
     }
     try deleteMarkers(context, markers);
-    if (failed.items.len == 0) return;
+    if (failed.items.len == 0) return if (scripts_built) {} else error.Failed;
     try context.stdout.flush();
     return context.fail("{s} {s} {s} not build{s}", .{
         if (failed.items.len == 1) "kosmos" else "kosmoi",
@@ -60,6 +65,18 @@ pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
         if (failed.items.len == 1) "does" else "do",
         if (failed.items.len == names.len) "" else "; the others are built",
     });
+}
+
+/// Builds the runner every script kosmos shares, naming it in the report; returns whether it built.
+fn buildScripts(context: Context) Error!bool {
+    try context.stdout.writeAll("building the script runner\n");
+    try context.stdout.flush();
+    if (!try scripts.build(context)) {
+        try context.stderr.writeAll("error: the script runner does not build, so no script kosmos can be applied\n");
+        return false;
+    }
+    try context.stdout.writeAll("built the script runner\n");
+    return true;
 }
 
 /// One kosmos or variant the lister reports.
