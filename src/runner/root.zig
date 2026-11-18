@@ -425,20 +425,24 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
         /// Calls Zig kosmos `kosmoi[index]` on `layers`, once its tree is known to be the wanted one.
         fn buildZig(runtime: *Runtime, index: usize, layers: Layers, tree: *const anyopaque, tree_name: []const u8, diagnostics: *kosm.Diagnostics) images.Error!*const anyopaque {
             inline for (kosmoi, 0..) |entry, entry_index| {
-                if (entry_index == index) {
-                    const kosmos = @field(entry.Namespace, entry.function);
-                    const Tree = discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?);
-                    if (kosm.Frontend.Handle.id(Tree) != tree)
-                        return fail(diagnostics, "'{s}' gives a {s}, not a {s}", .{ entry.name, @typeName(Tree), tree_name });
-                    try runtime.building.enter(runtime.arena, entry.name, diagnostics);
-                    var stack: lifetime.Stack = undefined;
-                    var built = try kosmos_call.callKosmos(kosmos, .{ .arguments = &.{}, .layers = layers.params, .kosmoi = runtime.kosmoi }, diagnostics, &stack, runtime.loading(entry.folder, diagnostics));
-                    try kosmos_call.refuseDeadLists(runtime.arena, built, &.{ .below(@intFromPtr(&built)), stack }, diagnostics);
-                    try assignOverrides(runtime.arena, &built, layers.overrides, diagnostics);
-                    return keep(runtime, Tree, built);
-                }
+                if (entry_index == index) return buildEntry(entry, runtime, layers, tree, tree_name, diagnostics);
             }
             unreachable; // `index` comes from `zigKosmos`.
+        }
+
+        /// `buildZig` for one kosmos. Never inlined, so its tree takes stack only while it is
+        /// built, not once for every kosmos in the config.
+        noinline fn buildEntry(comptime entry: kosmos_call.ZigKosmos, runtime: *Runtime, layers: Layers, tree: *const anyopaque, tree_name: []const u8, diagnostics: *kosm.Diagnostics) images.Error!*const anyopaque {
+            const kosmos = @field(entry.Namespace, entry.function);
+            const Tree = discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?);
+            if (kosm.Frontend.Handle.id(Tree) != tree)
+                return fail(diagnostics, "'{s}' gives a {s}, not a {s}", .{ entry.name, @typeName(Tree), tree_name });
+            try runtime.building.enter(runtime.arena, entry.name, diagnostics);
+            var stack: lifetime.Stack = undefined;
+            var built = try kosmos_call.callKosmos(kosmos, .{ .arguments = &.{}, .layers = layers.params, .kosmoi = runtime.kosmoi }, diagnostics, &stack, runtime.loading(entry.folder, diagnostics));
+            try kosmos_call.refuseDeadLists(runtime.arena, built, &.{ .below(@intFromPtr(&built)), stack }, diagnostics);
+            try assignOverrides(runtime.arena, &built, layers.overrides, diagnostics);
+            return keep(runtime, Tree, built);
         }
 
         /// The tree the lowest of `scripts` built by calling Zig code, with the overrides of the
@@ -452,13 +456,17 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
             }
             const layers = try Layers.of(runtime.arena, scripts[1..]);
             inline for (comptime treeTypes(target.kosmoi)) |Tree| {
-                if (handle.as(Tree)) |built| {
-                    var copy = built.*;
-                    try assignOverrides(runtime.arena, &copy, layers.overrides, diagnostics);
-                    return keep(runtime, Tree, copy);
-                }
+                if (handle.as(Tree)) |built| return keepWithOverrides(runtime, Tree, built, layers, diagnostics);
             }
             return notATree(diagnostics, scripts[0].path, handle);
+        }
+
+        /// A copy of `built` with `layers`' overrides. Never inlined, so its copy takes stack
+        /// only for the one tree type it is called with.
+        noinline fn keepWithOverrides(runtime: *Runtime, comptime Tree: type, built: *const Tree, layers: Layers, diagnostics: *kosm.Diagnostics) images.Error!*const anyopaque {
+            var copy = built.*;
+            try assignOverrides(runtime.arena, &copy, layers.overrides, diagnostics);
+            return keep(runtime, Tree, copy);
         }
 
         fn keep(runtime: *Runtime, comptime Tree: type, built: Tree) std.mem.Allocator.Error!*const anyopaque {
