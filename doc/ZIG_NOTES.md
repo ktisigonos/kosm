@@ -60,6 +60,7 @@ When unsure about any std function, grep the std source for its definition befor
 
 ### std
 
+- **`std.zig.Ast`: a union tag or enum value without a type is a `tuple_like` container field:** in `union(enum) { disabled, size: u16 }`, `fullContainerField` of `disabled` has `ast.tuple_like == true` and its identifier as `type_expr`; read its name from `ast.main_token` and treat it as untyped. Doc comments are the `.doc_comment` tokens right before `ast.firstToken(member)`; a file's `//!` lines are `.container_doc_comment` tokens from token 0.
 - **`std.fs` is a deprecated shim - the filesystem lives in `std.Io`:** use `std.Io.Dir`/`std.Io.File`. Whole-file read: `std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(n))`; stdin: `std.Io.File.stdin().reader(io, &buf)` then `.interface`; buffered stdout: `std.Io.File.stdout().writer(io, &buf)` then `.interface` and `flush()`. All take an `Io`.
 - **`std.fs.path` is a deprecated shim:** path helpers (`dirname`, `stem`, `basename`) live in `std.Io.Dir.path`.
 - **`std.Io.Dir.cwd()` cannot iterate:** iterating it is *illegal behavior with no error*. Open a real handle with `openDir(io, ".", .{ .iterate = true })` first.
@@ -166,3 +167,4 @@ When unsure about any std function, grep the std source for its definition befor
 - **Lexical path resolution is `std.Io.Dir.path.resolveAlloc(gpa, &.{ base, path })`:** there is no plain `resolve`; it collapses `.` and `..` without touching the filesystem.
 - **`@src()` only works inside a function:** a field default `at: std.builtin.SourceLocation = @src()` is "'@src' outside function scope", so a struct default cannot learn the file it was written in.
 - **A `.path` dependency's `builder.root` is relative to the consumer's build root** (`../kosm`), while fetched ones are absolute; `std.Io.Dir.path.resolveAlloc(gpa, &.{ consumer_root, path })` makes both absolute.
+- **`zig build --fork=<kosm_lua>` crashed the build runner** ("reached unreachable code", no stack trace) in a config where two packages pin different kosm_lua copies, while `--fork=<kosm>` worked there; cause not found. To try a local package in a scratch copy of a config, point its entry at a copy with `.path = "../kosm_lua"` instead.

@@ -8,6 +8,7 @@ const Record = @import("kosm_current");
 const interface = @import("kosm_interface");
 const Arguments = @import("Arguments.zig");
 const completions = @import("completions.zig");
+const completion_types = @import("completion_types.zig");
 const discovery = @import("discovery.zig");
 const files = @import("files.zig");
 const images = @import("images.zig");
@@ -17,6 +18,7 @@ const params = @import("params.zig");
 const report = @import("report.zig");
 const script = @import("script.zig");
 const set = @import("set.zig");
+const Sources = @import("Sources.zig");
 const walk = @import("walk.zig");
 
 /// The kosmos a build applies.
@@ -76,11 +78,86 @@ pub fn runScript(init: std.process.Init, comptime target: ScriptTarget) !u8 {
         try streams.stderr.flush();
         return 1;
     }
+    if (std.mem.eql(u8, all_arguments[1], write_completions_flag)) {
+        var diagnostics: kosm.Diagnostics = .{ .kosmos = "" };
+        return finishRun(writeFrontendCompletions(init, target, all_arguments[2..], &diagnostics), &diagnostics, streams);
+    }
     var diagnostics: kosm.Diagnostics = .{ .kosmos = all_arguments[1] };
     if (init.environ_map.get(interface.completions_variable) != null) {
         return finishRun(writeScriptCompletions(init, target, &diagnostics, streams.stdout), &diagnostics, streams);
     }
     return finishRun(applyScript(init, target, all_arguments[2..], &diagnostics, streams), &diagnostics, streams);
+}
+
+/// Makes the script runner write every frontend's completion files instead of running a script:
+/// `--write-completions <completions folder> <editor folder> [<module>=<root file>]...`.
+pub const write_completions_flag = "--write-completions";
+
+/// Writes the files each frontend gives for every type a script may set into
+/// `<completions folder>/<frontend>/`, and each frontend's editor file into the editor folder.
+/// The modules' root files are read for doc comments.
+fn writeFrontendCompletions(init: std.process.Init, comptime target: ScriptTarget, arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !void {
+    const arena = init.arena.allocator();
+    if (arguments.len < 2) return fail(diagnostics, "{s} needs a completions folder and an editor folder", .{write_completions_flag});
+    var modules: std.ArrayList(Sources.Module) = .empty;
+    for (arguments[2..]) |argument| {
+        const equals = std.mem.findScalar(u8, argument, '=') orelse return fail(diagnostics, "{s}: expected <module>=<root file>, got '{s}'", .{ write_completions_flag, argument });
+        try modules.append(arena, .{ .name = argument[0..equals], .root = argument[equals + 1 ..] });
+    }
+    var sources: Sources = .{ .arena = arena, .io = init.io, .modules = modules.items };
+    const completion = try describeScriptTypes(arena, target, &sources);
+    inline for (comptime discovery.frontends(target.adapter_sources)) |declared| {
+        const frontend = declared.frontend;
+        if (frontend.complete) |complete| {
+            const folder = try std.Io.Dir.path.join(arena, &.{ arguments[0], frontend.name });
+            for (try complete(arena, completion)) |file| try writeOutput(init.io, arena, folder, file, diagnostics);
+        }
+        if (frontend.editor_file) |file| try writeOutput(init.io, arena, arguments[1], file, diagnostics);
+    }
+}
+
+/// Every type a script may set: every Zig kosmos' parameters and tree, the apps a kosmos
+/// without a base chooses from, and the theme input.
+fn describeScriptTypes(arena: std.mem.Allocator, comptime target: ScriptTarget, sources: *Sources) !kosm.Frontend.Completion {
+    @setEvalBranchQuota(discovery.branch_quota);
+    var builder: completion_types.Builder = .{ .arena = arena, .sources = sources };
+    var kosmoi: std.ArrayList(kosm.Frontend.Completion.Kosmos) = .empty;
+    inline for (target.kosmoi) |source| {
+        inline for (comptime discovery.declaredKosmoi(source.module)) |declared| {
+            const name = comptime if (declared.name.len == 0) source.name else source.name ++ "." ++ declared.name;
+            try kosmoi.append(arena, try builder.kosmos(.{
+                .name = name,
+                .module = source.name,
+                .path = comptime functionPath(declared),
+                .function = @TypeOf(@field(declared.Namespace, declared.function)),
+            }));
+        }
+    }
+    const standalone = try builder.appsRecord(discovery.Standalone(target.apps), comptime discovery.standalonePackages(target.apps), "kosm.Standalone");
+    const theme = try builder.declaredRecord(kosm.Theme.Input, "kosm", &.{ "Theme", "Input" });
+    return .{ .records = builder.records.items, .kosmoi = kosmoi.items, .standalone = standalone, .theme = theme };
+}
+
+/// The names leading from a module's root to `declared`'s function: `&.{ "group", "iced" }`.
+fn functionPath(comptime declared: discovery.Declared) []const []const u8 {
+    comptime var path: []const []const u8 = &.{};
+    if (declared.name.len != 0) {
+        comptime var segments = std.mem.splitScalar(u8, declared.name, '.');
+        inline while (comptime segments.next()) |segment| path = path ++ .{segment};
+    }
+    // A variant is named after its function, a group's own kosmos after the group.
+    if (path.len == 0 or !std.mem.eql(u8, path[path.len - 1], declared.function)) path = path ++ .{declared.function};
+    const final = path[0..path.len].*;
+    return &final;
+}
+
+/// Writes `file` below `folder`, creating the folders it needs.
+fn writeOutput(io: std.Io, arena: std.mem.Allocator, folder: []const u8, file: kosm.Frontend.Completion.File, diagnostics: *kosm.Diagnostics) !void {
+    const path = try std.Io.Dir.path.join(arena, &.{ folder, file.path });
+    if (std.Io.Dir.path.dirname(path)) |directory| std.Io.Dir.cwd().createDirPath(io, directory) catch |err|
+        return fail(diagnostics, "cannot create {s}: {s}", .{ directory, @errorName(err) });
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = file.contents }) catch |err|
+        return fail(diagnostics, "cannot write {s}: {s}", .{ path, @errorName(err) });
 }
 
 /// The chain of script kosmos `diagnostics.kosmos`, read through the frontends.
@@ -520,6 +597,8 @@ test {
     std.testing.refAllDecls(list_module);
     std.testing.refAllDecls(@import("colors.zig"));
     std.testing.refAllDecls(completions);
+    std.testing.refAllDecls(completion_types);
+    std.testing.refAllDecls(Sources);
     std.testing.refAllDecls(params);
     std.testing.refAllDecls(images);
     std.testing.refAllDecls(files);

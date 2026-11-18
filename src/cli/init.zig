@@ -5,6 +5,7 @@ const std = @import("std");
 const Context = @import("Context.zig");
 const Packages = @import("Packages.zig");
 const manifest = @import("manifest.zig");
+const scripts = @import("scripts.zig");
 const kosm_package = @import("kosm_package");
 
 pub const Error = Context.Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
@@ -61,6 +62,8 @@ pub fn init(context: Context, kosm: Kosm) Error!void {
     for (local_directories) |directory| created = try createDirectory(context, directory) or created;
     // The starting kosmos imports the official packages, which only a new manifest is sure to list.
     if (new_manifest != null and try isEmpty(context, "kosmoi")) created = try createFile(context, starting_kosmos.path, starting_kosmos.source) or created;
+    // A frontend's editor file comes from the runner of scripts, once one was built.
+    created = try scripts.createEditorFiles(context) or created;
     if (!created) try context.stdout.print("{s} is already a complete config project\n", .{context.config});
 }
 

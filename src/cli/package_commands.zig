@@ -6,6 +6,7 @@ const std = @import("std");
 const Packages = @import("Packages.zig");
 const manifest = @import("manifest.zig");
 const files = @import("files.zig");
+const scripts = @import("scripts.zig");
 
 /// Where a package command works and reports.
 pub const Context = @import("Context.zig");
@@ -23,7 +24,8 @@ const inspector_path = "zig-out/bin/inspect";
 
 /// `kosm add <url>[#ref]`: fetches the package, refuses it when packages.zon already has its name
 /// or when it provides no app, adapter, kosmos or base, and records the url and ref in
-/// packages.zon. A package installed without kosm add (say, kept only as another package's
+/// packages.zon. Then builds the script runner, when there are scripts, for their completion.
+/// A package installed without kosm add (say, kept only as another package's
 /// dependency) is fetched from `url` and recorded, so kosm update follows it from then on.
 pub fn add(context: Context, argument: []const u8) Error!void {
     try progress(context, "fetching {s}", .{argument});
@@ -40,6 +42,7 @@ pub fn add(context: Context, argument: []const u8) Error!void {
     try packages.put(context.arena, package);
     try savePackages(context, packages);
     try context.stdout.print("added {s}\n", .{package.name});
+    try refreshScripts(context);
 }
 
 /// `kosm remove <name>`: deletes the package's entries from build.zig.zon and packages.zon,
@@ -60,7 +63,8 @@ pub fn remove(context: Context, name: []const u8) Error!void {
 /// `kosm update [name]`: fetches every package in packages.zon again (or only `name`) at its
 /// ref and checks all but kosm itself like `add`, in one build. Dependencies missing from
 /// packages.zon are skipped. A successful update deletes the config's `.zig-cache`, which
-/// otherwise keeps every build made with the old packages.
+/// otherwise keeps every build made with the old packages; then the script runner is built,
+/// when there are scripts, for their completion.
 pub fn update(context: Context, name: ?[]const u8) Error!void {
     const packages = try loadPackages(context);
     const original = try readManifest(context);
@@ -90,6 +94,14 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
     if (checked.items.len != 0) try check(context, checked.items);
     for (selected) |package| try context.stdout.print("updated {s}\n", .{package.name});
     try deleteCache(context);
+    try refreshScripts(context);
+}
+
+/// Builds the script runner when the config has scripts, so their completion is current right
+/// away. The package command has already succeeded, so a failed build is only a warning.
+fn refreshScripts(context: Context) Error!void {
+    if (try scripts.buildIfAny(context)) return;
+    try context.stderr.writeAll("warning: the script runner did not build, so script completion is out of date; kosm build says why\n");
 }
 
 /// `url#ref` split at the last `#`; the name is filled in by `fetchName`.

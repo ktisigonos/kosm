@@ -285,6 +285,16 @@ pub fn standaloneModules(comptime sources: []const AppSource) []const type {
     return &final;
 }
 
+/// The package of each field's app in `Standalone(sources)`, in field order.
+pub fn standalonePackages(comptime sources: []const AppSource) []const []const u8 {
+    comptime var packages: []const []const u8 = &.{};
+    inline for (sources) |source| {
+        if (comptime buildsFromTheme(source.module)) packages = packages ++ .{source.package};
+    }
+    const final = packages[0..packages.len].*;
+    return &final;
+}
+
 fn indexOfName(list: []const kosm.Adapter, name: []const u8) ?usize {
     for (list, 0..) |adapter, index| {
         if (std.mem.eql(u8, adapter.name, name)) return index;

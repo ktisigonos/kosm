@@ -14,6 +14,13 @@ extensions: []const []const u8,
 /// Reads a script's text into what it builds on and what it sets. Strings may point into
 /// `source`, which lives for the whole run; anything else is allocated in `context.arena`.
 load: *const fn (context: *Context, source: []const u8) Error!Script,
+/// Writes the files an editor completes scripts from, out of every type a script may set;
+/// kosm puts them in the config's `zig-out/completions/<name>/` whenever it builds the runner
+/// of scripts. Null for a frontend giving no completion.
+complete: ?*const fn (arena: std.mem.Allocator, completion: Completion) std.mem.Allocator.Error![]const Completion.File = null,
+/// The file in the config's root that points the editor at those files (".luarc.json"). Kosm
+/// creates it only where it is missing, so a user's edits to it stay. Null for none.
+editor_file: ?Completion.File = null,
 
 /// What a script kosmos says: what it builds on, and the values it sets.
 pub const Script = @import("Frontend/Script.zig");
@@ -21,6 +28,9 @@ pub const Script = @import("Frontend/Script.zig");
 /// What `load` gets besides the text: an arena, the script's path and a place to explain a
 /// failure.
 pub const Context = @import("Frontend/Context.zig");
+
+/// Every type a script may set, for `complete`.
+pub const Completion = @import("Frontend/Completion.zig");
 
 /// Errors `load` may return. Return `InvalidScript` through `Context.fail`.
 pub const Error = std.mem.Allocator.Error || error{InvalidScript};

@@ -106,7 +106,7 @@ there is undecided, so ask.
 - A script reaches no files, environment or programs: its frontend gives it only the language's libraries that compute.
 - Errors name the script's line for every value it gives, and a value the script writes but the language reads as nothing (Lua's `nil`) fails instead of being dropped.
 - Scripts are read when kosm runs, like a file named in `Params`: editing one never compiles. One runner, holding every Zig kosmos, app and frontend of the config, runs every script; it is rebuilt only when Zig code it is built from changed since it was last built.
-- Completion for scripts is generated when that runner is built, into the config's `zig-out/completions/<language>/`; one editor file in the config (`.luarc.json` for Lua) points at it.
+- Completion for scripts is generated when that runner is built, into the config's `zig-out/completions/<language>/`, from every type a script may set with the doc comments of its Zig source; a type keeps its Zig name. One editor file in the config (`.luarc.json` for Lua) points at it; kosm creates it where it is missing and never rewrites it.
 
 ## Non-goals
 

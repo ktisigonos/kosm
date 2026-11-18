@@ -8,8 +8,9 @@
 //! `-Dkosmos=` of it is a cache hit, and installs `zig-out/prebuilt/<name>`, an empty file,
 //! for each one that compiled. `-Dscripts` builds `zig-out/bin/scripts`, the one runner every
 //! script kosmos (`kosmoi/<name>.<extension>`, read by a frontend) shares, holding every kosmos,
-//! app and frontend of the config. `check` compiles every local one, so editors see the config's
-//! imports.
+//! app and frontend of the config, and installs each frontend's completion files in
+//! `zig-out/completions/` and editor files in `zig-out/editor/`. `check` compiles every local
+//! one, so editors see the config's imports.
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -347,7 +348,33 @@ fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source.written()), .target = target, .optimize = optimize });
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
-    b.installArtifact(b.addExecutable(.{ .name = "scripts", .root_module = root_module }));
+    const runner = b.addExecutable(.{ .name = "scripts", .root_module = root_module });
+    b.installArtifact(runner);
+    addScriptCompletions(b, runner, entries);
+}
+
+/// Runs the script runner to write each frontend's completion files into
+/// `zig-out/completions/<frontend>/` and its editor files into `zig-out/editor/`, handing it
+/// the root file of every module, whose sources hold the doc comments.
+fn addScriptCompletions(b: *std.Build, runner: *std.Build.Step.Compile, entries: []const Entry) void {
+    const run = b.addRunArtifact(runner);
+    // Docs are read from the sources, and an edit of a doc comment alone leaves the runner as it was.
+    run.has_side_effects = true;
+    run.addArg("--write-completions");
+    const completions = run.addOutputDirectoryArg2("completions", .{});
+    const editor = run.addOutputDirectoryArg2("editor", .{});
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    for (entries) |entry| addModuleRoots(b, run, entry.name, entry.module, &seen);
+    b.getInstallStep().dependOn(&b.addInstallDirectory(.{ .source_dir = completions, .install_dir = .prefix, .install_subdir = "completions" }).step);
+    b.getInstallStep().dependOn(&b.addInstallDirectory(.{ .source_dir = editor, .install_dir = .prefix, .install_subdir = "editor" }).step);
+}
+
+/// Passes `<name>=<root file>` for `module` and every module it imports, each name once.
+fn addModuleRoots(b: *std.Build, run: *std.Build.Step.Run, name: []const u8, module: *std.Build.Module, seen: *std.StringHashMapUnmanaged(void)) void {
+    if (seen.contains(name)) return;
+    seen.put(b.allocator, name, {}) catch @panic("OOM");
+    if (module.root_source_file) |root| run.addFileArg2(root, .{ .prefix = b.fmt("{s}=", .{name}), .make_absolute = true });
+    for (module.import_table.keys(), module.import_table.values()) |imported_name, imported| addModuleRoots(b, run, imported_name, imported, seen);
 }
 
 /// A script kosmos in `kosmoi/`: a file with an extension other than Zig's.

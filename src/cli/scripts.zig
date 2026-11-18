@@ -11,6 +11,9 @@ pub const Error = Context.RunError;
 
 /// What `addConfigProject` installs for `-Dscripts`.
 pub const runner_path = "zig-out/bin/scripts";
+/// Where the build of the runner puts each frontend's editor file, which kosm copies into the
+/// config's root where it is missing.
+const editor_directory = "zig-out/editor";
 /// Written when a build of the runner starts and kept once it succeeded; Zig code newer than
 /// it means the runner is stale.
 const stamp_path = "zig-out/scripts.built";
@@ -88,10 +91,51 @@ pub fn build(context: Context) Error!bool {
         return context.fail("cannot create {s}: {s}", .{ std.Io.Dir.path.dirname(stamp).?, @errorName(err) });
     std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = stamp, .data = "" }) catch |err|
         return context.fail("cannot write {s}: {s}", .{ stamp, @errorName(err) });
-    if (try context.runBuild(&.{ "build", "-Dscripts" })) return true;
+    if (try context.runBuild(&.{ "build", "-Dscripts" })) {
+        _ = try createEditorFiles(context);
+        return true;
+    }
     std.Io.Dir.cwd().deleteFile(context.io, stamp) catch {};
     return false;
 }
+
+/// Builds the runner when `kosmoi/` holds a script, so its completion files are current; returns
+/// false only when that build failed.
+pub fn buildIfAny(context: Context) Error!bool {
+    if (!try any(context)) return true;
+    try context.stdout.writeAll("building the script runner\n");
+    return build(context);
+}
+
+/// Copies each editor file the last build of the runner gave (`.luarc.json`) into the config's
+/// root where the config has none, printing each one created; returns whether it created any.
+/// Files the config has already are never touched, so a user's edits stay.
+pub fn createEditorFiles(context: Context) Error!bool {
+    const source = try std.Io.Dir.path.join(context.arena, &.{ context.config, editor_directory });
+    var dir = std.Io.Dir.cwd().openDir(context.io, source, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return context.fail("cannot read {s}: {s}", .{ source, @errorName(err) }),
+    };
+    defer dir.close(context.io);
+    var created = false;
+    var iterator = dir.iterate();
+    while (iterator.next(context.io) catch |err| return context.fail("cannot read {s}: {s}", .{ source, @errorName(err) })) |entry| {
+        if (entry.kind != .file) continue;
+        const contents = dir.readFileAlloc(context.io, entry.name, context.arena, .limited(editor_file_limit)) catch |err|
+            return context.fail("cannot read {s}/{s}: {s}", .{ source, entry.name, @errorName(err) });
+        const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, entry.name });
+        std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = path, .data = contents, .flags = .{ .exclusive = true } }) catch |err| switch (err) {
+            error.PathAlreadyExists => continue,
+            else => return context.fail("cannot create {s}: {s}", .{ path, @errorName(err) }),
+        };
+        try context.stdout.print("created {s}\n", .{entry.name});
+        created = true;
+    }
+    return created;
+}
+
+/// Far beyond any editor file; a guard against copying something huge.
+const editor_file_limit = 1024 * 1024;
 
 /// Whether the runner is missing, or any Zig file it is built from is newer than its stamp. What
 /// cannot be read counts as changed: a needless build is safe, a stale runner is not.
@@ -149,7 +193,21 @@ const test_frontend =
     \\const std = @import("std");
     \\const kosm = @import("kosm");
     \\
-    \\pub const frontend: kosm.Frontend = .{ .name = "lines", .extensions = &.{".kosmos"}, .load = load };
+    \\pub const frontend: kosm.Frontend = .{
+    \\    .name = "lines",
+    \\    .extensions = &.{".kosmos"},
+    \\    .load = load,
+    \\    .complete = complete,
+    \\    .editor_file = .{ .path = ".lines.json", .contents = "{}\n" },
+    \\};
+    \\
+    \\fn complete(arena: std.mem.Allocator, completion: kosm.Frontend.Completion) std.mem.Allocator.Error![]const kosm.Frontend.Completion.File {
+    \\    var text: std.Io.Writer.Allocating = .init(arena);
+    \\    for (completion.kosmoi) |kosmos| text.writer.print("kosmos {s} {s}\n", .{ kosmos.name, kosmos.tree }) catch return error.OutOfMemory;
+    \\    const theme = completion.find(completion.theme).?;
+    \\    text.writer.print("theme {s}: {s}\n", .{ theme.name, theme.fields[0].doc.? }) catch return error.OutOfMemory;
+    \\    return arena.dupe(kosm.Frontend.Completion.File, &.{.{ .path = "types/all.txt", .contents = text.written() }});
+    \\}
     \\
     \\fn load(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.Script {
     \\    var script: kosm.Frontend.Script = .{};
@@ -244,7 +302,15 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
 
     try testing.expect(try isScript(context, "on"));
     try testing.expect(!try isScript(context, "frost"));
+    stdout.clearRetainingCapacity();
     try testing.expect(try prepare(context));
+    // The build gave the frontend's completion files and its editor file, created only once.
+    try testing.expectEqualStrings("created .lines.json\n", stdout.written());
+    const types = try tmp.dir.readFileAlloc(testing.io, "project/zig-out/completions/lines/types/all.txt", arena, .limited(1024 * 1024));
+    try testing.expect(std.mem.find(u8, types, "kosmos frost frost.kosmos.Tree\n") != null);
+    try testing.expect(std.mem.find(u8, types, "theme kosm.Theme.Input: Black, white and any of the wheel's hues; missing hues are mixed from their neighbours.\n") != null);
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/.lines.json", .data = "{ \"mine\": 1 }\n" });
+    try testing.expect(!try createEditorFiles(context));
     try testing.expect(std.mem.find(u8, try testDiff(context, "on"), "+font_size 12\n") != null);
     try testing.expect(std.mem.find(u8, try testDiff(context, "over"), "+font_size 14\n") != null);
     try testing.expect(std.mem.find(u8, try testDiff(context, "alone"), "+font_size 9\n") != null);
