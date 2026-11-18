@@ -4,6 +4,7 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
+const kosmos_call = @import("kosmos_call.zig");
 
 /// Where script kosmoi live, in the config's root.
 pub const directory = "kosmoi";
@@ -134,7 +135,13 @@ fn load(context: Context, name: []const u8, file_name: []const u8, name_length: 
         else => return fail(context, "{s}: cannot read the file: {s}", .{ shown, @errorName(err) }),
     };
     var frontend_context: kosm.Frontend.Context = .{ .arena = context.arena, .path = shown, .variant = variant, .library = context.library };
-    const script = frontend.load(&frontend_context, source) catch |err| switch (err) {
+    var loaded: kosm.Frontend.Error!kosm.Frontend.Script = undefined;
+    // A script builds whole kosmos trees by value through its calls, which outgrows a process'
+    // usual stack as a kosmos does, so it runs on a stack as large as a kosmos'.
+    const thread = std.Thread.spawn(.{ .stack_size = kosmos_call.kosmos_stack_size }, runLoad, .{ frontend, &frontend_context, source, &loaded }) catch |err|
+        return fail(context, "{s}: cannot start the thread the script runs on: {s}", .{ shown, @errorName(err) });
+    thread.join();
+    const script = loaded catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.InvalidScript => {
             const message = frontend_context.message orelse "the script cannot be read, and its frontend did not say why";
@@ -149,6 +156,10 @@ fn load(context: Context, name: []const u8, file_name: []const u8, name_length: 
     if (script.base != null and script.theme != null)
         return fail(context, "{s}: it sets a theme input but builds on '{s}', which builds its own theme; set the base's parameters or its theme's values instead", .{ shown, script.base.? });
     return .{ .name = name, .path = shown, .script = script };
+}
+
+fn runLoad(frontend: kosm.Frontend, context: *kosm.Frontend.Context, source: []const u8, loaded: *kosm.Frontend.Error!kosm.Frontend.Script) void {
+    loaded.* = frontend.load(context, source);
 }
 
 /// The one frontend claiming `extension`.
