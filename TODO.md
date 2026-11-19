@@ -58,11 +58,6 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Done when: the human has agreed on the app, and COSMIC and its apps take the kosmos' colors and icons, and step 13q knows whether COSMIC's Qt styling can serve.
 
 
-- **18o. A list that outlives its function crashes instead of failing**
-  - Do: `kosm apply --diff` segfaulted in `runner/lifetime.zig` (`findDeadList` walking into the list) on a kosmos that set `app.groups = &.{ ... }` holding a run-time color, instead of refusing it with the list's path. Likely the walk reads the dead list's items, which lie on the kosmos' own stack after it is freed; check the list's address without dereferencing it. Reproduce with a test kosmos.
-  - Done when: such a kosmos fails with the path of the list and writes nothing, under a test.
-
-
 - **18l. Image commands** (optional)
   - Do: `kosm palette <image> [style options]` prints the palette (and roles) as Zig source to paste into a kosmos, for a palette frozen from an image. `kosm new kosmos <name> --image <path>` scaffolds a kosmos on `kosm_base` taking the image as its `Params` default, with its palette and hyprpaper's wallpaper from it; it fails if the config lacks `kosm_base`.
   - Do: the scaffold wears its look through `base.fromTheme(look, theme, apps)` (`kosm_base` `d15972b`), as `base.from` takes the look at compile time; its wallpaper list is a list of run-time values, so it is written with `kosm.keep`.

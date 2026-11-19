@@ -53,6 +53,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`x catch @compileError(...)` in a comptime-only helper still fails:** unless the call is forced to comptime, the error branch is analyzed and fires for valid input. Write `comptime (f(x) catch @compileError(...))`.
 - **A `switch` expression statement cannot take `catch` directly:** `switch (s) { ... } catch return e;` is "expected statement, found 'catch'"; bind it first: `const printed = switch (s) { ... }; printed catch return e;`.
 - **`@frameAddress` may be unavailable in release builds:** to tell where a callee's (dead) stack lies, take `@intFromPtr(&local)` of a variable in the caller and make the callee `noinline`, so its frames always sit below that address (the stack grows down on every target kosm runs on).
+- **`std.Thread.join` unmaps the thread's stack:** a pointer into a joined thread's stack segfaults when read, so check an address against it without dereferencing.
 - **`{t}` prints an enum's tag name:** `writer.print("{t}", .{direction})` writes `up`, no `@tagName` needed.
 - **`type` is a plain field name, `error` is not:** `zig fmt` turns `@"type": Color` and `.@"type"` into `type: Color` and `.type`, but `error` still needs `@"error"`.
 - **A recursive comptime string builder needs `comptime` at each recursive `++`:** `describe(child) ++ " or null"` inside a non-comptime call is "unable to resolve comptime value"; write `comptime describe(child) ++ ...`.

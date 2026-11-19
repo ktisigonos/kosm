@@ -242,7 +242,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                         }
                         return given.fail("{s} failed: {s}", .{ full, @errorName(err) });
                     } else returned;
-                    if (try lifetime.findDeadList(given.arena, result, stack)) |path|
+                    if (try lifetime.findDeadList(given.arena, result, &.{stack})) |path|
                         return given.fail("{s}: what it returns at {s} points into a function that has returned, so it is garbage; it must keep run-time lists with kosm.keep", .{ full, path });
                     return owned(Result, given, result);
                 }

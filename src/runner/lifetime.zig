@@ -32,17 +32,18 @@ fn stackLimit() usize {
 
 pub const Error = std.mem.Allocator.Error;
 
-/// The path in `tree` of the first list pointing into `stack` (`base.icons.colors.only`,
-/// `base.hyprpaper.wallpapers[0].path`), or null when there is none.
-pub fn findDeadList(arena: std.mem.Allocator, tree: anytype, stack: Stack) Error!?[]const u8 {
-    var walker: Walker = .{ .arena = arena, .stack = stack };
+/// The path in `tree` of the first list pointing into any of `dead` (`base.icons.colors.only`,
+/// `base.hyprpaper.wallpapers[0].path`), or null when there is none. Every stack is checked
+/// before a list's items are read, since a dead thread's stack is no longer mapped.
+pub fn findDeadList(arena: std.mem.Allocator, tree: anytype, dead: []const Stack) Error!?[]const u8 {
+    var walker: Walker = .{ .arena = arena, .dead = dead };
     if (try walker.visit(@TypeOf(tree), &tree)) return try walker.path();
     return null;
 }
 
 const Walker = struct {
     arena: std.mem.Allocator,
-    stack: Stack,
+    dead: []const Stack,
     /// The fields and indices leading to the value being visited.
     segments: std.ArrayList([]const u8) = .empty,
 
@@ -65,16 +66,23 @@ const Walker = struct {
             .pointer => |pointer| switch (pointer.size) {
                 .slice => {
                     if (value.len == 0) return false;
-                    if (walker.stack.holds(@intFromPtr(value.ptr))) return true;
+                    if (walker.pointsIntoDead(value.ptr)) return true;
                     if (comptime !mayHoldLists(pointer.child)) return false;
                     for (value.*, 0..) |*item, index| {
                         if (try walker.visitChild(pointer.child, item, try walker.indexSegment(index))) return true;
                     }
                 },
-                .one => if (comptime !isOpaque(pointer.child)) return walker.stack.holds(@intFromPtr(value.*)),
+                .one => if (comptime !isOpaque(pointer.child)) return walker.pointsIntoDead(value.*),
                 .many, .c => {},
             },
             else => {},
+        }
+        return false;
+    }
+
+    fn pointsIntoDead(walker: *const Walker, pointer: anytype) bool {
+        for (walker.dead) |stack| {
+            if (stack.holds(@intFromPtr(pointer))) return true;
         }
         return false;
     }
@@ -158,9 +166,9 @@ test "a list written in a returned function is found by its path, inside unions,
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    try testing.expectEqualStrings("icons.choice.colors", (try findDeadList(arena, deadTree(3, .colors), stack)).?);
-    try testing.expectEqualStrings("wallpapers[0].path", (try findDeadList(arena, deadTree(3, .wallpaper_path), stack)).?);
-    try testing.expectEqualStrings("layers[1]", (try findDeadList(arena, deadTree(3, .layers), stack)).?);
+    try testing.expectEqualStrings("icons.choice.colors", (try findDeadList(arena, deadTree(3, .colors), &.{stack})).?);
+    try testing.expectEqualStrings("wallpapers[0].path", (try findDeadList(arena, deadTree(3, .wallpaper_path), &.{stack})).?);
+    try testing.expectEqualStrings("layers[1]", (try findDeadList(arena, deadTree(3, .layers), &.{stack})).?);
 }
 
 const constant_colors = [_]u32{ 1, 2 };
@@ -182,5 +190,5 @@ test "constants, kept lists and live memory are no dead lists" {
         .layers = .{ &constant_colors, &.{} },
         .reload = reloadNothing,
     };
-    try testing.expectEqual(null, try findDeadList(arena, tree, stack));
+    try testing.expectEqual(null, try findDeadList(arena, tree, &.{stack}));
 }

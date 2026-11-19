@@ -172,10 +172,8 @@ fn readHostname(buffer: *[std.posix.HOST_NAME_MAX]u8, diagnostics: *kosm.Diagnos
 
 /// Fails naming the first list in `tree` that points into one of `dead`.
 pub fn refuseDeadLists(arena: std.mem.Allocator, tree: anytype, dead: []const lifetime.Stack, diagnostics: *kosm.Diagnostics) !void {
-    for (dead) |stack| {
-        if (try lifetime.findDeadList(arena, tree, stack)) |path|
-            return fail(diagnostics, "{s} points into a function that has returned, so what it holds is garbage: write lists of values known only at run time as kosm.keep(T, &.{{ ... }}), or as constants", .{path});
-    }
+    if (try lifetime.findDeadList(arena, tree, dead)) |path|
+        return fail(diagnostics, "{s} points into a function that has returned, so what it holds is garbage: write lists of values known only at run time as kosm.keep(T, &.{{ ... }}), or as constants", .{path});
 }
 
 /// One Zig kosmos the script runner holds, and the folder of the module declaring it.
@@ -206,4 +204,27 @@ pub fn zigKosmoi(comptime sources: []const @import("ScriptTarget.zig").KosmosSou
 fn fail(diagnostics: *kosm.Diagnostics, comptime format: []const u8, arguments: anytype) Reported {
     diagnostics.set("", "", format, arguments);
     return error.Reported;
+}
+
+const testing = std.testing;
+
+const TestGroup = struct { name: []const u8, colors: []const u32 };
+const TestTree = struct { groups: []const TestGroup = &.{} };
+
+/// A kosmos writing a list of groups that holds a run-time color without `kosm.keep`.
+noinline fn treeWithDeadGroups(color: u32) TestTree {
+    var tree: TestTree = .{};
+    tree.groups = &.{.{ .name = "active", .colors = &.{ color, color } }};
+    std.mem.doNotOptimizeAway(&tree);
+    return tree;
+}
+
+test "a list left on the kosmos' stack is refused by its path, though that stack is gone" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var diagnostics: kosm.Diagnostics = .{};
+    var tree: TestTree = undefined;
+    const stack = try callOnKosmosStack(treeWithDeadGroups, .{@as(u32, 7)}, &tree, &diagnostics);
+    try testing.expectError(error.Reported, refuseDeadLists(arena_state.allocator(), tree, &.{ .below(@intFromPtr(&tree)), stack }, &diagnostics));
+    try testing.expect(std.mem.startsWith(u8, diagnostics.message(), "groups points into a function that has returned"));
 }
