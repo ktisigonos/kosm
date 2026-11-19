@@ -32,12 +32,6 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Left for the human: push kosm, `kosm update` in the config, then try completion in the editor.
   - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor.
 
-- **21i. Nothing compile-time in what kosmoi call**
-  - Do: every function bases, looks and kosmoi export for building on takes ordinary values, so every frontend can call it: `kosm_base.from(comptime look, ...)` and `fromTheme` gain run-time forms, compile-time ones kept only where Zig needs them. A look written in Lua then becomes a base.
-  - Built: kosm `kosm.keepList` and `kosm.keepPrint` (lists of run-time length and text kept for the run); `kosm_base` `9f41077` (pushed, pinned on kosm `1e12f00`): `from` and `fromTheme` take the look at run time, no compile-time form left; a look with no family hands out only the sizes. Checked on a scratch copy of the human's config with kosm and `kosm_base` by path: a Lua look (`kosm.Theme.from`, fonts, values) through `kosm_base.from(look, { except = ... })`, set as `kosmoi.krystallos()`'s `base`, gives every app's diff with its fonts and values.
-  - Left: a script returning `kosm_base.from(...)` itself fails ("returns a kosm_base.Base, which is not the tree of a kosmos"), because the runner takes only the trees Zig kosmoi of the config return; waits on the human's choice of fix.
-  - Done when: a Lua look (a palette, fonts and values) gives a base with every app, applying with `--diff`.
-
 - **21j. Apps, adapters and the rest of kosm in any language** `ASK` `PLAN FIRST` (later)
   - Do: a frontend can also give apps and adapters (and whatever else kosm is built from), so kosm is moddable in any supported language. A frontend then runs code at apply time (parsing and formatting files), not only building trees. Plan with the human first.
 
