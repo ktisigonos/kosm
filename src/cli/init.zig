@@ -463,7 +463,7 @@ test "an initialized config builds with the forked kosm sources, applies a kosmo
     try testing.expectStringStartsWith(test_config.stdout.written(), "palette\n  black    #000000\n  white    #ffffff\n  gray     #");
     try testing.expect(std.mem.find(u8, test_config.stdout.written(), "  pink     #ff0000  mixed\n") != null);
     test_config.stdout.clearRetainingCapacity();
-    try @import("colors.zig").colors(context, "check.light", true);
+    try @import("colors.zig").colors(context, "check", true);
     try testing.expect(std.mem.find(u8, test_config.stdout.written(), "  red      \x1b[48;2;255;0;0m      \x1b[0m  #ff0000\n") != null);
     test_config.stderr.clearRetainingCapacity();
     try testing.expectError(error.Failed, @import("colors.zig").colors(context, "missing", false));

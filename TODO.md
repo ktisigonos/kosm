@@ -36,11 +36,6 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: a frontend can also give apps and adapters (and whatever else kosm is built from), so kosm is moddable in any supported language. A frontend then runs code at apply time (parsing and formatting files), not only building trees. Plan with the human first.
 
 
-- **21k. A missing kosmos fails in one line**
-  - Do: `kosm apply personal.frost` (a typo of `personal.frozen`) prints Zig's compile error with a reference trace, because the name is only checked when the runner compiles. Check the name before building, against the kosmoi the config declares (Zig and script, variants and groups included), and fail with `error: there is no kosmos 'personal.frost'; did you mean 'personal.frozen'?` (the closest names, or the kosmoi of that file or folder when none is close), building nothing. Do the same wherever a kosmos is named: `kosm build`, `kosm colors`, `--on` and other `kosm.Kosmos` names, and a script's `base`.
-  - Do: scripts' function variants (`root.lua`'s `light`) are unknown to `kosm list`, shell completion and this check, because the lister runs no frontend; list them through `kosm.Frontend.variants` (the runner of scripts can report them).
-  - Done when: a misspelled kosmos, variant or group fails in one line naming the closest kosmoi, under a test, for every command taking a kosmos.
-
 - **18h. Equibop theme** `ASK`
   - Do: find out how Equibop (the Vesktop-based Discord client) takes a theme (Vencord's QuickCSS or a CSS file in its themes folder, Discord's CSS variables, live reload) and propose `kosm_equibop` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Equibop takes the kosmos' colors and fonts.

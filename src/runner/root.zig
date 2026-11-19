@@ -6,6 +6,7 @@ const std = @import("std");
 const kosm = @import("kosm");
 const Record = @import("kosm_current");
 const interface = @import("kosm_interface");
+const kosmos_names = @import("kosm_names");
 const Arguments = @import("Arguments.zig");
 const bindings = @import("bindings.zig");
 const Runtime = @import("Runtime.zig");
@@ -86,6 +87,10 @@ pub fn runScript(init: std.process.Init, comptime target: ScriptTarget) !u8 {
         try streams.stderr.flush();
         return 1;
     }
+    if (std.mem.eql(u8, all_arguments[1], interface.list_scripts_flag)) {
+        var diagnostics: kosm.Diagnostics = .{ .kosmos = "" };
+        return finishRun(writeScriptKosmoi(init, target, streams, &diagnostics), &diagnostics, streams);
+    }
     if (std.mem.eql(u8, all_arguments[1], write_completions_flag)) {
         var diagnostics: kosm.Diagnostics = .{ .kosmos = "" };
         return finishRun(writeFrontendCompletions(init, target, all_arguments[2..], &diagnostics), &diagnostics, streams);
@@ -122,6 +127,38 @@ fn writeFrontendCompletions(init: std.process.Init, comptime target: ScriptTarge
         }
         if (frontend.editor_file) |file| try writeOutput(init.io, arena, arguments[1], file, diagnostics);
     }
+}
+
+/// Prints every script kosmos and each variant it gives, `name<TAB>file` per line.
+fn writeScriptKosmoi(init: std.process.Init, comptime target: ScriptTarget, streams: Streams, diagnostics: *kosm.Diagnostics) !void {
+    var runtime = try scriptRuntime(init, target, &.{}, streams.stderr, diagnostics);
+    for (try script.listAll(KosmosBuilder(target).scriptContext(&runtime, diagnostics))) |kosmos| {
+        try streams.stdout.print("{s}\t{s}\n", .{ kosmos.name, kosmos.origin });
+    }
+}
+
+/// Fails with the closest names unless `name` is a Zig kosmos of `target` or a script kosmos
+/// or variant in the config. The failure names no kosmos, since `name` is none.
+fn checkKnown(comptime target: ScriptTarget, runtime: *Runtime, name: []const u8, diagnostics: *kosm.Diagnostics) script.Error!void {
+    const zig_names = comptime zigKosmosNameList(target.kosmoi);
+    if (kosmos_names.isKnown(name, zig_names)) return;
+    const scripts = try script.listAll(KosmosBuilder(target).scriptContext(runtime, diagnostics));
+    var known: std.ArrayList([]const u8) = try .initCapacity(runtime.arena, zig_names.len + scripts.len);
+    known.appendSliceAssumeCapacity(zig_names);
+    for (scripts) |kosmos| known.appendAssumeCapacity(kosmos.name);
+    if (kosmos_names.isKnown(name, known.items)) return;
+    diagnostics.kosmos = "";
+    return fail(diagnostics, "{s}", .{try kosmos_names.unknownMessage(runtime.arena, name, known.items)});
+}
+
+/// Fails because the lowest of `scripts` builds on `base`, which is no kosmos.
+fn unknownBase(comptime target: ScriptTarget, runtime: *Runtime, scripts: []const script.Loaded, base: []const u8, diagnostics: *kosm.Diagnostics) script.Error {
+    var inner: kosm.Diagnostics = .{ .kosmos = "" };
+    checkKnown(target, runtime, base, &inner) catch |err| switch (err) {
+        error.Reported => return fail(diagnostics, "{s}: {s}", .{ scripts[0].path, inner.message() }),
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    return fail(diagnostics, "{s} builds on '{s}', which is no Zig kosmos", .{ scripts[0].path, base });
 }
 
 /// Every type a script may set: every Zig kosmos' parameters and tree, the apps a kosmos
@@ -247,7 +284,7 @@ fn writeScriptCompletions(init: std.process.Init, comptime target: ScriptTarget,
             return completions.write(stdout, @field(entry.Namespace, entry.function));
         }
     }
-    return fail(diagnostics, "{s} builds on '{s}', but there is no such kosmos; Zig kosmoi: {s}", .{ chain.scripts[0].path, base, comptime zigKosmosNames(target.kosmoi) });
+    return unknownBase(target, &runtime, chain.scripts, base, diagnostics);
 }
 
 /// The exit status of an apply that returned `result`, after printing its failure.
@@ -370,6 +407,7 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var runtime = try scriptRuntime(init, target, raw_arguments, streams.stderr, diagnostics);
     runtime.kosmoi = KosmosBuilder(target).of(&runtime);
+    try checkKnown(target, &runtime, diagnostics.kosmos, diagnostics);
     // A Zig kosmos building on another, or in the folder of a script kosmos, is applied here,
     // where every kosmos can be built; locating fails when a script gives its name too.
     const is_script = try script.locate(KosmosBuilder(target).scriptContext(&runtime, diagnostics), diagnostics.kosmos) != null;
@@ -396,7 +434,7 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
             return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, layers, runtime.kosmoi);
         }
     }
-    return fail(diagnostics, "{s} builds on '{s}', but there is no such kosmos; Zig kosmoi: {s}", .{ chain.scripts[0].path, base, comptime zigKosmosNames(target.kosmoi) });
+    return unknownBase(target, &runtime, chain.scripts, base, diagnostics);
 }
 
 /// Builds a kosmos named in a `kosm.Kosmos` field, Zig or script, with every kosmos `target`
@@ -413,16 +451,16 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
             defer runtime.building.restore(depth);
             const scripts_folder = runtime.scripts_folder;
             defer runtime.scripts_folder = scripts_folder;
+            try checkKnown(target, runtime, name, diagnostics);
             // Locating first fails on a script and a Zig kosmos giving the same name.
             const location = try script.locate(scriptContext(runtime, diagnostics), name);
             if (location == null) if (zigKosmos(name)) |index| return buildZig(runtime, index, .{}, tree, tree_name, diagnostics);
-            if (location == null) return fail(diagnostics, "there is no such kosmos; Zig kosmoi: {s}, and scripts are files in {s}/", .{ comptime zigKosmosNames(target.kosmoi), script.directory });
+            if (location == null) return fail(diagnostics, "there is no such kosmos", .{});
             const chain = try resolveScript(target, runtime, name, diagnostics);
             if (chain.tree) |handle| return buildOnTree(runtime, handle, chain.scripts, tree, tree_name, diagnostics);
             const base = chain.base orelse
                 return fail(diagnostics, "{s} builds on no kosmos, so its tree is not a {s}; build it on a kosmos giving one", .{ chain.scripts[0].path, tree_name });
-            const index = zigKosmos(base) orelse
-                return fail(diagnostics, "{s} builds on '{s}', but there is no such kosmos; Zig kosmoi: {s}", .{ chain.scripts[0].path, base, comptime zigKosmosNames(target.kosmoi) });
+            const index = zigKosmos(base) orelse return unknownBase(target, runtime, chain.scripts, base, diagnostics);
             return buildZig(runtime, index, try Layers.of(runtime.arena, chain.scripts), tree, tree_name, diagnostics);
         }
 
@@ -590,11 +628,12 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
     });
 }
 
-/// The names of every kosmos in `sources`, comma-separated, or "none".
-fn zigKosmosNames(comptime sources: []const ScriptTarget.KosmosSource) []const u8 {
-    comptime var names: []const u8 = "";
-    inline for (comptime kosmos_call.zigKosmoi(sources)) |entry| names = names ++ (if (names.len == 0) "" else ", ") ++ entry.name;
-    return if (names.len == 0) "none" else names;
+/// The name of every kosmos in `sources`.
+fn zigKosmosNameList(comptime sources: []const ScriptTarget.KosmosSource) []const []const u8 {
+    comptime var found: []const []const u8 = &.{};
+    inline for (comptime kosmos_call.zigKosmoi(sources)) |entry| found = found ++ .{entry.name};
+    const final = found[0..found.len].*;
+    return &final;
 }
 
 /// The name and origin of every kosmos in `sources`.

@@ -7,6 +7,7 @@ const discovery = @import("discovery.zig");
 const kosmos_call = @import("kosmos_call.zig");
 const inspect = @import("inspect.zig");
 const interface = @import("kosm_interface");
+const kosmos_names = @import("kosm_names");
 
 /// A module the list looks into, filled in by the main that `addConfigProject` generates.
 pub const Source = struct {
@@ -30,10 +31,10 @@ pub const Script = struct {
     origin: []const u8,
 };
 
-/// Prints the listing for the process arguments (`[kosmos] [--config dir]`) and returns the exit
-/// status: 0, or 1 after printing what went wrong.
+/// Prints the listing for the process arguments (`[kosmos] [--config dir] [--script-kosmos name
+/// file]...`) and returns the exit status: 0, or 1 after printing what went wrong.
 pub fn list(init: std.process.Init, comptime sources: []const Source, comptime scripts: []const Script) !u8 {
-    const table = comptime collect(sources, scripts);
+    const declared = comptime collect(sources, scripts);
     const arena = init.arena.allocator();
     const arguments = try init.minimal.args.toSlice(arena);
     var stdout_buffer: [4096]u8 = undefined;
@@ -44,6 +45,16 @@ pub fn list(init: std.process.Init, comptime sources: []const Source, comptime s
         try stderr.interface.flush();
         return 1;
     }
+
+    const parsed = parseArguments(arena, arguments[1..]) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.UnexpectedArgument => {
+            try stderr.interface.writeAll("error: kosm list takes at most one kosmos, e.g. kosm list frost\n");
+            try stderr.interface.flush();
+            return 1;
+        },
+    };
+    const table: Table = .{ .kosmoi = try withScriptKosmoi(arena, declared.kosmoi, parsed.script_kosmoi), .packages = declared.packages };
 
     if (init.environ_map.get(interface.runner_variable) != null) {
         try table.writeBuildingOnKosmoi(&stdout.interface);
@@ -56,12 +67,12 @@ pub fn list(init: std.process.Init, comptime sources: []const Source, comptime s
         return 0;
     }
 
-    const status: u8 = if (filterArgument(arguments[1..])) |filter| status: {
-        if (filter) |name| {
+    const status: u8 = status: {
+        if (parsed.filter) |name| {
             table.writeKosmos(name, &stdout.interface) catch |err| switch (err) {
                 error.UnknownKosmos => {
-                    try stderr.interface.print("error: there is no kosmos '{s}'; kosmoi: ", .{name});
-                    try table.writeNames(&stderr.interface);
+                    try stderr.interface.writeAll("error: ");
+                    try kosmos_names.writeUnknown(&stderr.interface, name, try table.nameList(arena));
                     try stderr.interface.writeAll("\n");
                     break :status 1;
                 },
@@ -69,27 +80,56 @@ pub fn list(init: std.process.Init, comptime sources: []const Source, comptime s
             };
         } else try table.writeAll(&stdout.interface);
         break :status 0;
-    } else |_| status: {
-        try stderr.interface.writeAll("error: kosm list takes at most one kosmos, e.g. kosm list frost\n");
-        break :status 1;
     };
     try stdout.interface.flush();
     try stderr.interface.flush();
     return status;
 }
 
-/// The one kosmos to list, or null for everything; `--config dir` is the command line's.
-fn filterArgument(arguments: []const []const u8) error{UnexpectedArgument}!?[]const u8 {
-    var filter: ?[]const u8 = null;
+/// What the lister's arguments ask for.
+const Parsed = struct {
+    /// The one kosmos to list, or null for everything.
+    filter: ?[]const u8 = null,
+    /// The script kosmoi and variants the command line got from the runner of scripts.
+    script_kosmoi: []const Kosmos = &.{},
+};
+
+/// Reads `[kosmos] [--config dir] [--script-kosmos name file]...`; `--config dir` is the
+/// command line's.
+fn parseArguments(arena: std.mem.Allocator, arguments: []const []const u8) (error{UnexpectedArgument} || std.mem.Allocator.Error)!Parsed {
+    var parsed: Parsed = .{};
+    var script_kosmoi: std.ArrayList(Kosmos) = .empty;
     var index: usize = 0;
     while (index < arguments.len) : (index += 1) {
         if (std.mem.eql(u8, arguments[index], "--config")) {
             index += 1;
-        } else if (filter != null or std.mem.startsWith(u8, arguments[index], "-")) {
+        } else if (std.mem.eql(u8, arguments[index], interface.script_kosmos_flag)) {
+            if (index + 2 >= arguments.len) return error.UnexpectedArgument;
+            const name = arguments[index + 1];
+            try script_kosmoi.append(arena, .{ .name = name, .file = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len], .origin = arguments[index + 2], .apps = &.{} });
+            index += 2;
+        } else if (parsed.filter != null or std.mem.startsWith(u8, arguments[index], "-")) {
             return error.UnexpectedArgument;
-        } else filter = arguments[index];
+        } else parsed.filter = arguments[index];
     }
-    return filter;
+    parsed.script_kosmoi = script_kosmoi.items;
+    return parsed;
+}
+
+/// `kosmoi` with each of `script_kosmoi` it lacks after the last kosmos of the same file, or
+/// at the end when none is.
+fn withScriptKosmoi(arena: std.mem.Allocator, kosmoi: []const Kosmos, script_kosmoi: []const Kosmos) std.mem.Allocator.Error![]const Kosmos {
+    var merged: std.ArrayList(Kosmos) = try .initCapacity(arena, kosmoi.len + script_kosmoi.len);
+    merged.appendSliceAssumeCapacity(kosmoi);
+    next: for (script_kosmoi) |added| {
+        var position = merged.items.len;
+        for (merged.items, 0..) |kosmos, index| {
+            if (std.mem.eql(u8, kosmos.name, added.name)) continue :next;
+            if (std.mem.eql(u8, kosmos.origin, added.origin)) position = index + 1;
+        }
+        merged.insertAssumeCapacity(position, added);
+    }
+    return merged.items;
 }
 
 /// One kosmos function.
@@ -167,13 +207,11 @@ pub const Table = struct {
         }
     }
 
-    /// Every kosmos name, comma-separated, or "none".
-    pub fn writeNames(table: Table, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-        if (table.kosmoi.len == 0) return writer.writeAll("none");
-        for (table.kosmoi, 0..) |kosmos, index| {
-            if (index != 0) try writer.writeAll(", ");
-            try writer.writeAll(kosmos.name);
-        }
+    /// Every kosmos name, in order.
+    pub fn nameList(table: Table, arena: std.mem.Allocator) std.mem.Allocator.Error![]const []const u8 {
+        const found = try arena.alloc([]const u8, table.kosmoi.len);
+        for (table.kosmoi, found) |kosmos, *name| name.* = kosmos.name;
+        return found;
     }
 };
 
@@ -433,8 +471,28 @@ test "an empty config lists nothing, saying so" {
 }
 
 test "list takes one kosmos and skips --config" {
-    try testing.expectEqualStrings("frost", (try filterArgument(&.{ "--config", "/c", "frost" })).?);
-    try testing.expectEqual(null, try filterArgument(&.{}));
-    try testing.expectError(error.UnexpectedArgument, filterArgument(&.{ "a", "b" }));
-    try testing.expectError(error.UnexpectedArgument, filterArgument(&.{"--diff"}));
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try testing.expectEqualStrings("frost", (try parseArguments(arena.allocator(), &.{ "--config", "/c", "frost" })).filter.?);
+    try testing.expectEqual(null, (try parseArguments(arena.allocator(), &.{})).filter);
+    try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{ "a", "b" }));
+    try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{"--diff"}));
+    try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{ interface.script_kosmos_flag, "minimal.light" }));
+}
+
+test "script kosmoi from the command line follow the kosmoi of their file, each listed once" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const parsed = try parseArguments(arena.allocator(), &.{
+        interface.script_kosmos_flag, "minimal.light", "kosmoi/minimal.lua",
+        interface.script_kosmos_flag, "minimal",       "kosmoi/minimal.lua",
+        interface.script_kosmos_flag, "loose.dark",    "kosmoi/loose.lua",
+    });
+    const kosmoi: []const Kosmos = &.{
+        .{ .name = "minimal", .file = "minimal", .origin = "kosmoi/minimal.lua", .apps = &.{} },
+        .{ .name = "snow", .file = "snow", .origin = "kosmoi/snow.zig", .apps = &.{} },
+    };
+    const merged = try withScriptKosmoi(arena.allocator(), kosmoi, parsed.script_kosmoi);
+    const table: Table = .{ .kosmoi = merged, .packages = &.{} };
+    try testing.expectEqualStrings("minimal, minimal.light, snow, loose.dark", try std.mem.join(arena.allocator(), ", ", try table.nameList(arena.allocator())));
 }

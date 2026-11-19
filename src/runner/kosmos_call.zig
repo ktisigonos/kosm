@@ -126,6 +126,8 @@ fn buildKosmos(comptime Kosmos: type, kosmos: *Kosmos, comptime field: []const u
         error.Reported => {
             const file = if (inner.file.len == 0) "" else try std.fmt.allocPrint(arena, ", file {s}", .{inner.file});
             const app = if (inner.app.len == 0) "" else try std.fmt.allocPrint(arena, ", app {s}", .{inner.app});
+            // A name that is no kosmos fails naming none, so its message stands alone.
+            if (inner.kosmos.len == 0) return fail(diagnostics, "Params." ++ field ++ ": {s}", .{inner.message()});
             return fail(diagnostics, "Params." ++ field ++ ": kosmos '{s}'{s}{s}: {s}", .{ kosmos.name, app, file, inner.message() });
         },
         else => |other| return other,

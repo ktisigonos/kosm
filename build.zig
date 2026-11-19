@@ -85,6 +85,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // Kosmos names and the message for a misspelled one, the same in the command line and the runner.
+    const names_module = b.createModule(.{
+        .root_source_file = b.path("src/names.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     // The runner only sees core's public API, like any package.
     const runner_module = b.addModule("kosm_runner", .{
         .root_source_file = b.path("src/runner/root.zig"),
@@ -94,10 +100,11 @@ pub fn build(b: *std.Build) void {
             .{ .name = "kosm", .module = kosm_module },
             .{ .name = "kosm_current", .module = current_module },
             .{ .name = "kosm_interface", .module = interface_module },
+            .{ .name = "kosm_names", .module = names_module },
         },
     });
     // The command line only drives zig build and the runner; it imports nothing but kosm_current,
-    // kosm_interface and what kosm init writes.
+    // kosm_interface, kosm_names and what kosm init writes.
     const cli_module = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
@@ -105,6 +112,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "kosm_current", .module = current_module },
             .{ .name = "kosm_interface", .module = interface_module },
+            .{ .name = "kosm_names", .module = names_module },
             .{ .name = "kosm_package", .module = packageOptions(b, network_tests).createModule() },
         },
     });
@@ -124,7 +132,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     // The config tests build against the installed sources, which proves every manifest's `.paths`.
     test_step.dependOn(b.getInstallStep());
-    for ([_]*std.Build.Module{ kosm_module, interface_module, current_module, runner_module, build_helpers_module }) |module| {
+    for ([_]*std.Build.Module{ kosm_module, interface_module, names_module, current_module, runner_module, build_helpers_module }) |module| {
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
     }
     // The command line's tests build configs against the installed sources, which Zig's cache

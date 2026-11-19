@@ -8,11 +8,11 @@ const Context = @import("Context.zig");
 const Settings = @import("Settings.zig");
 const interface = @import("kosm_interface");
 const scripts = @import("scripts.zig");
+const known_kosmoi = @import("known_kosmoi.zig");
+const kosmos_names = @import("kosm_names");
 
 pub const Error = Context.RunError;
 
-/// What `addConfigProject` installs for `-Dlist`.
-const lister_path = "zig-out/bin/list";
 /// Where `addConfigProject` marks each kosmos `-Dprebuild=` compiled, with an empty file.
 const markers_path = "zig-out/prebuilt";
 /// Where the kosmoi `Selection.all` means are declared, as the lister spells origins.
@@ -21,16 +21,9 @@ const kosmoi_directory = "kosmoi/";
 /// Lists the config's kosmoi, compiles those `selection` picks (`kosm.zon`'s choice when null),
 /// and names each one that does not compile after the others are built.
 pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
-    const listed = try listKosmoi(context);
     const chosen = selection orelse try loadSelection(context);
-    const picked_names = switch (try select(context.arena, listed, chosen)) {
-        .names => |names| names,
-        .unknown => |name| return context.fail("{s} names '{s}', but there is no such kosmos; kosmoi: {s}", .{
-            if (selection == null) try std.Io.Dir.path.join(context.arena, &.{ context.config, Settings.file_name }) else "kosm build",
-            name,
-            try joinNames(context.arena, listed),
-        }),
-    };
+    const subject = if (selection == null) try std.Io.Dir.path.join(context.arena, &.{ context.config, Settings.file_name }) else "";
+    const picked_names = try pick(context, chosen, subject);
     const picked = try splitScripts(context, picked_names);
     const names = picked.zig;
     // A Zig kosmos building on another is applied by the runner of scripts, so it is built too.
@@ -95,13 +88,23 @@ fn buildScripts(context: Context) Error!bool {
     return true;
 }
 
-/// One kosmos or variant the lister reports.
-const Listed = struct {
-    /// As `kosm apply` spells it: "frost" or "frost.iced".
-    name: []const u8,
-    /// Where it is declared: "kosmoi/frost.zig", "apps/my_bar/" or "package kosm_probe".
-    origin: []const u8,
-};
+const Listed = known_kosmoi.Listed;
+
+/// The kosmoi `selection` picks, in listing order. Script variants are listed only when a name
+/// is none of the other kosmoi; a name that is none at all fails naming the closest, after
+/// `subject` when it is not empty.
+fn pick(context: Context, selection: Settings.Selection, subject: []const u8) Error![]const []const u8 {
+    var listed = try known_kosmoi.list(context, .without_script_variants);
+    var selected = try select(context.arena, listed, selection);
+    if (selected == .unknown and try scripts.any(context)) {
+        listed = try known_kosmoi.list(context, .with_script_variants);
+        selected = try select(context.arena, listed, selection);
+    }
+    return switch (selected) {
+        .names => |names| names,
+        .unknown => |name| context.fail("{s}{s}{s}", .{ subject, if (subject.len == 0) "" else ": ", try kosmos_names.unknownMessage(context.arena, name, try known_kosmoi.nameList(context.arena, listed)) }),
+    };
+}
 
 /// What a selection picks: the kosmoi to build, in listing order, or the first name it gives
 /// that matches no kosmos.
@@ -117,14 +120,12 @@ fn select(arena: std.mem.Allocator, listed: []const Listed, selection: Settings.
         .only, .except => |given| given,
     };
     for (given) |name| {
-        for (listed) |kosmos| {
-            if (matches(name, kosmos.name)) break;
-        } else return .{ .unknown = name };
+        if (!known_kosmoi.matches(name, listed, .or_holder)) return .{ .unknown = name };
     }
     var names: std.ArrayList([]const u8) = .empty;
     for (listed) |kosmos| {
         const named = for (given) |name| {
-            if (matches(name, kosmos.name)) break true;
+            if (kosmos_names.picks(name, kosmos.name)) break true;
         } else false;
         const picked = switch (selection) {
             .all => isInKosmoiDirectory(kosmos),
@@ -134,13 +135,6 @@ fn select(arena: std.mem.Allocator, listed: []const Listed, selection: Settings.
         if (picked) try names.append(arena, kosmos.name);
     }
     return .{ .names = names.items };
-}
-
-/// Whether `name` picks kosmos `kosmos_name`: a file ("frost") or group ("frost.cold") picks
-/// it and every kosmos in it, a variant ("frost.iced") only itself, as `kosm list` matches.
-fn matches(name: []const u8, kosmos_name: []const u8) bool {
-    if (!std.mem.startsWith(u8, kosmos_name, name)) return false;
-    return kosmos_name.len == name.len or kosmos_name[name.len] == '.';
 }
 
 fn isInKosmoiDirectory(kosmos: Listed) bool {
@@ -162,30 +156,14 @@ fn loadSelection(context: Context) Error!Settings.Selection {
     return settings.build;
 }
 
-/// Every kosmos and variant in the config, from the config's listing program.
-fn listKosmoi(context: Context) Error![]const Listed {
-    if (!try context.runBuild(&.{ "build", "-Dlist" }))
-        return context.fail("the config project {s} does not build, so its kosmoi cannot be listed", .{context.config});
-    var environ: std.process.Environ.Map = if (context.environ_map) |map| try map.clone(context.arena) else .init(context.arena);
-    try environ.put(interface.completions_variable, "1");
-    var listing = context;
-    listing.environ_map = &environ;
-    const result = try listing.run(&.{try std.Io.Dir.path.join(context.arena, &.{ context.config, lister_path })});
-    if (!result.term.success()) {
-        try context.stderr.writeAll(result.stderr);
-        return context.fail("cannot list the kosmoi of {s}", .{context.config});
-    }
-    return parseListing(context.arena, result.stdout);
-}
-
 /// Whether any of the Zig kosmoi `names` builds on another kosmos, as the lister built by
-/// `listKosmoi` reports.
+/// `known_kosmoi.list` reports.
 fn anyBuildsOnKosmoi(context: Context, names: []const []const u8) Error!bool {
     var environ: std.process.Environ.Map = if (context.environ_map) |map| try map.clone(context.arena) else .init(context.arena);
     try environ.put(interface.runner_variable, "1");
     var asking = context;
     asking.environ_map = &environ;
-    const result = try asking.run(&.{try std.Io.Dir.path.join(context.arena, &.{ context.config, lister_path })});
+    const result = try asking.run(&.{try std.Io.Dir.path.join(context.arena, &.{ context.config, known_kosmoi.lister_path })});
     if (!result.term.success()) {
         try context.stderr.writeAll(result.stderr);
         return context.fail("cannot ask the lister of {s} which kosmoi build on others", .{context.config});
@@ -197,25 +175,6 @@ fn anyBuildsOnKosmoi(context: Context, names: []const []const u8) Error!bool {
         }
     }
     return false;
-}
-
-/// The lister's completion lines, `name<TAB>origin` each.
-fn parseListing(arena: std.mem.Allocator, listing: []const u8) std.mem.Allocator.Error![]const Listed {
-    var listed: std.ArrayList(Listed) = .empty;
-    var lines = std.mem.tokenizeScalar(u8, listing, '\n');
-    while (lines.next()) |line| {
-        var fields = std.mem.splitScalar(u8, line, '\t');
-        try listed.append(arena, .{ .name = fields.first(), .origin = fields.rest() });
-    }
-    return listed.items;
-}
-
-/// The names of `listed`, comma-separated, or "none".
-fn joinNames(arena: std.mem.Allocator, listed: []const Listed) std.mem.Allocator.Error![]const u8 {
-    if (listed.len == 0) return "none";
-    var names: std.ArrayList([]const u8) = .empty;
-    for (listed) |kosmos| try names.append(arena, kosmos.name);
-    return std.mem.join(arena, ", ", names.items);
 }
 
 /// Deletes the markers, so none is left from an earlier build.
@@ -310,7 +269,14 @@ test "build compiles every kosmos and variant for apply, and names the one that 
     stderr.clearRetainingCapacity();
     try testing.expectError(error.Failed, build(context, null));
     try testing.expect(std.mem.find(u8, stdout.written(), "building") == null);
-    try testing.expect(std.mem.endsWith(u8, stderr.written(), "kosm.zon names 'frost.nope', but there is no such kosmos; kosmoi: broken, frost, frost.iced\n"));
+    try testing.expect(std.mem.endsWith(u8, stderr.written(), "kosm.zon: there is no kosmos 'frost.nope'; kosmoi of frost: frost, frost.iced\n"));
+
+    // A misspelled name on the command line fails naming the closest, building nothing.
+    stdout.clearRetainingCapacity();
+    stderr.clearRetainingCapacity();
+    try testing.expectError(error.Failed, build(context, .{ .only = &.{"frost.icde"} }));
+    try testing.expect(std.mem.find(u8, stdout.written(), "building") == null);
+    try testing.expectEqualStrings("error: there is no kosmos 'frost.icde'; did you mean 'frost.iced'?\n", stderr.written());
 
     // The command line replaces kosm.zon's choice, so its unknown name goes unread.
     stdout.clearRetainingCapacity();

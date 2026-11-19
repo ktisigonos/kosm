@@ -20,6 +20,7 @@ const complete_command = @import("complete.zig");
 const completions = @import("completions.zig");
 const new_command = @import("new.zig");
 const scripts = @import("scripts.zig");
+const known_kosmoi = @import("known_kosmoi.zig");
 const source_command = @import("source.zig");
 const relay_command = @import("relay.zig");
 const Sources = @import("Sources.zig");
@@ -214,6 +215,12 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
         if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff, stderr)) return 1;
         break :script try scriptRunnerArguments(arena, config, command);
     } else zig: {
+        // The runner of scripts checks a script's name itself; a Zig kosmos' is checked here,
+        // where a misspelling would otherwise fail compiling.
+        known_kosmoi.check(context, command.kosmos, .kosmos, "") catch |err| switch (err) {
+            error.Failed => return 1,
+            else => |other| return other,
+        };
         if (!try build(context, command.kosmos)) return 1;
         if (!try refreshManifest(init, builds, config, command.kosmos, command.diff, stderr)) return 1;
         const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });

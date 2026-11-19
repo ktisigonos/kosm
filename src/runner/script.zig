@@ -425,6 +425,68 @@ fn assigned(result: kosm.assignment.Error!void) Error!void {
     };
 }
 
+/// Every script kosmos in the config, as `kosm apply` spells it, followed by each variant it
+/// gives (`minimal`, `minimal.light`), each with its file as origin, in no particular order of
+/// files. Listing variants runs no script.
+pub fn listAll(context: Context) Error![]const KosmosName {
+    var found: std.ArrayList(KosmosName) = .empty;
+    var top = try openKosmoiFolder(context, directory) orelse return found.items;
+    defer top.close(context.io);
+    var iterator = top.iterate();
+    while (iterator.next(context.io) catch |err| return fail(context, "cannot read {s}/: {s}", .{ directory, @errorName(err) })) |entry| {
+        if (entry.kind == .directory and !std.mem.startsWith(u8, entry.name, ".")) {
+            try listFolder(context, &found, try context.arena.dupe(u8, entry.name));
+        } else if (try scriptStem(context, entry)) |stem| {
+            try appendScript(context, &found, stem, try context.arena.print("{s}/{s}", .{ directory, entry.name }));
+        }
+    }
+    return found.items;
+}
+
+/// The scripts of kosmos folder `name` into `found`: its root as `name`, the others as variants.
+fn listFolder(context: Context, found: *std.ArrayList(KosmosName), name: []const u8) Error!void {
+    const folder = try context.arena.print("{s}/{s}", .{ directory, name });
+    var dir = try openKosmoiFolder(context, folder) orelse return;
+    defer dir.close(context.io);
+    var iterator = dir.iterate();
+    while (iterator.next(context.io) catch |err| return fail(context, "cannot read {s}/: {s}", .{ folder, @errorName(err) })) |entry| {
+        const stem = try scriptStem(context, entry) orelse continue;
+        const kosmos = if (std.mem.eql(u8, stem, root_name)) name else try context.arena.print("{s}.{s}", .{ name, stem });
+        try appendScript(context, found, kosmos, try context.arena.print("{s}/{s}", .{ folder, entry.name }));
+    }
+}
+
+/// The config's folder `folder` opened for iterating, or null when it does not exist.
+fn openKosmoiFolder(context: Context, folder: []const u8) Error!?std.Io.Dir {
+    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, folder });
+    return std.Io.Dir.cwd().openDir(context.io, path, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir => null,
+        else => fail(context, "cannot read {s}/: {s}", .{ folder, @errorName(err) }),
+    };
+}
+
+/// The name of the script `entry` before its extension, or null when it is no script.
+fn scriptStem(context: Context, entry: std.Io.Dir.Entry) std.mem.Allocator.Error!?[]const u8 {
+    if (entry.kind != .file and entry.kind != .sym_link) return null;
+    const dot = std.mem.findScalar(u8, entry.name, '.') orelse return null;
+    if (dot == 0 or !isScriptOf(entry.name, entry.name[0..dot])) return null;
+    return try context.arena.dupe(u8, entry.name[0..dot]);
+}
+
+/// Appends script kosmos `name` at `path` and the variants its frontend lists.
+fn appendScript(context: Context, found: *std.ArrayList(KosmosName), name: []const u8, path: []const u8) Error!void {
+    try found.append(context.arena, .{ .name = name, .origin = path });
+    const file_name = std.Io.Dir.path.basename(path);
+    const frontend = try frontendFor(context, path, file_name[std.mem.findScalar(u8, file_name, '.').?..]);
+    const list = frontend.variants orelse return;
+    const source = try readScript(context, path);
+    var frontend_context: kosm.Frontend.Context = .{ .arena = context.arena, .path = path, .library = context.library };
+    var listed: kosm.Frontend.Error![]const []const u8 = undefined;
+    try runOnKosmosStack(context, path, runVariants, .{ list, &frontend_context, source, &listed });
+    const given = listed catch |err| return frontendFailure(context, path, &frontend_context, err);
+    for (given) |variant| try found.append(context.arena, .{ .name = try context.arena.print("{s}.{s}", .{ name, variant }), .origin = path });
+}
+
 fn fail(context: Context, comptime format: []const u8, arguments: anytype) Error {
     context.diagnostics.set("", "", format, arguments);
     return error.Reported;
@@ -767,4 +829,31 @@ test "a kosmos without a base naming an app but no theme fails naming the app" {
     const unknown = try resolve(fixture.context(), "unknown");
     try testing.expectError(error.Reported, standalone(TestTree, &.{ test_app_module, test_app_module }, fixture.arena.allocator(), unknown.scripts, &fixture.diagnostics));
     try testing.expectEqualStrings("kosmoi/unknown.kosmos: the kosmos: no field 'nope'; its fields are kitty, my_bar", fixture.diagnostics.message());
+}
+
+test "every script and the variants it gives are listed, with their files" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{
+        .{ "frost/root.zig", "" },
+        .{ "frost/build.zig.zon", "" },
+        .{ "frost/nord.kosmos", "base frost\n" },
+        .{ "bare/root.kosmos", "variants\ngives light\ngives dark.soft\n" },
+        .{ "mine.kosmos", "base frost\n" },
+        .{ "frost.zig", "" },
+        .{ ".hidden.kosmos", "" },
+    });
+    defer fixture.deinit();
+
+    const listed = try listAll(fixture.context());
+    var lines: std.ArrayList([]const u8) = .empty;
+    for (listed) |kosmos| try lines.append(fixture.arena.allocator(), try fixture.arena.allocator().print("{s} {s}", .{ kosmos.name, kosmos.origin }));
+    std.mem.sort([]const u8, lines.items, {}, lessThan);
+    try testing.expectEqualStrings(
+        "bare kosmoi/bare/root.kosmos\nbare.dark.soft kosmoi/bare/root.kosmos\nbare.light kosmoi/bare/root.kosmos\nfrost.nord kosmoi/frost/nord.kosmos\nmine kosmoi/mine.kosmos",
+        try std.mem.join(fixture.arena.allocator(), "\n", lines.items),
+    );
+}
+
+fn lessThan(_: void, left: []const u8, right: []const u8) bool {
+    return std.mem.lessThan(u8, left, right);
 }

@@ -242,6 +242,7 @@ const test_frontend =
     \\    .name = "lines",
     \\    .extensions = &.{".kosmos"},
     \\    .load = load,
+    \\    .variants = variants,
     \\    .complete = complete,
     \\    .editor_file = .{ .path = ".lines.json", .contents = "{}\n" },
     \\};
@@ -252,6 +253,15 @@ const test_frontend =
     \\    const theme = completion.find(completion.theme).?;
     \\    text.writer.print("theme {s}: {s}\n", .{ theme.name, theme.fields[0].doc.? }) catch return error.OutOfMemory;
     \\    return arena.dupe(kosm.Frontend.Completion.File, &.{.{ .path = "types/all.txt", .contents = text.written() }});
+    \\}
+    \\
+    \\fn variants(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error![]const []const u8 {
+    \\    var given: std.ArrayList([]const u8) = .empty;
+    \\    var lines = std.mem.splitScalar(u8, source, '\n');
+    \\    while (lines.next()) |line| {
+    \\        if (std.mem.startsWith(u8, line, "gives ")) try given.append(context.arena, line["gives ".len..]);
+    \\    }
+    \\    return given.items;
     \\}
     \\
     \\fn load(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.Script {
@@ -266,6 +276,7 @@ const test_frontend =
     \\        if (line.len == 0) continue;
     \\        const space = std.mem.findScalar(u8, line, ' ') orelse return context.fail("{s}: expected a keyword and a value", .{try context.at(number)});
     \\        const rest = line[space + 1 ..];
+    \\        if (std.mem.eql(u8, line[0..space], "gives")) continue;
     \\        if (std.mem.eql(u8, line[0..space], "base")) {
     \\            script.base = rest;
     \\            continue;
@@ -399,7 +410,8 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/hail/root.kosmos", .data = "base snow\nset kitty.fonts.font_size=30\n" });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/hail/root.zig", .data = test_hail });
     try tmp.dir.createDirPath(testing.io, "project/kosmoi/bare");
-    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/bare/root.kosmos", .data = "base frost\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/bare/root.kosmos", .data = "base frost\ngives light\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/typo.kosmos", .data = "base frots\n" });
 
     try testing.expect(try isScript(context, "on"));
     try testing.expect(!try isScript(context, "frost"));
@@ -436,7 +448,12 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try testing.expectEqualStrings("error: kosmos 'snow.circle': Params.on: kosmos 'snow.thaw': the kosmoi build on each other in a circle: snow.circle -> snow.thaw -> snow.circle\n", try testDiff(context, "snow.circle"));
     try testing.expect(std.mem.startsWith(u8, try testDiffWith(context, "snow.melted", &.{ "--on", "frost" }), "error: kosmos 'snow.melted': Params.on: kosmos 'frost': 'frost' gives a "));
     try testing.expectEqualStrings("error: kosmos 'snow.melted': Params.on: kosmos 'alone': kosmoi/alone.kosmos builds on no kosmos, so its tree is not a root.Tree; build it on a kosmos giving one\n", try testDiffWith(context, "snow.melted", &.{ "--on", "alone" }));
-    try testing.expect(std.mem.startsWith(u8, try testDiffWith(context, "snow.melted", &.{ "--on", "missing" }), "error: kosmos 'snow.melted': Params.on: kosmos 'missing': there is no such kosmos; Zig kosmoi: "));
+    try testing.expectEqualStrings("error: kosmos 'snow.melted': Params.on: there is no kosmos 'alon'; did you mean 'alone'?\n", try testDiffWith(context, "snow.melted", &.{ "--on", "alon" }));
+    // A misspelled script, script variant or base fails in one line naming the closest kosmoi.
+    try testing.expectEqualStrings("error: there is no kosmos 'hial'; did you mean 'hail'?\n", try testDiff(context, "hial"));
+    try testing.expectEqualStrings("error: there is no kosmos 'bare.lihgt'; did you mean 'bare.light'?\n", try testDiff(context, "bare.lihgt"));
+    try testing.expect(std.mem.find(u8, try testDiff(context, "bare.light"), "+font_size 10\n") != null);
+    try testing.expectEqualStrings("error: kosmos 'typo': kosmoi/typo.kosmos: there is no kosmos 'frots'; did you mean 'frost'?\n", try testDiff(context, "typo"));
     // Its own runner sends it to the runner of scripts.
     try testing.expect(try context.runBuild(&.{ "build", "-Dkosmos=snow.melted" }));
     const kosmos_runner = try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" });
@@ -470,7 +487,19 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/snow/nord.kosmos\n") != null);
     try testing.expect(std.mem.find(u8, stdout.written(), "  hail ") != null);
     try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/hail/root.kosmos\n  hail.iced ") != null);
-    try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/bare/root.kosmos\n") != null);
+    try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/bare/root.kosmos\n  bare.light ") != null);
+    // Before anything is built for it, a misspelled kosmos fails naming the closest, the
+    // variants scripts give included.
+    stderr.clearRetainingCapacity();
+    try testing.expectError(error.Failed, @import("known_kosmoi.zig").check(context, "snow.melte", .kosmos, ""));
+    try testing.expectEqualStrings("error: there is no kosmos 'snow.melte'; did you mean 'snow.melted'?\n", stderr.written());
+    try @import("known_kosmoi.zig").check(context, "bare.light", .kosmos, "");
+    stderr.clearRetainingCapacity();
+    try testing.expectError(error.Failed, @import("known_kosmoi.zig").check(context, "bare.ligth", .kosmos, ""));
+    try testing.expectEqualStrings("error: there is no kosmos 'bare.ligth'; did you mean 'bare.light'?\n", stderr.written());
+    stderr.clearRetainingCapacity();
+    try testing.expectError(error.Failed, @import("list.zig").list(context, "bare.ligth"));
+    try testing.expectEqualStrings("error: there is no kosmos 'bare.ligth'; did you mean 'bare.light'?\n", stderr.written());
     stdout.clearRetainingCapacity();
     try @import("build_kosmoi.zig").build(context, .{ .only = &.{"on"} });
     try testing.expectEqualStrings("building the script runner\nbuilt the script runner\n", stdout.written());

@@ -8,6 +8,7 @@ const Packages = @import("Packages.zig");
 const manifest = @import("manifest.zig");
 const interface = @import("kosm_interface");
 const scripts = @import("scripts.zig");
+const known_kosmoi = @import("known_kosmoi.zig");
 
 pub const Error = std.mem.Allocator.Error || std.Io.Writer.Error;
 
@@ -55,9 +56,8 @@ const build_flags = [_]Candidate{
     .{ .text = "--all", .description = "build every kosmos in kosmoi/, whatever kosm.zon says" },
 };
 
-/// What `addConfigProject` installs for `-Dkosmos=...` and `-Dlist`.
+/// What `addConfigProject` installs for `-Dkosmos=...`.
 const runner_path = "zig-out/bin/kosmos";
-const lister_path = "zig-out/bin/list";
 
 /// Writes the candidates for the last of `words`: the words typed after `kosm`, the last one
 /// being the word under the cursor, which may be empty.
@@ -128,10 +128,18 @@ fn writeAll(writer: *std.Io.Writer, candidates: []const Candidate) Error!void {
     for (candidates) |candidate| try writer.print("{s}\t{s}\n", .{ candidate.text, candidate.description });
 }
 
-/// Every kosmos and variant, as the config's lister names them.
+/// Every kosmos and variant, as the config's lister names them, with the variants scripts give.
 fn writeKosmoi(context: Context) Error!void {
-    const listed = try runForCompletions(context, "-Dlist", lister_path) orelse return;
-    try context.stdout.writeAll(listed);
+    var quiet = context;
+    var discarded: std.Io.Writer.Discarding = .init(&.{});
+    quiet.stderr = &discarded.writer;
+    quiet.stdout = &discarded.writer;
+    quiet.show_build_output = false;
+    const listed = known_kosmoi.list(quiet, .with_script_variants) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return,
+    };
+    for (listed) |kosmos| try context.stdout.print("{s}\t{s}\n", .{ kosmos.name, kosmos.origin });
 }
 
 const KosmosCandidates = enum { parameters, paths };

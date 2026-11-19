@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const Context = @import("Context.zig");
+const known_kosmoi = @import("known_kosmoi.zig");
 
 pub const Error = Context.RunError;
 
@@ -14,6 +15,7 @@ const blocks_argument = "--blocks";
 /// Prints every palette the file of `kosmos` declares; a variant (`frost.iced`,
 /// `frost.cold.deep`) shows its file's. With `blocks`, each color is also drawn as a truecolor block.
 pub fn colors(context: Context, kosmos: []const u8, blocks: bool) Error!void {
+    try known_kosmoi.check(context, kosmos, .or_holder, "");
     const build = try context.runZig(&.{ "build", try context.arena.print("-Dcolors={s}", .{kosmos}) });
     if (!build.term.success()) {
         try context.stderr.writeAll(build.stderr);
