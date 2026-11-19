@@ -124,11 +124,20 @@ fn writeFrontendCompletions(init: std.process.Init, comptime target: ScriptTarge
     }
     var sources: Sources = .{ .arena = arena, .io = init.io, .modules = modules.items };
     const completion = try describeScriptTypes(arena, target, &sources);
+    // A frontend written through a frontend writes its completion through the host.
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = arena, .io = init.io, .config = target.config, .library = .{} } };
+    hosted.start();
+    defer hosted.stop();
     inline for (comptime discovery.frontends(target.adapter_sources)) |declared| {
         const frontend = declared.frontend;
         if (frontend.complete) |complete| {
             const folder = try std.Io.Dir.path.join(arena, &.{ arguments[0], frontend.name });
-            for (try complete(arena, completion)) |file| try writeOutput(init.io, arena, folder, file, diagnostics);
+            var context: kosm.Frontend.Context = .{ .arena = arena, .path = frontend.name };
+            const written = complete(&context, completion) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.InvalidScript => return fail(diagnostics, "the {s} frontend cannot write its completion: {s}", .{ frontend.name, context.message orelse "it did not say why" }),
+            };
+            for (written) |file| try writeOutput(init.io, arena, folder, file, diagnostics);
         }
         if (frontend.editor_file) |file| try writeOutput(init.io, arena, arguments[1], file, diagnostics);
     }
@@ -137,6 +146,9 @@ fn writeFrontendCompletions(init: std.process.Init, comptime target: ScriptTarge
 /// Prints every script kosmos and each variant it gives, `name<TAB>file` per line.
 fn writeScriptKosmoi(init: std.process.Init, comptime target: ScriptTarget, streams: Streams, diagnostics: *kosm.Diagnostics) !void {
     var runtime = try scriptRuntime(init, target, &.{}, streams.stderr, diagnostics);
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = runtime.arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) } };
+    hosted.start();
+    defer hosted.stop();
     for (try script.listAll(KosmosBuilder(target).scriptContext(&runtime, diagnostics))) |kosmos| {
         try streams.stdout.print("{s}\t{s}\n", .{ kosmos.name, kosmos.origin });
     }
@@ -204,11 +216,22 @@ fn functionPath(comptime declared: discovery.Declared) []const []const u8 {
 
 /// Writes `file` below `folder`, creating the folders it needs.
 fn writeOutput(io: std.Io, arena: std.mem.Allocator, folder: []const u8, file: kosm.Frontend.Completion.File, diagnostics: *kosm.Diagnostics) !void {
+    if (!staysInside(file.path)) return fail(diagnostics, "a frontend gave the file '{s}' to write; it is a path inside its folder, without '..'", .{file.path});
     const path = try std.Io.Dir.path.join(arena, &.{ folder, file.path });
     if (std.Io.Dir.path.dirname(path)) |directory| std.Io.Dir.cwd().createDirPath(io, directory) catch |err|
         return fail(diagnostics, "cannot create {s}: {s}", .{ directory, @errorName(err) });
     std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = file.contents }) catch |err|
         return fail(diagnostics, "cannot write {s}: {s}", .{ path, @errorName(err) });
+}
+
+/// Whether `path` is relative and never climbs out of the folder it is relative to.
+fn staysInside(path: []const u8) bool {
+    if (path.len == 0 or std.Io.Dir.path.isAbsolute(path)) return false;
+    var segments = std.mem.tokenizeAny(u8, path, "/\\");
+    while (segments.next()) |segment| {
+        if (std.mem.eql(u8, segment, "..")) return false;
+    }
+    return true;
 }
 
 /// The chain of script kosmos `name`, read through the frontends. Scripts' calls run with
@@ -230,6 +253,26 @@ fn ScriptLibrary(comptime target: ScriptTarget) type {
 /// The host apps written through a frontend run through.
 fn ScriptHost(comptime target: ScriptTarget) type {
     return hosting.Hosting(comptime discovery.frontends(target.adapter_sources), ScriptLibrary(target), comptime hosting.handledTypes(target.apps));
+}
+
+/// The host scripts' functions run through, from `start` until `stop`; it must not move
+/// meanwhile.
+fn ScriptHosting(comptime target: ScriptTarget) type {
+    return struct {
+        const Hosting = @This();
+
+        state: ScriptHost(target).State,
+        host: kosm.Frontend.Host = undefined,
+
+        fn start(hosted: *Hosting) void {
+            hosted.host = ScriptHost(target).host(&hosted.state);
+            kosm.Frontend.Host.install(&hosted.host);
+        }
+
+        fn stop(_: *Hosting) void {
+            kosm.Frontend.Host.install(null);
+        }
+    };
 }
 
 /// What scripts' calls need, with images cached in the config `raw_arguments` name, if any.
@@ -274,6 +317,9 @@ fn withType(comptime found: []const type, comptime T: type) []const type {
 fn writeScriptCompletions(init: std.process.Init, comptime target: ScriptTarget, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const stdout = streams.stdout;
     var runtime = try scriptRuntime(init, target, &.{}, streams.stderr, diagnostics);
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = runtime.arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) } };
+    hosted.start();
+    defer hosted.stop();
     // A Zig kosmos sent here (one in a script kosmos' folder) completes as its own runner would.
     if (try script.locate(KosmosBuilder(target).scriptContext(&runtime, diagnostics), diagnostics.kosmos) == null) {
         inline for (comptime kosmos_call.zigKosmoi(target.kosmoi)) |entry| {
@@ -417,11 +463,9 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var runtime = try scriptRuntime(init, target, raw_arguments, streams.stderr, diagnostics);
     runtime.kosmoi = KosmosBuilder(target).of(&runtime);
-    const Host = ScriptHost(target);
-    var host_state: Host.State = .{ .arena = arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) };
-    const host = Host.host(&host_state);
-    kosm.Frontend.Host.install(&host);
-    defer kosm.Frontend.Host.install(null);
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) } };
+    hosted.start();
+    defer hosted.stop();
     try checkKnown(target, &runtime, diagnostics.kosmos, diagnostics);
     // A Zig kosmos building on another, or in the folder of a script kosmos, is applied here,
     // where every kosmos can be built; locating fails when a script gives its name too.
@@ -770,6 +814,7 @@ test {
     std.testing.refAllDecls(Arguments);
     std.testing.refAllDecls(@import("app_modules.zig"));
     std.testing.refAllDecls(@import("adapter_modules.zig"));
+    std.testing.refAllDecls(@import("frontend_modules.zig"));
     std.testing.refAllDecls(hosting);
     std.testing.refAllDecls(set);
     std.testing.refAllDecls(discovery);
@@ -1131,4 +1176,13 @@ test "a kosmos failing through kosm.fail is reported with its own message, other
     try testing.expectError(error.Reported, callScriptKosmos(arena.allocator(), folder, &.{}, &named));
     try named.write(&output.writer);
     try testing.expectEqualStrings("error: kosmos 'personal': the kosmos function failed: Broken\n", output.written());
+}
+
+test "a file a frontend writes stays inside its folder" {
+    try std.testing.expect(staysInside("types/all.lua"));
+    try std.testing.expect(staysInside(".luarc.json"));
+    try std.testing.expect(!staysInside("../../.bashrc"));
+    try std.testing.expect(!staysInside("types/../../x"));
+    try std.testing.expect(!staysInside("/etc/passwd"));
+    try std.testing.expect(!staysInside(""));
 }

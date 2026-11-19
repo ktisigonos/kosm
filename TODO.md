@@ -17,14 +17,9 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-Steps 21j2-21j5: adapters, frontends and the other parts of kosm written through a frontend, Lua first, the way apps already are. Kosm stays language agnostic: what one language can write, every frontend can. Decided with the human:
+Steps 21j4-21j6: the other parts of kosm written through a frontend, Lua first, the way apps, adapters and frontends already are. Kosm stays language agnostic: what one language can write, every frontend can. Decided with the human:
 - Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
 - They keep every rule of their kind: Lua adapters know no app.
-
-- **21j3. Frontends written in Lua** `PLAN FIRST`
-  - Do: a frontend (reading scripts into loose values, listing variants, writing completion) can be written in Lua, so a language's support needs no Zig. Propose a small second language to prove it on.
-  - Do: kosm_lua's completion spells names Lua reserves (`end`, `function`) as `end_` for a parameter and `["end"]` for a field, after checking LuaLS reads the latter.
-  - Done when: a kosmos in that language, through a frontend written in Lua, applies with `--diff`.
 
 - **21j4. Modifiers, palette styles and variations written in Lua** `PLAN FIRST`
   - Do: color modifiers, image palette styles and variation families can be written in Lua and used from any kosmos or app, Zig or Lua.
@@ -33,6 +28,10 @@ Steps 21j2-21j5: adapters, frontends and the other parts of kosm written through
 - **21j5. Lua packages** `PLAN FIRST`
   - Do: `kosm add` of a repository holding `root.lua` and a `build.zig.zon` installs a package of anything 21j1-21j4 allow, written in Lua; Lua packages depend on Zig packages and Zig packages on Lua ones. `kosm new package` scaffolds the manifest `zig fetch` needs.
   - Done when: a scratch Lua package in its own repository is added to a scratch copy of the config and used from a Lua kosmos and a Zig kosmos.
+
+- **21j6. Apps and adapters in a language whose frontend is a script** `PLAN FIRST` (later)
+  - Do: a frontend written through a frontend also writes apps and adapters in its own language (`declare`, `declare_adapter`, `call`), which needs the build to generate the frontend's module before the modules of the apps and adapters written through it.
+  - Done when: a scratch app in such a language, through a frontend written in Lua, applies with `--diff`.
 
 - **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
   - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.

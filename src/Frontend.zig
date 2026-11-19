@@ -24,8 +24,9 @@ load: *const fn (context: *Context, source: []const u8) Error!Script,
 variants: ?*const fn (context: *Context, source: []const u8) Error![]const []const u8 = null,
 /// Writes the files an editor completes scripts from, out of every type a script may set;
 /// kosm puts them in the config's `zig-out/completions/<name>/` whenever it builds the runner
-/// of scripts. Null for a frontend giving no completion.
-complete: ?*const fn (arena: std.mem.Allocator, completion: Completion) std.mem.Allocator.Error![]const Completion.File = null,
+/// of scripts. Allocate in `context.arena`; `context.path` is the frontend's name. Null for a
+/// frontend giving no completion.
+complete: ?*const fn (context: *Context, completion: Completion) Error![]const Completion.File = null,
 /// The file in the config's root that points the editor at those files (".luarc.json"). Kosm
 /// creates it only where it is missing, so a user's edits to it stay. Null for none.
 editor_file: ?Completion.File = null,
@@ -39,6 +40,11 @@ declare: ?*const fn (context: *Context, source: []const u8) Error!Declaration = 
 /// it while building the config, to write the Zig module the adapter is used through.
 /// `context.library` is empty there. Null for a frontend writing no adapters.
 declare_adapter: ?*const fn (context: *Context, source: []const u8) Error!AdapterDeclaration = null,
+/// Reads what a frontend's script declares (its name, extensions, editor file and the functions
+/// it gives) without calling any of its functions; kosm calls it while building the config, to
+/// write the Zig module the frontend is used through. `context.library` is empty there. Null
+/// for a frontend writing no frontends.
+declare_frontend: ?*const fn (context: *Context, source: []const u8) Error!FrontendDeclaration = null,
 /// Calls function `function` of the app's or adapter's script at `context.path`, whose text is
 /// `source`, with `arguments`, and returns what it returns: a table as a loose table, a Zig
 /// value as its handle. The script runs once, on the first call naming it, in the frontend's one
@@ -58,6 +64,12 @@ pub const Declaration = @import("Frontend/Declaration.zig");
 
 /// What an adapter's script declares, for `declare_adapter`.
 pub const AdapterDeclaration = @import("Frontend/AdapterDeclaration.zig");
+
+/// What a frontend's script declares, for `declare_frontend`.
+pub const FrontendDeclaration = @import("Frontend/FrontendDeclaration.zig");
+
+/// A frontend written through a frontend, which the Zig module kosm generates for it runs.
+pub const ScriptFrontend = @import("Frontend/ScriptFrontend.zig");
 
 /// An app written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptApp = @import("Frontend/ScriptApp.zig");
@@ -93,7 +105,7 @@ pub const Handle = @import("Frontend/Handle.zig");
 /// What a function or handle gets from its frontend when a script uses it.
 pub const Call = @import("Frontend/Call.zig");
 
-/// Errors `load`, `declare`, `declare_adapter` and `call` may return. Return `InvalidScript` through `Context.fail`.
+/// Errors a frontend's functions may return. Return `InvalidScript` through `Context.fail`.
 pub const Error = std.mem.Allocator.Error || error{InvalidScript};
 
 /// Whether this frontend claims `extension` (".lua").

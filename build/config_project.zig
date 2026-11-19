@@ -18,8 +18,8 @@ const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
 const unify = @import("unify.zig").unify;
 
-/// The directories holding local kosmoi, apps and adapters, in the config's root.
-const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
+/// The directories holding local kosmoi, apps, adapters and frontends, in the config's root.
+const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters", "frontends" };
 /// Local Zig files are small; this only guards against reading something huge.
 const max_file_size = 16 * 1024 * 1024;
 /// Where the modules of apps and adapters written through a frontend are generated, in the
@@ -76,7 +76,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
             if (local.missing_root) return fail(b, "{s} is a directory package but has no root.zig", .{local.origin});
             if (local.both_roots) return fail(b, "{s} holds a root.zig and a root script; an app has one root, so remove one", .{local.origin});
             const module = b.createModule(.{ .root_source_file = b.path(local.root), .target = target, .optimize = optimize });
-            const kind: Kind = if (std.mem.eql(u8, directory, "kosmoi")) .kosmos else if (std.mem.eql(u8, directory, "adapters")) .adapter else .app;
+            const kind: Kind = if (std.mem.eql(u8, directory, "kosmoi")) .kosmos else if (std.mem.eql(u8, directory, "adapters")) .adapter else if (std.mem.eql(u8, directory, "frontends")) .local_frontend else .app;
             if (!names.add(.{ .name = local.name, .module = module, .origin = local.origin, .kind = kind, .local = local })) return;
         }
     }
@@ -139,6 +139,8 @@ const Kind = enum {
     kosmos,
     app,
     adapter,
+    /// A frontend in `frontends/`, Zig or a script.
+    local_frontend,
 };
 
 const Entry = struct {
@@ -280,8 +282,8 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
 
     var found: std.ArrayList(Local) = .empty;
     var iterator = dir.iterate();
-    // Apps and adapters may be scripts; a kosmos script is read by the runner, not built.
-    const holds_scripts = std.mem.eql(u8, directory, "apps") or std.mem.eql(u8, directory, "adapters");
+    // Apps, adapters and frontends may be scripts; a kosmos script is read by the runner, not built.
+    const holds_scripts = !std.mem.eql(u8, directory, "kosmoi");
     while (try iterator.next(io)) |entry| {
         if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".zig")) {
             const path = b.fmt("{s}/{s}", .{ directory, entry.name });
@@ -338,10 +340,11 @@ fn scriptRootFile(b: *std.Build, dir: std.Io.Dir, name: []const u8) !?[]const u8
 }
 
 /// Whether the generator looks for frontends in `entry`: a package's frontend module, or a Zig
-/// module in adapters/. An adapter's script is a module the generator writes, so never one of them.
+/// module in adapters/ or frontends/. A script there is a module the generator writes, so never
+/// one of them.
 fn givesFrontends(entry: Entry) bool {
     if (entry.kind == .frontend) return true;
-    if (entry.kind != .adapter) return false;
+    if (entry.kind != .adapter and entry.kind != .local_frontend) return false;
     return (entry.local orelse return true).script == null;
 }
 

@@ -21,10 +21,11 @@ const stamp_path = "zig-out/scripts.built";
 const kosmoi_directory = "kosmoi";
 /// The config's own files and folders the runner is built from.
 const config_files = [_][]const u8{ "build.zig", "build.zig.zon" };
-const config_folders = [_][]const u8{ "kosmoi", "apps", "adapters" };
-/// The config's folders whose every file counts: an app's or adapter's script may change what it
-/// declares, which only a build sees. A build finding the declaration unchanged compiles nothing.
-const script_app_folders = [_][]const u8{ "apps", "adapters" };
+const config_folders = [_][]const u8{ "kosmoi", "apps", "adapters", "frontends" };
+/// The config's folders whose every file counts: an app's, adapter's or frontend's script may
+/// change what it declares, which only a build sees. A build finding the declaration unchanged
+/// compiles nothing.
+const script_app_folders = [_][]const u8{ "apps", "adapters", "frontends" };
 /// Kosm's own files and folders in its sources.
 const source_files = [_][]const u8{ "build.zig", "build.zig.zon" };
 const source_folders = [_][]const u8{ "src", "build" };
@@ -253,6 +254,7 @@ const test_frontend =
     \\    .editor_file = .{ .path = ".lines.json", .contents = "{}\n" },
     \\    .declare = declare,
     \\    .declare_adapter = declareAdapter,
+    \\    .declare_frontend = declareFrontend,
     \\    .call = call,
     \\    .counts_from = 1,
     \\};
@@ -312,6 +314,67 @@ const test_frontend =
     \\    declaration.extensions = extensions.items;
     \\    declaration.functions = functions.items;
     \\    return declaration;
+    \\}
+    \\
+    \\/// `name <name>`, `extension <.ext>`, `editor <file>` and `gives <function>` give the
+    \\/// frontend's data and functions.
+    \\fn declareFrontend(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.FrontendDeclaration {
+    \\    var declaration: kosm.Frontend.FrontendDeclaration = .{ .name = "" };
+    \\    var extensions: std.ArrayList([]const u8) = .empty;
+    \\    var functions: std.ArrayList([]const u8) = .empty;
+    \\    var lines = std.mem.splitScalar(u8, source, '\n');
+    \\    while (lines.next()) |line| {
+    \\        const space = std.mem.findScalar(u8, line, ' ') orelse continue;
+    \\        const word = line[0..space];
+    \\        const rest = line[space + 1 ..];
+    \\        if (std.mem.eql(u8, word, "name")) declaration.name = rest;
+    \\        if (std.mem.eql(u8, word, "extension")) try extensions.append(context.arena, rest);
+    \\        if (std.mem.eql(u8, word, "editor")) declaration.editor_file = .{ .path = rest, .contents = "{}\n" };
+    \\        if (std.mem.eql(u8, word, "gives")) try functions.append(context.arena, rest);
+    \\    }
+    \\    declaration.extensions = extensions.items;
+    \\    declaration.functions = functions.items;
+    \\    return declaration;
+    \\}
+    \\
+    \\/// A frontend for this frontend's own lines, each starting with the script's `prefix <word>`:
+    \\/// `load` and `variants` read the lines without it, `complete` writes `words.txt`.
+    \\fn callFrontend(context: *kosm.Frontend.Context, source: []const u8, function: []const u8, arguments: []const kosm.Loose) kosm.Frontend.Error!kosm.Loose {
+    \\    const arena = context.arena;
+    \\    const prefix = lineAt(source, lineOf(source, "prefix ").?)["prefix ".len..];
+    \\    if (std.mem.eql(u8, function, "complete")) {
+    \\        const standalone = field(arguments[0], "standalone").?.value.string;
+    \\        const file = try table(arena, &.{ .{ .key = "path", .value = .{ .value = .{ .string = "words.txt" } } }, .{ .key = "contents", .value = .{ .value = .{ .string = try arena.print("{s} {s}\n", .{ prefix, standalone }) } } } });
+    \\        return .{ .value = .{ .list = try arena.dupe(kosm.Loose, &.{file}) } };
+    \\    }
+    \\    const path = arguments[1].value.string;
+    \\    var stripped: std.Io.Writer.Allocating = .init(arena);
+    \\    var lines = std.mem.splitScalar(u8, arguments[0].value.string, '\n');
+    \\    var number: usize = 0;
+    \\    while (lines.next()) |line| {
+    \\        number += 1;
+    \\        if (line.len == 0) continue;
+    \\        if (!std.mem.startsWith(u8, line, prefix) or line.len == prefix.len or line[prefix.len] != ' ')
+    \\            return context.fail("{s}:{d}: the line does not start with '{s}'", .{ path, number, prefix });
+    \\        stripped.writer.print("{s}\n", .{line[prefix.len + 1 ..]}) catch return error.OutOfMemory;
+    \\    }
+    \\    var inner: kosm.Frontend.Context = .{ .arena = arena, .path = path };
+    \\    if (std.mem.eql(u8, function, "variants")) {
+    \\        const names = try variants(&inner, stripped.written());
+    \\        const items = try arena.alloc(kosm.Loose, names.len);
+    \\        for (names, items) |name, *item| item.* = .{ .value = .{ .string = name } };
+    \\        return .{ .value = .{ .list = items } };
+    \\    }
+    \\    const script = load(&inner, stripped.written()) catch |err| switch (err) {
+    \\        error.OutOfMemory => return error.OutOfMemory,
+    \\        error.InvalidScript => return context.fail("{s}", .{inner.message.?}),
+    \\    };
+    \\    var entries: std.ArrayList(kosm.Loose.Entry) = .empty;
+    \\    if (script.base) |base| try entries.append(arena, .{ .key = "base", .value = .{ .value = .{ .string = base } } });
+    \\    if (script.params) |given| try entries.append(arena, .{ .key = "params", .value = given });
+    \\    if (script.theme) |given| try entries.append(arena, .{ .key = "theme", .value = given });
+    \\    if (script.overrides) |given| try entries.append(arena, .{ .key = "overrides", .value = given });
+    \\    return .{ .value = .{ .table = entries.items } };
     \\}
     \\
     \\/// An adapter's capabilities for `key = value` lines, positions counting from 1: `format`
@@ -393,6 +456,7 @@ const test_frontend =
     \\/// `apply` writes `size` and `peak` to its file through the kitty adapter.
     \\fn call(context: *kosm.Frontend.Context, source: []const u8, function: []const u8, arguments: []const kosm.Loose) kosm.Frontend.Error!kosm.Loose {
     \\    if (std.mem.startsWith(u8, context.path, "adapters/")) return callAdapter(context, source, function, arguments);
+    \\    if (std.mem.startsWith(u8, context.path, "frontends/")) return callFrontend(context, source, function, arguments);
     \\    var frontend_call = context.library.call(context.arena);
     \\    if (std.mem.eql(u8, function, "from")) {
     \\        if (lineOf(source, "from fails")) |line| return context.fail("{s}: from fails on purpose", .{try context.at(line)});
@@ -443,7 +507,8 @@ const test_frontend =
     \\    return null;
     \\}
     \\
-    \\fn complete(arena: std.mem.Allocator, completion: kosm.Frontend.Completion) std.mem.Allocator.Error![]const kosm.Frontend.Completion.File {
+    \\fn complete(context: *kosm.Frontend.Context, completion: kosm.Frontend.Completion) kosm.Frontend.Error![]const kosm.Frontend.Completion.File {
+    \\    const arena = context.arena;
     \\    var text: std.Io.Writer.Allocating = .init(arena);
     \\    for (completion.kosmoi) |kosmos| text.writer.print("kosmos {s} {s}\n", .{ kosmos.name, kosmos.tree }) catch return error.OutOfMemory;
     \\    const theme = completion.find(completion.theme).?;
@@ -872,4 +937,50 @@ test "an adapter written through a frontend reads and writes files for a Zig app
     const failed = try testDiff(context, "keyed_kosmos");
     try testing.expect(std.mem.find(u8, failed, "~/.config/keyed/main.keys") != null);
     try testing.expect(std.mem.find(u8, failed, "adapters/keys.kosmos:9: the file is not read on purpose") != null);
+}
+
+test "a frontend written through a frontend reads kosmoi, completes them, and a script edit compiles nothing" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var stdout: std.Io.Writer.Allocating = .init(arena);
+    var stderr: std.Io.Writer.Allocating = .init(arena);
+    const context = try testProject(arena, tmp.dir, &stdout, &stderr);
+    try tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/lines.zig", .data = test_frontend });
+    try tmp.dir.createDirPath(testing.io, "project/frontends");
+    const words = "name words\nextension .words\neditor .words.json\ngives load\ngives variants\ngives complete\nprefix w\n";
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/frontends/words.kosmos", .data = words });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/frost.zig", .data = test_frost });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/mine.words", .data = "w base frost\nw param size=12\nw gives light\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/bad.words", .data = "w base frost\nw set kitty.fonts.font_size=big\n" });
+
+    stdout.clearRetainingCapacity();
+    try testing.expect(try prepare(context));
+    const generated = "project/.zig-cache/kosm/modules/words.zig";
+    const module = try tmp.dir.readFileAlloc(testing.io, generated, arena, .limited(1024 * 1024));
+    try testing.expect(std.mem.find(u8, module, "    .name = \"words\",\n    .extensions = &.{ \".words\" },\n    .load = functions.load,\n    .variants = functions.variants,\n    .complete = functions.complete,\n") != null);
+    // Its completion and editor file are written through the script.
+    try testing.expect(std.mem.find(u8, stdout.written(), "created .words.json\n") != null);
+    try testing.expectEqualStrings("w kosm.Standalone\n", try tmp.dir.readFileAlloc(testing.io, "project/zig-out/completions/words/words.txt", arena, .limited(1024)));
+    try testing.expect(std.mem.find(u8, try testDiff(context, "mine"), "+font_size 12\n") != null);
+    try testing.expect(std.mem.find(u8, try testDiff(context, "mine.light"), "+font_size 12\n") != null);
+    // A value's error names the kosmos' line, and so does an error the script raises about it.
+    try testing.expect(std.mem.find(u8, try testDiff(context, "bad"), "kosmoi/bad.words:2") != null);
+    // Every script's variants are listed first, so one the script cannot read fails them all.
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/broken.words", .data = "w base frost\nbase frost\n" });
+    try testing.expect(std.mem.find(u8, try testDiff(context, "mine"), "kosmoi/broken.words:2: the line does not start with 'w'") != null);
+    try tmp.dir.deleteFile(testing.io, "project/kosmoi/broken.words");
+
+    // An edit leaving the declaration alone rebuilds the runner without touching the module.
+    try tmp.dir.setTimestamps(testing.io, generated, .{ .modify_timestamp = .{ .new = .{ .nanoseconds = 0 } } });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/frontends/words.kosmos", .data = try std.mem.replaceOwned(u8, arena, words, "prefix w", "prefix word") });
+    try testing.expect(try isStale(context));
+    try testing.expect(try prepare(context));
+    try testing.expectEqual(0, (try tmp.dir.statFile(testing.io, generated, .{})).mtime.nanoseconds);
+    try tmp.dir.deleteFile(testing.io, "project/kosmoi/bad.words");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/mine.words", .data = "word base frost\nword param size=13\n" });
+    try testing.expect(std.mem.find(u8, try testDiff(context, "mine"), "+font_size 13\n") != null);
 }
