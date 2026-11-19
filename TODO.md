@@ -39,9 +39,10 @@ Steps 22a-22e: command-line improvements the human asked for.
   - Do: `kosm new kosmos|app|adapter|frontend <name>` scaffolds in any language with a frontend, chosen by a flag (`--lang lua`, Zig by default): the frontend gives the scaffold's text, so kosm core still knows no language. Propose the flag's name, how a frontend provides scaffolds, and single file versus folder first.
   - Done when: each kind scaffolds in Zig and Lua and the scaffold builds and applies with `--diff`.
 
-- **22c. Install shell completions** `ASK`
-  - Do: kosm installs its completion scripts itself (`kosm completions <shell>` already prints them), where each shell auto-loads them outside the user's dotfiles (fish: `~/.local/share/fish/vendor_completions.d`, bash: `~/.local/share/bash-completion/completions`; zsh has no such folder). Propose when it happens (`kosm init`, a `kosm completions --install`, or every run) and what to do for zsh first.
-  - Done when: in a scratch HOME, fish and bash complete kosm without the user adding anything.
+- **22c. Install shell completions**
+  - Done: `kosm init` and `kosm update` write the fish and bash scripts where each shell loads them (`$XDG_DATA_HOME/fish/vendor_completions.d/kosm.fish`, `${BASH_COMPLETION_USER_DIR:-$XDG_DATA_HOME/bash-completion}/completions/kosm`), rewriting one only when it changed; zsh keeps `kosm completions zsh`. fish completes in a scratch HOME.
+  - Left: bash-completion is not installed on the human's machine, so its loading the script by itself is unchecked (the script completes when sourced).
+  - Done when: in a scratch HOME with bash-completion installed, bash completes kosm without the user adding anything.
 
 - **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
   - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.

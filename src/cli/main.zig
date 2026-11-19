@@ -175,6 +175,7 @@ fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stder
         error.Failed => return 1,
         else => |other| return other,
     };
+    try completions.install(init.io, arena, init.environ_map, &stdout.interface, stderr);
     return 0;
 }
 
@@ -314,6 +315,8 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         error.Failed => return 1,
         else => |other| return other,
     };
+    // Updating is when kosm is brought up to date, so its completions are too.
+    if (command == .update) try completions.install(init.io, init.arena.allocator(), init.environ_map, &stdout.interface, stderr);
     return 0;
 }
 

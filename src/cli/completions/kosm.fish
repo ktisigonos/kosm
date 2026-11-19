@@ -1,5 +1,6 @@
-# Completions for kosm in fish. Install them with:
-#   kosm completions fish > ~/.config/fish/completions/kosm.fish
+# Completions for kosm in fish. kosm init and kosm update install them into
+# ~/.local/share/fish/vendor_completions.d, which fish loads by itself; or print them with:
+#   kosm completions fish
 
 function __kosm_complete
     set -l words (commandline -opc)

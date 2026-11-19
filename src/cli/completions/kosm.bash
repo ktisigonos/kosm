@@ -1,5 +1,7 @@
-# Completions for kosm in bash. Install them with:
-#   kosm completions bash > ~/.local/share/bash-completion/completions/kosm
+# Completions for kosm in bash. kosm init and kosm update install them into
+# ~/.local/share/bash-completion/completions, which bash-completion loads by itself; or print them
+# with:
+#   kosm completions bash
 
 _kosm() {
     local current="${COMP_WORDS[COMP_CWORD]}"
