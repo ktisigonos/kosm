@@ -26,7 +26,7 @@ Steps 21j1-21j5: apps, adapters, frontends and the other parts of kosm written t
 - A Lua app is `apps/<name>.lua` or `apps/<name>/root.lua`, like kosmoi.
 
 - **21j1. Apps written in Lua** `PLAN FIRST`
-  - Do: `kosm.Frontend` gains reading what a script declares (an app's fields, types, defaults and doc comments, without running `apply`) and calling one of its functions at run time. A local `apps/<name>/root.lua` is an app: the build generates its Zig module when the declaration changed, and a Zig or Lua kosmos uses it like any app. `Output` is callable from Lua; its `anytype` methods (`generate`, `block`, `template`) gain forms taking a `kosm.Value`. Measure first that an unchanged generated file compiles nothing, and write down what Zig 0.17 does in `doc/ZIG_NOTES.md`.
+  - Do: `kosm.Frontend` gains reading what a script declares (an app's fields, types, defaults and doc comments, without running `apply`) and calling one of its functions at run time. A local `apps/<name>/root.lua` is an app: the build generates its Zig module when the declaration changed, and a Zig or Lua kosmos uses it like any app. `Output` is callable from Lua; its `anytype` methods (`generate`, `block`, `template`) gain forms taking a `kosm.Value`. Write each generated module to a fixed path only when its contents change (measured: a generator's output file or a copy of it recompiles every time; see `doc/ZIG_NOTES.md`).
   - Do: update `DESIGN.md` (apps written through a frontend) in the same commit.
   - Done when: a small real app written in Lua applies with `--diff` from a Lua kosmos and a Zig kosmos, completes in LuaLS and ZLS, and editing its `apply` applies again without compiling anything (`--summary all` shows only cached steps).
 
