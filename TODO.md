@@ -17,27 +17,31 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-Steps 21j1-21j4: apps, adapters and packages written in Lua. Decided with the human:
-- A Lua app declares its fields in a plain table built from kosm's type constructors (`font_size = kosm.optional(kosm.float)`, `cursor = kosm_cursor.App`), each field's doc comment read from the `---` line above it, and gives `from(theme)`, `apply(self, output)` and optionally `reload`, like a Zig app.
-- Lua must not cost builds: a Lua app used only from Lua (kosmoi, looks, bases written in Lua) runs wholly at run time, checked against its declaration when kosm runs, and editing it, its fields included, never compiles anything. Only Zig code using it (a Zig kosmos, base or package importing it) needs a Zig type: kosm generates one then, rewritten only when the declaration changes, so editing a function body never compiles and a field change recompiles only the runners whose Zig code imports it.
-- Lua apps keep every rule of apps (no IO, no parsing, only `output`), Lua adapters every rule of adapters. Other parts of kosm (modifiers, image styles) get a frontend form only once a need shows.
+Steps 21j1-21j5: apps, adapters, frontends and the other parts of kosm written through a frontend, Lua first. Kosm stays language agnostic: what one language can write, every frontend can. Decided with the human:
+- A Lua app declares its fields in a plain table built from kosm's type constructors (`font_size = kosm.optional(kosm.float)`, `cursor = kosm_cursor.App`), each field's doc comment read from the `---` line above it, and gives `from(theme)`, `apply(self, output)` and optionally `reload`, like a Zig app. Adapters, frontends and the other parts declare themselves the same way.
+- Kosm generates a Zig module from each declaration (an app's `App`, `from` and `App.apply` calling into the interpreter, with the doc comments), rewritten only when the declaration changes, so a Lua app is used from Zig and Lua alike. Editing a function body never compiles, nor does writing kosmoi, looks or bases that use it; only changing what it declares (an app's fields) rebuilds. A run-time-only path avoiding that rebuild is not worth a second code path.
+- They keep every rule of their kind: Lua apps do no IO and never parse, Lua adapters know no app.
 - One interpreter per run, reached by the code calling into it through what kosm hands it (`Output`, `Adapter.Context`), not a global.
 
-- **21j1. Lua apps used from Lua** `PLAN FIRST`
-  - Do: `kosm.Frontend` gains reading what a script declares (an app's fields, types, defaults and doc comments) and calling a function of it at run time. A local `apps/<name>/root.lua` is an app the runner of scripts holds beside the typed Zig apps: a Lua kosmos chooses and sets it like any app, kosm checks the values against its declaration, and its `from` and `apply` run in the interpreter. `Output` is callable from Lua; its `anytype` methods (`generate`, `block`, `template`) gain forms taking a `kosm.Value`. LuaLS completion of Lua apps is rewritten when kosm runs and a declaration changed, with no build.
-  - Do: update `DESIGN.md` (apps written through a frontend, the two ways a Lua app is used) in the same commit.
-  - Done when: a small real app written in Lua applies with `--diff` from a Lua kosmos and completes in the editor, and editing its fields or its `apply` applies again without compiling anything (`--summary all` shows only cached steps).
+- **21j1. Apps written in Lua** `PLAN FIRST`
+  - Do: `kosm.Frontend` gains reading what a script declares (an app's fields, types, defaults and doc comments, without running `apply`) and calling one of its functions at run time. A local `apps/<name>/root.lua` is an app: the build generates its Zig module when the declaration changed, and a Zig or Lua kosmos uses it like any app. `Output` is callable from Lua; its `anytype` methods (`generate`, `block`, `template`) gain forms taking a `kosm.Value`. Measure first that an unchanged generated file compiles nothing, and write down what Zig 0.17 does in `doc/ZIG_NOTES.md`.
+  - Do: update `DESIGN.md` (apps written through a frontend) in the same commit.
+  - Done when: a small real app written in Lua applies with `--diff` from a Lua kosmos and a Zig kosmos, completes in LuaLS and ZLS, and editing its `apply` applies again without compiling anything (`--summary all` shows only cached steps).
 
-- **21j2. Lua apps used from Zig** `PLAN FIRST`
-  - Do: a Zig kosmos, base or package imports a Lua app by name like a package and holds it as a typed field; kosm generates its Zig module (`App`, `from`, `App.apply` calling into the interpreter, the doc comments carried over) only for Lua apps Zig code imports, and rewrites it only when the declaration changes. Measure first that an unchanged generated file compiles nothing and an unused one costs no rebuild, and write down what Zig 0.17 does in `doc/ZIG_NOTES.md`.
-  - Done when: a Zig kosmos holds the Lua app of 21j1 as a field, applies with `--diff`, completes in ZLS, and editing the app's `apply` compiles nothing.
-
-- **21j3. Lua adapters** `PLAN FIRST`
-  - Do: a local `adapters/<name>/root.lua` gives an adapter's capabilities (`format`, `parser`, `serialize`, `comment`, `insert`), its nodes and values crossing as tables, usable by Zig and Lua apps alike, with the same run-time and generated paths as apps.
+- **21j2. Adapters written in Lua** `PLAN FIRST`
+  - Do: a local `adapters/<name>/root.lua` gives an adapter's capabilities (`format`, `parser`, `serialize`, `comment`, `insert`), its nodes and values crossing as tables, usable by Zig and Lua apps alike.
   - Done when: parse -> match -> format round trips are tested on a Lua adapter, and an app writes a file through it.
 
-- **21j4. Lua packages** `PLAN FIRST`
-  - Do: `kosm add` of a repository holding `root.lua` and a `build.zig.zon` installs a Lua package of apps, adapters and kosmoi; Lua packages depend on Zig packages and Zig packages on Lua ones. `kosm new package` scaffolds the manifest `zig fetch` needs.
+- **21j3. Frontends written in Lua** `PLAN FIRST`
+  - Do: a frontend (reading scripts into loose values, listing variants, writing completion) can be written in Lua, so a language's support needs no Zig. Propose a small second language to prove it on.
+  - Done when: a kosmos in that language, through a frontend written in Lua, applies with `--diff`.
+
+- **21j4. Modifiers, palette styles and variations written in Lua** `PLAN FIRST`
+  - Do: color modifiers, image palette styles and variation families can be written in Lua and used from any kosmos or app, Zig or Lua.
+  - Done when: one of each, written in Lua, changes a kosmos' colors under `--diff`.
+
+- **21j5. Lua packages** `PLAN FIRST`
+  - Do: `kosm add` of a repository holding `root.lua` and a `build.zig.zon` installs a package of anything 21j1-21j4 allow, written in Lua; Lua packages depend on Zig packages and Zig packages on Lua ones. `kosm new package` scaffolds the manifest `zig fetch` needs.
   - Done when: a scratch Lua package in its own repository is added to a scratch copy of the config and used from a Lua kosmos and a Zig kosmos.
 
 - **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
