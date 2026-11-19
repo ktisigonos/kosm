@@ -201,18 +201,25 @@ fn scriptRuntime(init: std.process.Init, comptime target: ScriptTarget, raw_argu
     };
 }
 
-/// The tree types every Zig kosmos in `sources` returns, each once.
+/// The tree types a script may return, each once: what every Zig kosmos in `sources` returns,
+/// and every struct of apps a module of `sources` declares at its top (a base).
 fn treeTypes(comptime sources: []const ScriptTarget.KosmosSource) []const type {
     comptime var found: []const type = &.{};
     inline for (comptime kosmos_call.zigKosmoi(sources)) |entry| {
-        const Tree = discovery.Payload(@typeInfo(@TypeOf(@field(entry.Namespace, entry.function))).@"fn".return_type.?);
-        const known = inline for (found) |Earlier| {
-            if (Earlier == Tree) break true;
-        } else false;
-        if (!known) found = found ++ .{Tree};
+        found = withType(found, discovery.Payload(@typeInfo(@TypeOf(@field(entry.Namespace, entry.function))).@"fn".return_type.?));
+    }
+    inline for (sources) |source| {
+        inline for (comptime discovery.exportedTrees(source.module)) |Tree| found = withType(found, Tree);
     }
     const final = found[0..found.len].*;
     return &final;
+}
+
+fn withType(comptime found: []const type, comptime T: type) []const type {
+    inline for (found) |Earlier| {
+        if (Earlier == T) return found;
+    }
+    return found ++ .{T};
 }
 
 /// What completes a script's arguments: the Zig kosmos it builds on (a `base` line), then that
@@ -499,7 +506,7 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
 }
 
 fn notATree(diagnostics: *kosm.Diagnostics, path: []const u8, tree: kosm.Frontend.Handle) Reported {
-    return fail(diagnostics, "{s} returns a {s}, which is not the tree of a kosmos; return the tree a kosmos under kosmoi gives", .{ path, tree.type.name });
+    return fail(diagnostics, "{s} returns a {s}, which is not the tree of a kosmos; return the tree a Zig kosmos gives, or a struct of apps a package or kosmos declares at its top (a base)", .{ path, tree.type.name });
 }
 
 /// Applies `tree`, which the lowest of `scripts` built by calling Zig code, with the overrides

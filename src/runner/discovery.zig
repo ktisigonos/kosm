@@ -142,6 +142,21 @@ pub fn kosmosList(comptime File: type, comptime file_name: []const u8) []const u
     return if (list.len == 0) "none" else list;
 }
 
+/// Every public struct type declared at the top of `Module` that holds apps without being one:
+/// a base (`kosm_base.Base`) or a kosmos' own tree, which a script may build and return.
+pub fn exportedTrees(comptime Module: type) []const type {
+    @setEvalBranchQuota(branch_quota);
+    comptime var found: []const type = &.{};
+    inline for (@typeInfo(Module).@"struct".decl_names) |name| {
+        if (comptime @TypeOf(@field(Module, name)) == type) {
+            const Exported = @field(Module, name);
+            if (comptime @typeInfo(Exported) == .@"struct" and !isApp(Exported) and containsApp(Exported)) found = found ++ .{Exported};
+        }
+    }
+    const final = found[0..found.len].*;
+    return &final;
+}
+
 /// The tree type a kosmos function returns, without its error union.
 pub fn Payload(comptime T: type) type {
     return switch (@typeInfo(T)) {
@@ -397,6 +412,16 @@ test "kosmoi are found by shape, and the rest say why not" {
     try testing.expectEqualStrings("it is not a function", notKosmosReason(test_kosmoi, "adapter").?);
     try testing.expectEqualStrings("there is no public declaration with that name", notKosmosReason(test_kosmoi, "missing").?);
     try testing.expectEqualStrings("frost, frost.iced, frost.cold, frost.cold.deep, frost.warm.mild", kosmosList(test_kosmoi, "frost"));
+}
+
+test "a module's trees are its public structs holding apps, not apps, namespaces or other structs" {
+    const trees = comptime exportedTrees(test_kosmoi);
+    try testing.expectEqual(1, trees.len);
+    try testing.expect(trees[0] == test_kosmoi.Tree);
+    try testing.expectEqual(0, comptime exportedTrees(struct {
+        pub const App = TestApp;
+        pub const Params = struct { blur: bool = false };
+    }).len);
 }
 
 test "groups are public structs of the file holding kosmoi, found by dotted name" {
