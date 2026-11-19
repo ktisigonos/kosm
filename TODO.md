@@ -23,6 +23,7 @@ Steps 21j2-21j5: adapters, frontends and the other parts of kosm written through
 
 - **21j3. Frontends written in Lua** `PLAN FIRST`
   - Do: a frontend (reading scripts into loose values, listing variants, writing completion) can be written in Lua, so a language's support needs no Zig. Propose a small second language to prove it on.
+  - Do: kosm_lua's completion spells names Lua reserves (`end`, `function`) as `end_` for a parameter and `["end"]` for a field, after checking LuaLS reads the latter.
   - Done when: a kosmos in that language, through a frontend written in Lua, applies with `--diff`.
 
 - **21j4. Modifiers, palette styles and variations written in Lua** `PLAN FIRST`
