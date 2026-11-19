@@ -650,6 +650,9 @@ fn testProject(arena: std.mem.Allocator, dir: std.Io.Dir, stdout: *std.Io.Writer
         .stderr = &stderr.writer,
     };
     try @import("init.zig").init(context, try test_kosm.stub(arena, testing.io, dir, root));
+    // The tests write apps and adapters by hand, without `kosm new` creating their folders.
+    try dir.createDirPath(testing.io, "project/apps");
+    try dir.createDirPath(testing.io, "project/adapters");
     return context;
 }
 

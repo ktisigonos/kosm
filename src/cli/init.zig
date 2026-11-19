@@ -45,7 +45,6 @@ const build_file =
     \\}
     \\
 ;
-const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
 /// The starting kosmos written into the empty `kosmoi/` of a new config.
 const starting_kosmos = .{ .path = "kosmoi/kyanos.zig", .source = @embedFile("kosmoi/kyanos.zig") };
 
@@ -59,7 +58,8 @@ pub fn init(context: Context, kosm: Kosm) Error!void {
     created = try createFile(context, "build.zig", build_file) or created;
     if (new_manifest) |bytes| created = try createFile(context, "build.zig.zon", bytes) or created;
     created = try createFile(context, Packages.file_name, try packagesFile(context.arena, if (new_manifest != null) kosm else null)) or created;
-    for (local_directories) |directory| created = try createDirectory(context, directory) or created;
+    // `kosm new` creates `apps/`, `adapters/` and `frontends/` when it first writes into one.
+    created = try createDirectory(context, "kosmoi") or created;
     // The starting kosmos imports the official packages, which only a new manifest is sure to list.
     if (new_manifest != null and try isEmpty(context, "kosmoi")) created = try createFile(context, starting_kosmos.path, starting_kosmos.source) or created;
     // A frontend's editor file comes from the runner of scripts, once one was built.
@@ -286,11 +286,11 @@ test "init in an empty directory creates the whole project, depending on kosm an
         \\created build.zig.zon
         \\created packages.zon
         \\created kosmoi/
-        \\created apps/
-        \\created adapters/
         \\created kosmoi/kyanos.zig
         \\
     , test_config.stdout.written());
+    try testing.expectError(error.FileNotFound, test_config.tmp.dir.access(testing.io, "project/apps", .{}));
+    try testing.expectError(error.FileNotFound, test_config.tmp.dir.access(testing.io, "project/adapters", .{}));
     try testing.expectEqualStrings(build_file, (try test_config.read("build.zig")).?);
     try testing.expectEqualStrings(starting_kosmos.source, (try test_config.read("kosmoi/kyanos.zig")).?);
     const arena = test_config.arena.allocator();
@@ -358,7 +358,7 @@ test "init on a complete project changes no byte" {
     try testing.expectEqual(null, try test_config.read("kosmoi/kyanos.zig"));
 }
 
-test "init on a directory holding kosmoi adds only the project files and other directories" {
+test "init on a directory holding kosmoi adds only the project files" {
     var test_config: TestConfig = undefined;
     try test_config.init();
     defer test_config.deinit();
@@ -369,8 +369,6 @@ test "init on a directory holding kosmoi adds only the project files and other d
         \\created build.zig
         \\created build.zig.zon
         \\created packages.zon
-        \\created apps/
-        \\created adapters/
         \\
     , test_config.stdout.written());
     try testing.expectEqualStrings("// mine\n", (try test_config.read("kosmoi/nord/root.zig")).?);
