@@ -14,6 +14,7 @@ const completions = @import("completions.zig");
 const completion_types = @import("completion_types.zig");
 const discovery = @import("discovery.zig");
 const files = @import("files.zig");
+const hosting = @import("hosting.zig");
 const kosmos_call = @import("kosmos_call.zig");
 const images = @import("images.zig");
 const Places = @import("Places.zig");
@@ -31,6 +32,8 @@ pub const Target = @import("Target.zig");
 pub const ScriptTarget = @import("ScriptTarget.zig");
 /// Reports what an installed package provides, for `kosm add` and `kosm update`.
 pub const inspect = @import("inspect.zig").inspect;
+/// Writes the Zig module of each app written through a frontend, for the build of a config.
+pub const generateApps = @import("app_modules.zig").run;
 /// Lists every kosmos and installed package in a config, for `kosm list`.
 pub const list = list_module.list;
 /// Prints the palettes a kosmos' file declares, for `kosm colors`.
@@ -56,7 +59,8 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     }
 
     if (init.environ_map.get(interface.runner_variable) != null) {
-        if (comptime kosmos_call.buildsOnKosmoi(ParamsOf(kosmos))) try streams.stdout.writeAll(interface.script_runner ++ "\n");
+        // Only the runner of scripts builds other kosmoi and runs apps written through a frontend.
+        if (comptime kosmos_call.buildsOnKosmoi(ParamsOf(kosmos)) or hosting.holdsScriptApps(TreeOf(kosmos))) try streams.stdout.writeAll(interface.script_runner ++ "\n");
         try streams.stdout.flush();
         return 0;
     }
@@ -220,6 +224,11 @@ fn ScriptLibrary(comptime target: ScriptTarget) type {
     inline for (target.kosmoi) |source| roots = roots ++ .{bindings.Root{ .name = source.name, .module = source.module }};
     const final = roots[0..roots.len].*;
     return bindings.Library(&final, kosmos_call.zigKosmoi(target.kosmoi));
+}
+
+/// The host apps written through a frontend run through.
+fn ScriptHost(comptime target: ScriptTarget) type {
+    return hosting.Hosting(comptime discovery.frontends(target.adapter_sources), ScriptLibrary(target), comptime hosting.handledTypes(target.apps));
 }
 
 /// What scripts' calls need, with images cached in the config `raw_arguments` name, if any.
@@ -407,6 +416,11 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var runtime = try scriptRuntime(init, target, raw_arguments, streams.stderr, diagnostics);
     runtime.kosmoi = KosmosBuilder(target).of(&runtime);
+    const Host = ScriptHost(target);
+    var host_state: Host.State = .{ .arena = arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) };
+    const host = Host.host(&host_state);
+    kosm.Frontend.Host.install(&host);
+    defer kosm.Frontend.Host.install(null);
     try checkKnown(target, &runtime, diagnostics.kosmos, diagnostics);
     // A Zig kosmos building on another, or in the folder of a script kosmos, is applied here,
     // where every kosmos can be built; locating fails when a script gives its name too.
@@ -737,6 +751,10 @@ fn ownerOf(plan: *const kosm.Plan, display_path: []const u8) []const u8 {
 }
 
 /// The `Params` type `kosmos` takes, or an empty struct when it takes none.
+fn TreeOf(comptime kosmos: anytype) type {
+    return discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?);
+}
+
 fn ParamsOf(comptime kosmos: anytype) type {
     const function = @typeInfo(@TypeOf(kosmos)).@"fn";
     return if (function.param_types.len == 0) struct {} else function.param_types[0].?;
@@ -749,6 +767,8 @@ fn fail(diagnostics: *kosm.Diagnostics, comptime format: []const u8, arguments: 
 
 test {
     std.testing.refAllDecls(Arguments);
+    std.testing.refAllDecls(@import("app_modules.zig"));
+    std.testing.refAllDecls(hosting);
     std.testing.refAllDecls(set);
     std.testing.refAllDecls(discovery);
     std.testing.refAllDecls(@import("inspect.zig"));

@@ -17,9 +17,15 @@ var message_length: ?usize = null;
 /// `return kosm.fail("personal.lua:{d}: expected an integer, got \"{s}\"", .{ line, text })`.
 /// Too-long messages are cut short.
 pub fn fail(comptime format: []const u8, arguments: anytype) Error {
+    record(format, arguments);
+    return error.KosmosFailed;
+}
+
+/// Records a message as `fail` does, for code that must go on with a value (an app's `from`):
+/// kosm fails with it once the kosmos returns. Too-long messages are cut short.
+pub fn record(comptime format: []const u8, arguments: anytype) void {
     const written = std.fmt.bufPrint(&message_buffer, format, arguments) catch message_buffer[0..];
     message_length = written.len;
-    return error.KosmosFailed;
 }
 
 /// For kosm's runner: the message `fail` recorded since the last `clear`, or null.

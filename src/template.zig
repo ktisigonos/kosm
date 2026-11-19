@@ -1,11 +1,13 @@
 //! Template placeholders: `kosm.<path>` or `{kosm.<path>}`, resolved against an app's
-//! fields. Templates are comptime text, so an unknown path is a compile error.
+//! fields. Templates are comptime text, so an unknown path is a compile error; a template known
+//! only at run time (a script's) resolves against a `kosm.Value` table instead.
 
 const std = @import("std");
 const Color = @import("Color.zig");
 const ColorFormat = @import("ColorFormat.zig");
 const Format = @import("Format.zig");
 const Raw = @import("Raw.zig");
+const Value = @import("value.zig").Value;
 
 /// Where a placeholder pointed at a `null` optional, the one failure only runtime can see.
 pub const Failure = struct {
@@ -39,6 +41,84 @@ pub fn render(
                 return err;
             };
         }
+    }
+}
+
+/// Why a template known only at run time could not be written.
+pub const ValueFailure = struct {
+    /// 1-based line of the placeholder in the template.
+    line: usize = 0,
+    /// The placeholder's path without the `kosm.` prefix; empty for an unclosed brace.
+    path: []const u8 = "",
+    reason_buffer: [256]u8 = undefined,
+    reason_length: usize = 0,
+
+    /// Why the placeholder could not be written.
+    pub fn reason(failure: *const ValueFailure) []const u8 {
+        return failure.reason_buffer[0..failure.reason_length];
+    }
+
+    /// Records `format`, holding one `{s}` for `detail`, as the reason; returns the error.
+    fn set(failure: *ValueFailure, comptime format: []const u8, detail: []const u8) error{InvalidTemplate} {
+        const written = std.fmt.bufPrint(&failure.reason_buffer, format, .{detail}) catch failure.reason_buffer[0..];
+        failure.reason_length = written.len;
+        return error.InvalidTemplate;
+    }
+};
+
+/// Errors from `renderValue`.
+pub const ValueError = ColorFormat.WriteError || error{InvalidTemplate};
+
+/// Writes `text` with every placeholder replaced by the value at its path in `values`, a table,
+/// like `render` does with an app's fields. An unclosed brace, a path naming nothing and a path
+/// ending on a table or list are `error.InvalidTemplate`, described in `failure`.
+pub fn renderValue(writer: *std.Io.Writer, text: []const u8, values: Value, format: Format.Resolved, failure: *ValueFailure) ValueError!void {
+    var position: usize = 0;
+    while (true) switch (scan(text, position)) {
+        .none => break,
+        .unclosed => |at| {
+            failure.* = .{ .line = lineOf(text, at) };
+            return failure.set("'{{' before 'kosm.' is never closed with '}}'{s}", "");
+        },
+        .found => |placeholder| {
+            try writer.writeAll(text[position..placeholder.start]);
+            failure.* = .{ .line = lineOf(text, placeholder.start), .path = placeholder.path };
+            try writeValueAt(writer, values, placeholder.path, format, failure);
+            position = placeholder.end;
+        },
+    };
+    try writer.writeAll(text[position..]);
+}
+
+fn writeValueAt(writer: *std.Io.Writer, values: Value, path: []const u8, format: Format.Resolved, failure: *ValueFailure) ValueError!void {
+    var current = values;
+    var segments = std.mem.splitScalar(u8, path, '.');
+    while (segments.next()) |segment| {
+        switch (current) {
+            .table => |entries| current = for (entries) |entry| {
+                if (std.mem.eql(u8, entry.key, segment)) break entry.value;
+            } else return failure.set("it names nothing; there is no field '{s}'", segment),
+            .color => |color| {
+                const component = std.meta.stringToEnum(Color.Component, segment) orelse
+                    return failure.set("a color has no '{s}'", segment);
+                if (segments.next() != null) return failure.set("color component '{s}' has no fields", segment);
+                return format.writeComponent(writer, color, component);
+            },
+            else => return failure.set("'{s}' follows a value, which has no fields", segment),
+        }
+    }
+    try writeValueLeaf(writer, current, format, failure);
+}
+
+fn writeValueLeaf(writer: *std.Io.Writer, value: Value, format: Format.Resolved, failure: *ValueFailure) ValueError!void {
+    switch (value) {
+        .string, .raw => |text| try writer.writeAll(text),
+        .integer => |integer| try writer.print("{d}", .{integer}),
+        .float => |float| try format.writeFloat(writer, float),
+        .boolean => |boolean| try format.writeBoolean(writer, boolean),
+        .color => |color| try format.writeColor(writer, color),
+        .joined => |parts| for (parts) |part| try writeValueLeaf(writer, part, format, failure),
+        .table, .list => return failure.set("it is a {s}; name one of its values", @tagName(value)),
     }
 }
 
@@ -374,4 +454,52 @@ test "suggestions for unknown fields" {
 
 test "parse finds unclosed braces" {
     try testing.expectEqual(Scan{ .unclosed = 2 }, scan("a {kosm.x", 0));
+}
+
+fn testValues() !Value {
+    const palette = try testing.allocator.dupe(Value.Entry, &.{.{ .key = "red", .value = .{ .color = try Color.parseHex("#bf616a") } }});
+    return .{ .table = try testing.allocator.dupe(Value.Entry, &.{
+        .{ .key = "rounding", .value = .{ .integer = 10 } },
+        .{ .key = "opacity", .value = .{ .float = 0.85 } },
+        .{ .key = "blur", .value = .{ .boolean = true } },
+        .{ .key = "terminal", .value = .{ .string = "kitty" } },
+        .{ .key = "gap", .value = .{ .joined = &.{ .{ .integer = 2 }, .{ .raw = "pt" } } } },
+        .{ .key = "palette", .value = .{ .table = palette } },
+    }) };
+}
+
+fn freeTestValues(values: Value) void {
+    testing.allocator.free(values.table[5].value.table);
+    testing.allocator.free(values.table);
+}
+
+fn renderTestValues(writer: *std.Io.Writer, text: []const u8, failure: *ValueFailure) !void {
+    const values = try testValues();
+    defer freeTestValues(values);
+    return renderValue(writer, text, values, test_format, failure);
+}
+
+test "a run-time template resolves placeholders against a value table" {
+    var buffer: [256]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    var failure: ValueFailure = .{};
+    try renderTestValues(&writer, "radius kosm.rounding; {kosm.opacity} kosm.blur kosm.terminal\ngap {kosm.gap} red 'kosm.palette.red' kosm.palette.red.hex8.", &failure);
+    try testing.expectEqualStrings("radius 10; 0.85 true kitty\ngap 2pt red '#bf616a' bf616aff.", writer.buffered());
+}
+
+test "a run-time template naming nothing, a table or an unclosed brace fails naming its line" {
+    var buffer: [256]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    var failure: ValueFailure = .{};
+    try testing.expectError(error.InvalidTemplate, renderTestValues(&writer, "a\nkosm.roundin", &failure));
+    try testing.expectEqual(2, failure.line);
+    try testing.expectEqualStrings("roundin", failure.path);
+    try testing.expectEqualStrings("it names nothing; there is no field 'roundin'", failure.reason());
+    try testing.expectError(error.InvalidTemplate, renderTestValues(&writer, "kosm.palette", &failure));
+    try testing.expectEqualStrings("it is a table; name one of its values", failure.reason());
+    try testing.expectError(error.InvalidTemplate, renderTestValues(&writer, "kosm.palette.red.shine", &failure));
+    try testing.expectEqualStrings("a color has no 'shine'", failure.reason());
+    try testing.expectError(error.InvalidTemplate, renderTestValues(&writer, "x\n\n{ kosm.rounding", &failure));
+    try testing.expectEqual(3, failure.line);
+    try testing.expectEqualStrings("'{' before 'kosm.' is never closed with '}'", failure.reason());
 }

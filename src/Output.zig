@@ -40,6 +40,10 @@ pub const AdapterClash = @import("Output/AdapterClash.zig");
 pub const GenerateOptions = @import("Output/GenerateOptions.zig");
 /// Options for `block`.
 pub const BlockOptions = @import("Output/BlockOptions.zig");
+/// Options for `templateValue`.
+pub const TemplateOptions = @import("Output/TemplateOptions.zig");
+/// Options for `templateBlockValue`.
+pub const TemplateBlockOptions = @import("Output/TemplateBlockOptions.zig");
 /// Options for `verbatim`.
 pub const VerbatimOptions = @import("Output/VerbatimOptions.zig");
 /// Options for `link`.
@@ -86,6 +90,8 @@ pub const Error = error{
     AppFailed,
     /// `link` found a file or folder where the link goes.
     NotALink,
+    /// A template known only at run time names nothing, or a table, or leaves a brace open.
+    InvalidTemplate,
     OutOfMemory,
 };
 
@@ -135,6 +141,11 @@ pub fn generate(output: *Output, options: GenerateOptions, values: anytype) Erro
         return planning.fail(output, error.MissingCapability, options.file, "adapter '{s}' cannot write whole files (it has no serialize)", .{adapter.name});
     const content = try output.serialize(options.file, adapter, options.format, values);
     try output.addFile(options.file, path, content);
+}
+
+/// `generate` for values built at run time, as a script builds them: `values` is a table.
+pub fn generateValue(output: *Output, options: GenerateOptions, values: value.Value) Error!void {
+    return output.generate(options, values);
 }
 
 /// Writes `options.content` as a whole file, byte for byte, with no adapter: for files kosm
@@ -232,6 +243,11 @@ pub fn block(output: *Output, options: BlockOptions, values: anytype) Error!void
     try output.planBlock(options, path, comment, content);
 }
 
+/// `block` for values built at run time, as a script builds them: `values` is a table.
+pub fn blockValue(output: *Output, options: BlockOptions, values: value.Value) Error!void {
+    return output.block(options, values);
+}
+
 /// Writes a template, resolved against `app`'s fields like `template`'s, as block
 /// `options.id` of a file the user otherwise writes by hand. `options` is
 /// `.{ .file, .id, .text }` plus optional `.lang`, `.format` and `.missing`, as in `BlockOptions`;
@@ -263,6 +279,46 @@ pub fn templateBlock(output: *Output, app: anytype, options: anytype) Error!void
         error.InvalidColorFormat => unreachable,
     };
     try output.planBlock(resolved, path, comment, content.written());
+}
+
+/// `templateBlock` for a template known only at run time, as a script gives it: its
+/// placeholders resolve against `values`, a table, and a path naming nothing fails the apply.
+pub fn templateBlockValue(output: *Output, options: TemplateBlockOptions, values: value.Value) Error!void {
+    const resolved: BlockOptions = .{ .file = options.file, .id = options.id, .lang = options.lang, .format = options.format, .missing = options.missing };
+    const path = try output.resolvePath(resolved.file);
+    const adapter = try output.findAdapter(resolved.file, resolved.lang);
+    const comment = try output.blockComment(resolved.file, adapter);
+    try output.checkBlockId(resolved.file, resolved.id);
+    const format = try output.checkFormat(resolved.file, resolved.format.orElse(adapter.default_format).resolve());
+    const content = try output.renderValue(resolved.file, try output.allocator.print("block '{s}', template", .{resolved.id}), options.text, values, format);
+    try output.planBlock(resolved, path, comment, content);
+}
+
+/// `template` for a template known only at run time, as a script gives it: its placeholders
+/// resolve against `values`, a table, and a path naming nothing fails the apply.
+pub fn templateValue(output: *Output, options: TemplateOptions, values: value.Value) Error!void {
+    const path = try output.resolvePath(options.file);
+    const format = try output.checkFormat(options.file, try output.templateFormat(options));
+    const content = try output.renderValue(options.file, "template", options.text, values, format);
+    try output.addFile(options.file, path, content);
+}
+
+/// `text` with its placeholders resolved against `values`; `place` names the template in
+/// failures ("template", "block 'kosm', template").
+fn renderValue(output: *Output, file: []const u8, place: []const u8, text: []const u8, values: value.Value, format: Format.Resolved) Error![]const u8 {
+    var content: std.Io.Writer.Allocating = .init(output.allocator);
+    errdefer content.deinit();
+    var failure: template_writer.ValueFailure = .{};
+    template_writer.renderValue(&content.writer, text, values, format, &failure) catch |err| switch (err) {
+        error.WriteFailed => return error.OutOfMemory,
+        error.InvalidTemplate => if (failure.path.len == 0)
+            return planning.fail(output, error.InvalidTemplate, file, "{s} line {d}: {s}", .{ place, failure.line, failure.reason() })
+        else
+            return planning.fail(output, error.InvalidTemplate, file, "{s} line {d}: kosm.{s}: {s}", .{ place, failure.line, failure.path, failure.reason() }),
+        // checkFormat already wrote this color format once.
+        error.InvalidColorFormat => unreachable,
+    };
+    return content.toOwnedSlice();
 }
 
 fn blockComment(output: *Output, file: []const u8, adapter: Adapter) Error!Adapter.Comment {
@@ -946,6 +1002,37 @@ test "templateBlock errors name the block" {
     try testing.expectError(error.MissingCapability, output.templateBlock(app, .{ .file = "~/a.plain", .id = "theme", .text = "a" }));
     try testing.expectError(error.InvalidBlock, output.templateBlock(app, .{ .file = "~/a.lines", .id = "two words", .text = "a" }));
     try testing.expectError(error.InvalidBlock, output.templateBlock(app, .{ .file = "~/a.lines", .id = "theme", .text = "# kosm:end\n" }));
+    try testing.expectEqual(0, fixture.plan.files.items.len);
+}
+
+test "the value forms write a table built at run time like the typed ones" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("visualizer", &.{lines_adapter});
+    const accent = try Color.parseHex("#5e81ac");
+    const values: value.Value = .{ .table = &.{ .{ .key = "bars", .value = .{ .integer = 4 } }, .{ .key = "accent", .value = .{ .color = accent } } } };
+    try output.generateValue(.{ .file = "~/a.lines" }, values);
+    try output.blockValue(.{ .file = "~/b.lines", .id = "colors" }, values);
+    try output.templateValue(.{ .file = "~/c.lines", .text = "bars kosm.bars, {kosm.accent}\n" }, values);
+    try output.templateBlockValue(.{ .file = "~/d.lines", .id = "colors", .text = "kosm.accent.hex" }, values);
+    try testing.expectEqualStrings("bars = 4\naccent = #5e81acff\n", fixture.plan.files.items[0].new);
+    try testing.expectEqualStrings("# kosm:begin colors\nbars = 4\naccent = #5e81acff\n# kosm:end\n", readPlanned(&fixture, 1));
+    try testing.expectEqualStrings("bars 4, #5e81acff\n", fixture.plan.files.items[2].new);
+    try testing.expectEqualStrings("# kosm:begin colors\n5e81ac\n# kosm:end\n", readPlanned(&fixture, 3));
+}
+
+test "a run-time template naming nothing fails naming the file, the line and the path" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("visualizer", &.{lines_adapter});
+    const values: value.Value = .{ .table = &.{.{ .key = "bars", .value = .{ .integer = 4 } }} };
+    try testing.expectError(error.InvalidTemplate, output.templateValue(.{ .file = "~/c.lines", .text = "a\nkosm.bar" }, values));
+    try testing.expectEqualStrings("~/c.lines", fixture.diagnostics.file);
+    try testing.expectEqualStrings("template line 2: kosm.bar: it names nothing; there is no field 'bar'", fixture.diagnostics.message());
+    try testing.expectError(error.InvalidTemplate, output.templateBlockValue(.{ .file = "~/d.lines", .id = "colors", .text = "{kosm.bars" }, values));
+    try testing.expectEqualStrings("block 'colors', template line 1: '{' before 'kosm.' is never closed with '}'", fixture.diagnostics.message());
     try testing.expectEqual(0, fixture.plan.files.items.len);
 }
 

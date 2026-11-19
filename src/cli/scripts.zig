@@ -14,14 +14,17 @@ pub const runner_path = "zig-out/bin/scripts";
 /// Where the build of the runner puts each frontend's editor file, which kosm copies into the
 /// config's root where it is missing.
 const editor_directory = "zig-out/editor";
-/// Written when a build of the runner starts and kept once it succeeded; Zig code newer than
-/// it means the runner is stale.
+/// Written when a build of the runner starts and kept once it succeeded; Zig code (or an app's
+/// script) newer than it means the runner is stale.
 const stamp_path = "zig-out/scripts.built";
 /// Where script kosmoi live, in the config's root.
 const kosmoi_directory = "kosmoi";
 /// The config's own files and folders the runner is built from.
 const config_files = [_][]const u8{ "build.zig", "build.zig.zon" };
 const config_folders = [_][]const u8{ "kosmoi", "apps", "adapters" };
+/// The config's folders whose every file counts: an app's script may change what it declares,
+/// which only a build sees. A build finding the declaration unchanged compiles nothing.
+const script_app_folders = [_][]const u8{"apps"};
 /// Kosm's own files and folders in its sources.
 const source_files = [_][]const u8{ "build.zig", "build.zig.zon" };
 const source_folders = [_][]const u8{ "src", "build" };
@@ -189,14 +192,14 @@ fn isStale(context: Context) Error!bool {
     std.Io.Dir.cwd().access(context.io, runner, .{}) catch return true;
     const stamp_file = try std.Io.Dir.path.join(context.arena, &.{ context.config, stamp_path });
     const stamp = std.Io.Dir.cwd().statFile(context.io, stamp_file, .{}) catch return true;
-    if (try anyNewer(context, context.config, &config_files, &config_folders, stamp.mtime)) return true;
+    if (try anyNewer(context, context.config, &config_files, &config_folders, &script_app_folders, stamp.mtime)) return true;
     const sources = context.sources orelse return false;
-    return anyNewer(context, sources.directory, &source_files, &source_folders, stamp.mtime);
+    return anyNewer(context, sources.directory, &source_files, &source_folders, &.{}, stamp.mtime);
 }
 
-/// Whether one of `files` in `root`, or a Zig file or manifest anywhere in its `folders`, was
-/// changed after `since`.
-fn anyNewer(context: Context, root: []const u8, files: []const []const u8, folders: []const []const u8, since: std.Io.Timestamp) Error!bool {
+/// Whether one of `files` in `root`, a Zig file or manifest anywhere in its `folders`, or any
+/// file in its `every_file_folders`, was changed after `since`.
+fn anyNewer(context: Context, root: []const u8, files: []const []const u8, folders: []const []const u8, every_file_folders: []const []const u8, since: std.Io.Timestamp) Error!bool {
     var dir = std.Io.Dir.cwd().openDir(context.io, root, .{}) catch return true;
     defer dir.close(context.io);
     for (files) |file| {
@@ -204,6 +207,9 @@ fn anyNewer(context: Context, root: []const u8, files: []const []const u8, folde
         if (stat.mtime.compare(.gt, since)) return true;
     }
     for (folders) |folder| {
+        const every_file = for (every_file_folders) |counted| {
+            if (std.mem.eql(u8, counted, folder)) break true;
+        } else false;
         var tree = dir.openDir(context.io, folder, .{ .iterate = true }) catch continue;
         defer tree.close(context.io);
         var walker = tree.walkSelectively(context.arena) catch return true;
@@ -212,7 +218,7 @@ fn anyNewer(context: Context, root: []const u8, files: []const []const u8, folde
             if (std.mem.startsWith(u8, entry.basename, ".")) continue;
             switch (entry.kind) {
                 .directory => if (!isSkipped(entry.basename)) walker.enter(context.io, entry) catch return true,
-                .file, .sym_link => if (std.mem.endsWith(u8, entry.basename, ".zig") or std.mem.endsWith(u8, entry.basename, ".zon")) {
+                .file, .sym_link => if (every_file or std.mem.endsWith(u8, entry.basename, ".zig") or std.mem.endsWith(u8, entry.basename, ".zon")) {
                     const stat = entry.dir.statFile(context.io, entry.basename, .{}) catch return true;
                     if (stat.mtime.compare(.gt, since)) return true;
                 },
@@ -245,7 +251,80 @@ const test_frontend =
     \\    .variants = variants,
     \\    .complete = complete,
     \\    .editor_file = .{ .path = ".lines.json", .contents = "{}\n" },
+    \\    .declare = declare,
+    \\    .call = call,
     \\};
+    \\
+    \\const integer_type: kosm.Frontend.Declaration.Type = .integer;
+    \\
+    \\/// `doc <text>` documents the next field or, before the first, the app; `field <name>
+    \\/// integer [default]` or `field <name> optional-integer` declares one; `from` and
+    \\/// `apply <file>` give those functions.
+    \\fn declare(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.Declaration {
+    \\    var fields: std.ArrayList(kosm.Frontend.Declaration.Field) = .empty;
+    \\    var functions: std.ArrayList([]const u8) = .empty;
+    \\    var app_doc: ?[]const u8 = null;
+    \\    var doc: ?[]const u8 = null;
+    \\    var lines = std.mem.splitScalar(u8, source, '\n');
+    \\    var number: usize = 0;
+    \\    while (lines.next()) |line| {
+    \\        number += 1;
+    \\        if (std.mem.startsWith(u8, line, "doc ")) {
+    \\            if (fields.items.len == 0 and app_doc == null) app_doc = line[4..] else doc = line[4..];
+    \\        } else if (std.mem.startsWith(u8, line, "field ")) {
+    \\            var words = std.mem.splitScalar(u8, line["field ".len..], ' ');
+    \\            const name = words.first();
+    \\            const kind = words.next() orelse return context.fail("{s}: a field needs a type", .{try context.at(number)});
+    \\            const field_type: kosm.Frontend.Declaration.Type = if (std.mem.eql(u8, kind, "integer")) .integer else .{ .optional = &integer_type };
+    \\            const default: ?kosm.Loose = if (words.next()) |text| .{ .value = .{ .integer = std.fmt.parseInt(i64, text, 10) catch return context.fail("{s}: bad default", .{try context.at(number)}) } } else null;
+    \\            try fields.append(context.arena, .{ .name = name, .doc = doc, .type = field_type, .default = default, .line = number });
+    \\            doc = null;
+    \\        } else if (std.mem.eql(u8, line, "from") or std.mem.startsWith(u8, line, "from ")) {
+    \\            try functions.append(context.arena, "from");
+    \\        } else if (std.mem.startsWith(u8, line, "apply ")) {
+    \\            try functions.append(context.arena, "apply");
+    \\        }
+    \\    }
+    \\    return .{ .fields = fields.items, .functions = functions.items, .doc = app_doc };
+    \\}
+    \\
+    \\/// `from` sets `peak` from the theme's mode (1 dark, 2 light), or fails on `from fails`;
+    \\/// `apply` writes `size` and `peak` to its file through the kitty adapter.
+    \\fn call(context: *kosm.Frontend.Context, source: []const u8, function: []const u8, arguments: []const kosm.Loose) kosm.Frontend.Error!kosm.Loose {
+    \\    var frontend_call = context.library.call(context.arena);
+    \\    if (std.mem.eql(u8, function, "from")) {
+    \\        if (lineOf(source, "from fails")) |line| return context.fail("{s}: from fails on purpose", .{try context.at(line)});
+    \\        const theme = arguments[0].value.handle;
+    \\        const mode = theme.type.get(&frontend_call, theme.pointer, .{ .field = "mode" }) catch return context.fail("cannot read the mode", .{});
+    \\        const peak: i64 = if (std.mem.eql(u8, mode.value.string, "light")) 2 else 1;
+    \\        return .{ .value = .{ .table = try context.arena.dupe(kosm.Loose.Entry, &.{.{ .key = "peak", .value = .{ .value = .{ .integer = peak } } }}) } };
+    \\    }
+    \\    const line = lineOf(source, "apply ").?;
+    \\    var lines = std.mem.splitScalar(u8, source, '\n');
+    \\    for (1..line) |_| _ = lines.next();
+    \\    const file = lines.next().?["apply ".len..];
+    \\    const self = arguments[0].value.handle;
+    \\    var values: std.ArrayList(kosm.Loose.Entry) = .empty;
+    \\    for ([_][]const u8{ "size", "peak" }) |name| {
+    \\        const value = self.type.get(&frontend_call, self.pointer, .{ .field = name }) catch return context.fail("cannot read {s}", .{name});
+    \\        if (value.value != .null) try values.append(context.arena, .{ .key = name, .value = value });
+    \\    }
+    \\    const generate = arguments[1].value.handle.type.method("generateValue") orelse return context.fail("kosm.Output has no generateValue", .{});
+    \\    const options: kosm.Loose = .{ .value = .{ .table = try context.arena.dupe(kosm.Loose.Entry, &.{ .{ .key = "file", .value = .{ .value = .{ .string = file } } }, .{ .key = "lang", .value = .{ .value = .{ .string = "kitty" } } } }) } };
+    \\    _ = generate.call(&frontend_call, &.{ arguments[1], options, .{ .value = .{ .table = values.items } } }) catch
+    \\        return context.fail("{s}: {s}", .{ try context.at(line), frontend_call.message orelse "it failed" });
+    \\    return .{ .value = .null };
+    \\}
+    \\
+    \\fn lineOf(source: []const u8, start: []const u8) ?usize {
+    \\    var lines = std.mem.splitScalar(u8, source, '\n');
+    \\    var number: usize = 0;
+    \\    while (lines.next()) |line| {
+    \\        number += 1;
+    \\        if (std.mem.startsWith(u8, line, start)) return number;
+    \\    }
+    \\    return null;
+    \\}
     \\
     \\fn complete(arena: std.mem.Allocator, completion: kosm.Frontend.Completion) std.mem.Allocator.Error![]const kosm.Frontend.Completion.File {
     \\    var text: std.Io.Writer.Allocating = .init(arena);
@@ -363,6 +442,35 @@ fn testDiffWith(context: Context, name: []const u8, arguments: []const []const u
     return if (applied.term.success()) applied.stdout else applied.stderr;
 }
 
+/// A config project in `dir`'s `project/` on the stub kitty package, its home in `home/`,
+/// writing to `stdout` and `stderr`.
+fn testProject(arena: std.mem.Allocator, dir: std.Io.Dir, stdout: *std.Io.Writer.Allocating, stderr: *std.Io.Writer.Allocating) !Context {
+    const root = try dir.realPathFileAlloc(testing.io, ".", arena);
+    // Assumes the tests run from the repository root, as `zig build test` does.
+    const repository_root = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, ".", arena);
+    const environ = try arena.create(std.process.Environ.Map);
+    environ.* = try testing.environ.createMap(arena);
+    _ = environ.swapRemove("ZIG_PROGRESS");
+    // Shared with the other config tests, so the compiled std stays warm.
+    try environ.put("ZIG_GLOBAL_CACHE_DIR", try std.Io.Dir.path.join(arena, &.{ repository_root, ".zig-cache/kosm-test-global-cache" }));
+    try environ.put("HOME", try std.Io.Dir.path.join(arena, &.{ root, "home" }));
+    try environ.put(interface.environment_variable, try arena.print("{d}", .{interface.version}));
+    try dir.createDirPath(testing.io, "home");
+    try dir.createDirPath(testing.io, "project");
+    const test_kosm = @import("test_kosm.zig");
+    const context: Context = .{
+        .io = testing.io,
+        .arena = arena,
+        .config = try std.Io.Dir.path.join(arena, &.{ root, "project" }),
+        .environ_map = environ,
+        .sources = try test_kosm.sources(arena, testing.io),
+        .stdout = &stdout.writer,
+        .stderr = &stderr.writer,
+    };
+    try @import("init.zig").init(context, try test_kosm.stub(arena, testing.io, dir, root));
+    return context;
+}
+
 test "script kosmoi apply on a Zig kosmos, on each other and on none, and a script edit builds nothing" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -371,28 +479,7 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     const arena = arena_state.allocator();
     var stdout: std.Io.Writer.Allocating = .init(arena);
     var stderr: std.Io.Writer.Allocating = .init(arena);
-    const root = try tmp.dir.realPathFileAlloc(testing.io, ".", arena);
-    // Assumes the tests run from the repository root, as `zig build test` does.
-    const repository_root = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, ".", arena);
-    var environ = try testing.environ.createMap(arena);
-    _ = environ.swapRemove("ZIG_PROGRESS");
-    // Shared with the other config tests, so the compiled std stays warm.
-    try environ.put("ZIG_GLOBAL_CACHE_DIR", try std.Io.Dir.path.join(arena, &.{ repository_root, ".zig-cache/kosm-test-global-cache" }));
-    try environ.put("HOME", try std.Io.Dir.path.join(arena, &.{ root, "home" }));
-    try environ.put(interface.environment_variable, try arena.print("{d}", .{interface.version}));
-    try tmp.dir.createDirPath(testing.io, "home");
-    try tmp.dir.createDirPath(testing.io, "project");
-    const test_kosm = @import("test_kosm.zig");
-    const context: Context = .{
-        .io = testing.io,
-        .arena = arena,
-        .config = try std.Io.Dir.path.join(arena, &.{ root, "project" }),
-        .environ_map = &environ,
-        .sources = try test_kosm.sources(arena, testing.io),
-        .stdout = &stdout.writer,
-        .stderr = &stderr.writer,
-    };
-    try @import("init.zig").init(context, try test_kosm.stub(arena, testing.io, tmp.dir, root));
+    const context = try testProject(arena, tmp.dir, &stdout, &stderr);
     // The starting kosmos needs the real official packages, and the runner holds every kosmos.
     try tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/frost.zig", .data = test_frost });
@@ -512,4 +599,72 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     stderr.clearRetainingCapacity();
     try testing.expect(!try build(context));
     try testing.expect(std.mem.find(u8, stderr.written(), "'frost' names both the script kosmoi/frost.kosmos and kosmoi/frost.zig") != null);
+}
+
+/// An app written through the test frontend: its size and the peak its `from` gives.
+const test_meter =
+    \\doc A meter, for tests.
+    \\doc How many bars.
+    \\field size integer 3
+    \\field peak optional-integer
+    \\from
+    \\apply ~/.config/meter/kosm.conf
+    \\
+;
+
+/// A Zig kosmos wearing the meter in a light theme, its size set after `from`.
+const test_gauge =
+    \\const kosm = @import("kosm");
+    \\const meter = @import("meter");
+    \\
+    \\pub fn kosmos() struct { meter: meter.App } {
+    \\    var app = meter.from(kosm.Theme.from(.{ .palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff") }, .mode = .light }));
+    \\    app.size = 5;
+    \\    return .{ .meter = app };
+    \\}
+    \\
+;
+
+test "an app written through a frontend applies from a Zig kosmos and a script, and a script edit compiles nothing" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var stdout: std.Io.Writer.Allocating = .init(arena);
+    var stderr: std.Io.Writer.Allocating = .init(arena);
+    const context = try testProject(arena, tmp.dir, &stdout, &stderr);
+    try tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/lines.zig", .data = test_frontend });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/apps/meter.kosmos", .data = test_meter });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/gauge.zig", .data = test_gauge });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/alone.kosmos", .data = "theme palette.black=#000000\ntheme palette.white=#ffffff\ntheme mode=dark\nset meter.size=9\n" });
+
+    try testing.expect(try prepare(context));
+    // The module kosm wrote from the script, documented, which a Zig kosmos uses like any app.
+    const generated = "project/.zig-cache/kosm/apps/meter.zig";
+    const module = try tmp.dir.readFileAlloc(testing.io, generated, arena, .limited(1024 * 1024));
+    try testing.expect(std.mem.find(u8, module, "/// A meter, for tests.\npub const App = struct {\n    /// How many bars.\n    size: i64 = 3,\n    peak: ?i64 = null,\n") != null);
+    try testing.expect(std.mem.find(u8, try testDiff(context, "gauge"), "+size 5\n+peak 2\n") != null);
+    try testing.expect(std.mem.find(u8, try testDiff(context, "alone"), "+size 9\n+peak 1\n") != null);
+    // Its own runner sends a Zig kosmos wearing it to the runner of scripts.
+    try testing.expect(try context.runBuild(&.{ "build", "-Dkosmos=gauge" }));
+    try testing.expect(try buildsOnKosmoi(context, try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" })));
+
+    // An edit leaving the declaration alone rebuilds the runner without touching the module.
+    try tmp.dir.setTimestamps(testing.io, generated, .{ .modify_timestamp = .{ .new = .{ .nanoseconds = 0 } } });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/apps/meter.kosmos", .data = try std.mem.replaceOwned(u8, arena, test_meter, "kosm.conf", "other.conf") });
+    try testing.expect(try isStale(context));
+    try testing.expect(try prepare(context));
+    try testing.expectEqual(0, (try tmp.dir.statFile(testing.io, generated, .{})).mtime.nanoseconds);
+    try testing.expect(std.mem.find(u8, try testDiff(context, "gauge"), "~/.config/meter/other.conf") != null);
+    // A failing from fails the kosmos with the script's line once it returns.
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/apps/meter.kosmos", .data = try std.mem.concat(arena, u8, &.{ test_meter, "from fails\n" }) });
+    try testing.expectEqualStrings("error: kosmos 'gauge': apps/meter.kosmos:7: from fails on purpose\n", try testDiff(context, "gauge"));
+    try testing.expectEqualStrings("error: kosmos 'alone': apps/meter.kosmos:7: from fails on purpose\n", try testDiff(context, "alone"));
+    // A declaration kosm cannot write fails the build naming the script's line.
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/apps/meter.kosmos", .data = "field size\napply ~/a.conf\n" });
+    stderr.clearRetainingCapacity();
+    try testing.expect(!try prepare(context));
+    try testing.expect(std.mem.find(u8, stderr.written(), "apps/meter.kosmos:1: a field needs a type") != null);
 }

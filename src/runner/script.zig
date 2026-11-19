@@ -405,7 +405,13 @@ pub fn standalone(comptime Tree: type, comptime modules: []const type, arena: st
                         };
                         theme = kosm.Theme.from(theme_input);
                     }
+                    kosm.failure.clear();
                     @field(tree, name) = Module.from(theme.?);
+                    // An app's `from` cannot fail, so a script's failure in it is only recorded.
+                    if (kosm.failure.message()) |message| {
+                        diagnostics.set("", "", "{s}", .{message});
+                        return error.Reported;
+                    }
                 }
             }
         }

@@ -107,12 +107,14 @@ fn find(context: Context, name: []const u8) Error!?Local {
     return null;
 }
 
-/// `name` in local directory `directory` ("kosmoi"), as a file or a directory, or null.
+/// `name` in local directory `directory` ("kosmoi"), as a file or a directory, or null. A
+/// directory without a `root.zig` holds only scripts (an app written in Lua), so no Zig package.
 fn findIn(context: Context, directory: []const u8, name: []const u8) Error!?Local {
     const file = try context.arena.print("{s}/{s}.zig", .{ directory, name });
     if (try kindOf(context, file) == .file) return .{ .name = name, .path = file, .kind = .file };
     const package = try std.Io.Dir.path.join(context.arena, &.{ directory, name });
-    if (try kindOf(context, package) == .directory) return .{ .name = name, .path = package, .kind = .directory };
+    const root = try std.Io.Dir.path.join(context.arena, &.{ package, "root.zig" });
+    if (try kindOf(context, package) == .directory and try kindOf(context, root) == .file) return .{ .name = name, .path = package, .kind = .directory };
     return null;
 }
 

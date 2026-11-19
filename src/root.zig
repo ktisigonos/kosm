@@ -146,6 +146,7 @@ test {
     std.testing.refAllDecls(assignment.copy);
     std.testing.refAllDecls(Frontend);
     std.testing.refAllDecls(Frontend.Handle);
+    std.testing.refAllDecls(Frontend.ScriptApp);
     std.testing.refAllDecls(kosmos_file);
 }
 

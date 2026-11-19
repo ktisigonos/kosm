@@ -68,7 +68,8 @@ pub const Layer = struct {
 
 /// Calls `kosmos` with its `Params` read from `given` and their images and files loaded, on its
 /// own stack, which `kosmos_stack` is set to. Never inlined, so the parameters are parsed in
-/// stack below its caller's. A kosmos failing through `kosm.fail` reports its own message.
+/// stack below its caller's. A kosmos failing through `kosm.fail`, or an app's script failing in
+/// its `from`, reports its own message.
 pub noinline fn callKosmos(comptime kosmos: anytype, given: Given, diagnostics: *kosm.Diagnostics, kosmos_stack: *lifetime.Stack, image_context: images.Context) images.Error!discovery.Payload(@typeInfo(@TypeOf(kosmos)).@"fn".return_type.?) {
     const function = @typeInfo(@TypeOf(kosmos)).@"fn";
     var returned: function.return_type.? = undefined;
@@ -97,13 +98,15 @@ pub noinline fn callKosmos(comptime kosmos: anytype, given: Given, diagnostics: 
         try buildKosmoi(Params, &parsed, given.kosmoi, image_context.arena, diagnostics);
         kosmos_stack.* = try callOnKosmosStack(kosmos, .{parsed}, &returned, diagnostics);
     }
-    if (@typeInfo(@TypeOf(returned)) != .error_union) return returned;
-    return returned catch |err| {
+    const tree = if (@typeInfo(@TypeOf(returned)) != .error_union) returned else returned catch |err| {
         if (@as(anyerror, err) == error.KosmosFailed) {
             if (kosm.failure.message()) |message| return fail(diagnostics, "{s}", .{message});
         }
         return fail(diagnostics, "the kosmos function failed: {s}", .{@errorName(err)});
     };
+    // An app's `from` cannot fail, so a script's failure in it is only recorded.
+    if (kosm.failure.message()) |message| return fail(diagnostics, "{s}", .{message});
+    return tree;
 }
 
 /// Builds the kosmos every `kosm.Kosmos` (or non-null `?kosm.Kosmos`) field of `params_value`

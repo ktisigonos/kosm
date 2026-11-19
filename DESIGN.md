@@ -99,7 +99,7 @@ there is undecided, so ask.
 - A build holds one copy of each package: what a config (or a package built on its own) lists itself wins over the copy a package pins, and packages pinning different copies of a package it doesn't list fail the build naming them.
 - Zig is pinned to a tagged release, never master.
 
-## Kosmoi written through a frontend
+## Kosmoi and apps written through a frontend
 
 - **Every language is equal.** A kosmos, look or base is the same whatever language it is written in: called with its inputs, it gives a value the caller builds on, and any of them, in any language, builds on any other. What one language reaches, every frontend reaches; a frontend adds only syntax, and idioms where they read better in its language (Lua methods, variants as functions). Zig is the natural choice for low-level code (adapters, formats), but nothing requires it: in the end apps, adapters and every other part of kosm can be written through any frontend.
 
@@ -110,7 +110,11 @@ there is undecided, so ask.
 - What a base, look or kosmos exports for building on takes ordinary values known at run time (a look, a theme), never compile-time ones, so every frontend can call it.
 - A script reaches no files, environment or programs: its frontend gives it only the language's libraries that compute.
 - Errors name the script's line for every value it gives, and a value the script writes but the language reads as nothing (Lua's `nil`) fails instead of being dropped.
-- Scripts are read when kosm runs, like a file named in `Params`: editing one never compiles. One runner, holding every Zig kosmos, app and frontend of the config, runs every script and every Zig kosmos building on another; it is rebuilt only when Zig code it is built from changed since it was last built.
+- Scripts are read when kosm runs, like a file named in `Params`: editing one never compiles. One runner, holding every Zig kosmos, app and frontend of the config, runs every script and every Zig kosmos building on another; it is rebuilt only when Zig code it is built from, or what an app's script declares, changed since it was last built.
+- An **app written through a frontend** is `apps/<name>.<extension>` or `apps/<name>/root.<extension>` (a folder holds one root). Its script declares the app's fields in a table built from kosm's type constructors (`bars = kosm.integer(0)`, `foreground = kosm.optional(kosm.Color)`, any Zig type by name, `cursor = kosm_cursor.App`), each documented by the comment above it, and gives `from(theme)`, `apply(self, output)` and optionally `reload(self, reloader)`. It keeps every rule of an app: it does no IO and never parses.
+- The frontend reads the declaration without running a function, and the build generates a Zig module from it, with `App`, `from` and `App.apply` calling into the script and the doc comments, at a fixed path and rewritten only when it changes. So the app is used from Zig and scripts alike, completes in every editor, and editing a function body compiles nothing; only a changed declaration rebuilds.
+- Its functions keep a Zig app's signatures: `from(theme)` returns `App` and never fails, so a script error there is recorded like `kosm.fail`'s message, and kosm fails with it (script, line, message) once the kosmos returns, before anything is planned. Only the runner of scripts runs them, through a host it installs once as a global, since `from(theme)` takes nothing to hand it in; a Zig kosmos wearing such an app is applied by that runner. A frontend keeps one interpreter for every app's script, each script with globals of its own.
+- A script calls the same API under the same names as Zig (`output:generateValue(...)`); a Zig method taking a compile-time shape (`generate`, `block`, `template`) has a form taking a `kosm.Value` for values built at run time.
 - Completion for scripts is generated when that runner is built, into the config's `zig-out/completions/<language>/`, from every type a script may set and every function it may call, with the doc comments of their Zig source; a type keeps its Zig name. One editor file in the config (`.luarc.json` for Lua) points at it; kosm creates it where it is missing and never rewrites it.
 
 ## Non-goals

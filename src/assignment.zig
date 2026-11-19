@@ -7,6 +7,7 @@ const ColorChoice = @import("color_choice.zig").ColorChoice;
 const Diagnostics = @import("Diagnostics.zig");
 const Loose = @import("Loose.zig");
 const Value = @import("value.zig").Value;
+const Raw = @import("Raw.zig");
 const app = @import("app.zig");
 const Handle = @import("Frontend/Handle.zig");
 const Image = @import("Image.zig");
@@ -346,7 +347,13 @@ const Walker = struct {
             .integer => |integer| return .{ .integer = integer },
             .float => |float| return .{ .float = float },
             .boolean => |boolean| return .{ .boolean = boolean },
-            .text, .null, .handle => return walker.expected(Value, loose),
+            .handle => |handle| {
+                if (handle.as(Color)) |color| return .{ .color = color.* };
+                if (handle.as(Raw)) |raw| return .{ .raw = try walker.arena.dupe(u8, raw.text) };
+                if (handle.as(Value)) |value| return copy.deep(Value, walker.arena, value.*);
+                return walker.expected(Value, loose);
+            },
+            .text, .null => return walker.expected(Value, loose),
         }
     }
 
@@ -701,6 +708,20 @@ test "a kosm.Value takes any value but text and null" {
     try testing.expectEqualStrings("two", written[1].string);
     const bad = looseOf(.{ .table = &.{ entryOf("path", .{ .string = "a" }), entryOf("value", .null) } });
     try fixture.expectFailure(fixture.kitty("extra", .{ .list = &.{bad} }), "terminal.kitty.extra[0].value: expected a value to write (a table, list, string, number or boolean), got null");
+}
+
+test "a kosm.Value takes a color or raw text a script holds" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    var color = try Color.parseHex("ff0000");
+    var raw: Raw = .{ .text = "2pt" };
+    const color_handle: Handle = .{ .pointer = &color, .type = &.{ .id = Handle.id(Color), .name = "kosm.Color", .get = undefined, .set = undefined, .length = undefined } };
+    const raw_handle: Handle = .{ .pointer = &raw, .type = &.{ .id = Handle.id(Raw), .name = "kosm.Raw", .get = undefined, .set = undefined, .length = undefined } };
+    const extra = looseOf(.{ .table = &.{ entryOf("path", .{ .string = "a" }), entryOf("value", .{ .list = &.{ looseOf(.{ .handle = color_handle }), looseOf(.{ .handle = raw_handle }) } }) } });
+    try fixture.assignLoose(fixture.kitty("extra", .{ .list = &.{extra} }));
+    const written = fixture.kittyApp().extra[0].value.list;
+    try testing.expectEqual(color, written[0].color);
+    try testing.expectEqualStrings("2pt", written[1].raw);
 }
 
 test "wrong kinds of values name the path and what was expected" {

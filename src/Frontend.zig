@@ -1,11 +1,13 @@
-//! Support for writing kosmoi in one language other than Zig. A package declares one as a public
-//! constant, as it declares adapters; kosm finds a script kosmos (`kosmoi/<name>.<extension>`) by
-//! the extension a frontend claims and hands it the script's text. A frontend never knows any
-//! app: it only reads the script into loose values, which kosm puts into the typed tree.
+//! Support for writing kosmoi and apps in one language other than Zig. A package declares one as
+//! a public constant, as it declares adapters; kosm finds a script kosmos
+//! (`kosmoi/<name>.<extension>`) or app (`apps/<name>/root.<extension>`) by the extension a
+//! frontend claims and hands it the script's text. A frontend never knows any app: it only reads
+//! scripts into loose values, which kosm puts into typed values, and runs their functions.
 
 const Frontend = @This();
 
 const std = @import("std");
+const Loose = @import("Loose.zig");
 
 /// The language's name, for messages: "lua".
 name: []const u8,
@@ -27,9 +29,29 @@ complete: ?*const fn (arena: std.mem.Allocator, completion: Completion) std.mem.
 /// The file in the config's root that points the editor at those files (".luarc.json"). Kosm
 /// creates it only where it is missing, so a user's edits to it stay. Null for none.
 editor_file: ?Completion.File = null,
+/// Reads what an app's script declares (its fields, their types, defaults and doc comments, and
+/// the functions it gives) without calling any of its functions; kosm calls it while building
+/// the config, to write the Zig module the app is used through. `context.library` is empty
+/// there. Null for a frontend writing no apps.
+declare: ?*const fn (context: *Context, source: []const u8) Error!Declaration = null,
+/// Calls function `function` of the script at `context.path`, whose text is `source`, with
+/// `arguments`, and returns what it returns: a table as a loose table, a Zig value as its
+/// handle. The script runs once, on the first call naming it, in the frontend's one
+/// interpreter, so its later calls share its values. Fail through `Context.fail`, the message
+/// starting with the script's place. Null for a frontend writing no apps.
+call: ?*const fn (context: *Context, source: []const u8, function: []const u8, arguments: []const Loose) Error!Loose = null,
 
 /// What a script kosmos says: what it builds on, and the values it sets.
 pub const Script = @import("Frontend/Script.zig");
+
+/// What an app's script declares, for `declare`.
+pub const Declaration = @import("Frontend/Declaration.zig");
+
+/// An app written through a frontend, which the Zig module kosm generates for it runs.
+pub const ScriptApp = @import("Frontend/ScriptApp.zig");
+
+/// What runs the functions of apps written through a frontend.
+pub const Host = @import("Frontend/Host.zig");
 
 /// What `load` gets besides the text: an arena, the script's path and a place to explain a
 /// failure.
@@ -53,7 +75,7 @@ pub const Handle = @import("Frontend/Handle.zig");
 /// What a function or handle gets from its frontend when a script uses it.
 pub const Call = @import("Frontend/Call.zig");
 
-/// Errors `load` may return. Return `InvalidScript` through `Context.fail`.
+/// Errors `load`, `declare` and `call` may return. Return `InvalidScript` through `Context.fail`.
 pub const Error = std.mem.Allocator.Error || error{InvalidScript};
 
 /// Whether this frontend claims `extension` (".lua").

@@ -1,4 +1,4 @@
-//! What a frontend's `load` gets besides the script's text.
+//! What a frontend's `load`, `declare` and `call` get besides the script's text.
 
 const Context = @This();
 

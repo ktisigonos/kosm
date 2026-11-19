@@ -10,7 +10,9 @@
 //! script kosmos (`kosmoi/<name>.<extension>`, read by a frontend) shares, holding every kosmos,
 //! app and frontend of the config, and installs each frontend's completion files in
 //! `zig-out/completions/` and editor files in `zig-out/editor/`. `check` compiles every local
-//! one, so editors see the config's imports.
+//! one, so editors see the config's imports. An app written through a frontend
+//! (`apps/<name>.<extension>` or `apps/<name>/root.<extension>`) is the module kosm generates
+//! from what its script declares, in `.zig-cache/kosm/apps/`.
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -20,6 +22,9 @@ const unify = @import("unify.zig").unify;
 const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters" };
 /// Local Zig files are small; this only guards against reading something huge.
 const max_file_size = 16 * 1024 * 1024;
+/// Where the modules of apps written through a frontend are generated, in the config's root.
+/// A fixed path, written only when a module changes, so an unchanged one compiles nothing.
+const generated_apps_folder = ".zig-cache/kosm/apps";
 
 /// Wires up a config project. `manifest` is the config's `@import("build.zig.zon")`; one of its
 /// dependencies must be `kosm`. Problems (a name used twice, an unknown kosmos) fail the build.
@@ -33,11 +38,23 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const prebuilt_names = b.option([]const []const u8, "prebuild", "A kosmos whose runner to compile without installing it, for kosm build; repeat it for several");
     const scripts = b.option(bool, "scripts", "Build the runner every script kosmos shares, for kosm apply and kosm build") orelse false;
 
+    b.dependOnDirectoryContents(b.path("."));
+    var locals: [local_directories.len][]const Local = undefined;
+    for (local_directories, &locals) |directory, *found| {
+        found.* = listLocal(b, directory) catch |err| return fail(b, "cannot read {s}/: {s}", .{ directory, @errorName(err) });
+    }
+    const has_script_apps = found: for (locals) |found| {
+        for (found) |local| {
+            if (local.script != null) break :found true;
+        }
+    } else false;
+
     var names: Names = .{ .b = b };
     inline for (@typeInfo(@TypeOf(manifest.dependencies)).@"struct".field_names) |name| {
         var dependency = b.dependency(name, .{ .target = target, .optimize = optimize });
-        // Only the script runner asks for frontends, so no other build fetches their interpreters.
-        if (scripts and dependency.builder.available_options_map.contains("frontend")) {
+        // Only the script runner and apps written through a frontend ask for frontends, so no
+        // other build fetches their interpreters.
+        if ((scripts or has_script_apps) and dependency.builder.available_options_map.contains("frontend")) {
             dependency = b.dependency(name, .{ .target = target, .optimize = optimize, .frontend = true });
         }
         const module = dependency.builder.modules.get(name) orelse
@@ -53,11 +70,10 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     } else return fail(b, "build.zig.zon has no 'kosm' dependency", .{});
     if (!unifyPackages(b, names.modules.items)) return;
 
-    b.dependOnDirectoryContents(b.path("."));
-    for (local_directories) |directory| {
-        const found = listLocal(b, directory) catch |err| return fail(b, "cannot read {s}/: {s}", .{ directory, @errorName(err) });
+    for (local_directories, locals) |directory, found| {
         for (found) |local| {
             if (local.missing_root) return fail(b, "{s} is a directory package but has no root.zig", .{local.origin});
+            if (local.both_roots) return fail(b, "{s} holds a root.zig and a root script; an app has one root, so remove one", .{local.origin});
             const module = b.createModule(.{ .root_source_file = b.path(local.root), .target = target, .optimize = optimize });
             const kind: Kind = if (std.mem.eql(u8, directory, "kosmoi")) .kosmos else if (std.mem.eql(u8, directory, "adapters")) .adapter else .app;
             if (!names.add(.{ .name = local.name, .module = module, .origin = local.origin, .kind = kind, .local = local })) return;
@@ -72,6 +88,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
         }
     }
 
+    if (has_script_apps) addAppGenerator(b, target, optimize, kosm_dependency, names.modules.items);
     if (!checkScriptNames(b, names.modules.items)) return;
     addEditorCheck(b, names.modules.items);
     if (inspected_names) |inspected| addInspector(b, target, optimize, kosm_dependency, names.modules.items, inspected);
@@ -108,7 +125,9 @@ fn addEditorCheck(b: *std.Build, entries: []const Entry) void {
     const check = b.step("check", "Compile every local kosmos, app and adapter; editors read their imports from it");
     for (entries) |entry| {
         if (entry.kind == .package) continue;
-        check.dependOn(&b.addObject(.{ .name = entry.name, .root_module = entry.module }).step);
+        const object = b.addObject(.{ .name = entry.name, .root_module = entry.module });
+        dependOnGenerated(object, entries);
+        check.dependOn(&object.step);
     }
 }
 
@@ -129,7 +148,69 @@ const Entry = struct {
     kind: Kind,
     /// Where a local kosmos, app or adapter lives; null for a package.
     local: ?Local = null,
+    /// What writes the module of an app written through a frontend; null for any other.
+    generated: ?*std.Build.Step = null,
 };
+
+/// Makes `compile`, which imports `entries`, wait for the modules generated for apps written
+/// through a frontend, which it may compile.
+fn dependOnGenerated(compile: *std.Build.Step.Compile, entries: []const Entry) void {
+    for (entries) |entry| {
+        if (entry.generated) |step| compile.step.dependOn(step);
+    }
+}
+
+/// Builds the generator of the modules of apps written through a frontend, from every frontend
+/// the config holds, and runs it on each such app; every compile importing them waits for it.
+/// The run is cached on the scripts, and rewrites only the modules whose contents change.
+fn addAppGenerator(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []Entry) void {
+    var source: std.Io.Writer.Allocating = .init(b.allocator);
+    const writer = &source.writer;
+    writer.writeAll(
+        \\const std = @import("std");
+        \\const runner = @import("kosm_runner");
+        \\
+        \\pub fn main(init: std.process.Init) !u8 {
+        \\    return runner.generateApps(init, &.{
+        \\
+    ) catch @panic("OOM");
+    for (entries) |entry| {
+        if (entry.kind != .frontend and entry.kind != .adapter) continue;
+        const package = if (entry.kind == .frontend) entry.name[0 .. entry.name.len - "_frontend".len] else entry.name;
+        writer.print("        .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(package), std.zig.fmtString(entry.name) }) catch @panic("OOM");
+    }
+    writer.writeAll(
+        \\    });
+        \\}
+        \\
+    ) catch @panic("OOM");
+    const files = b.addWriteFiles();
+    const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source.written()), .target = target, .optimize = optimize });
+    root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
+    for (entries) |entry| {
+        if (entry.kind == .frontend or entry.kind == .adapter) root_module.addImport(entry.name, entry.module);
+    }
+    const generator = b.addExecutable(.{ .name = "kosm-apps", .root_module = root_module });
+
+    const run = b.addRunArtifact(generator);
+    run.addArg(b.root.joinString(b.allocator, generated_apps_folder) catch @panic("OOM"));
+    var modules: std.ArrayList(u8) = .empty;
+    for (entries) |entry| {
+        if (entry.kind == .frontend) continue;
+        if (modules.items.len != 0) modules.append(b.allocator, ',') catch @panic("OOM");
+        modules.appendSlice(b.allocator, entry.name) catch @panic("OOM");
+    }
+    run.addArg(modules.items);
+    for (entries) |entry| {
+        const script = (entry.local orelse continue).script orelse continue;
+        run.addFileArg2(b.path(script), .{ .prefix = b.fmt("{s}={s}=", .{ entry.name, script }), .make_absolute = true });
+    }
+    // Captured, so the run has an output and is cached on its inputs, the scripts.
+    _ = run.captureStdOut(.{});
+    for (entries) |*entry| {
+        if ((entry.local orelse continue).script != null) entry.generated = &run.step;
+    }
+}
 
 /// The name `~~kosmos/` takes in paths, which no module may have.
 const reserved_name = "kosmos";
@@ -176,6 +257,11 @@ const Local = struct {
     is_directory: bool,
     /// A directory without a root.zig.
     missing_root: bool,
+    /// A directory holding both a root.zig and a root script.
+    both_roots: bool = false,
+    /// The script of an app written through a frontend, relative to the config root; its
+    /// `root` is then the module kosm generates from it.
+    script: ?[]const u8 = null,
 };
 
 /// The single-file and directory packages in `directory`, sorted by name; a missing directory
@@ -192,16 +278,35 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
 
     var found: std.ArrayList(Local) = .empty;
     var iterator = dir.iterate();
+    const holds_apps = std.mem.eql(u8, directory, "apps");
     while (try iterator.next(io)) |entry| {
         if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".zig")) {
             const path = b.fmt("{s}/{s}", .{ directory, entry.name });
             try found.append(b.allocator, .{ .name = b.dupe(entry.name[0 .. entry.name.len - ".zig".len]), .root = path, .origin = path, .is_directory = false, .missing_root = false });
+        } else if (holds_apps and (entry.kind == .file or entry.kind == .sym_link) and isScriptFile(entry.name)) {
+            const path = b.fmt("{s}/{s}", .{ directory, entry.name });
+            const name = b.dupe(scriptStem(entry.name));
+            try found.append(b.allocator, .{ .name = name, .root = generatedRoot(b, name), .origin = path, .is_directory = false, .missing_root = false, .script = path });
         } else if (entry.kind == .directory) {
             const package_path = b.fmt("{s}/{s}", .{ directory, entry.name });
             b.dependOnDirectoryContents(b.path(package_path));
             const has_root = if (dir.statFile(io, b.fmt("{s}/root.zig", .{entry.name}), .{})) |_| true else |_| false;
+            const script_root_file = try scriptRootFile(b, dir, entry.name);
             // A kosmos folder whose root is a script holds no Zig module unless it has a root.zig.
-            if (!has_root and std.mem.eql(u8, directory, "kosmoi") and try holdsScriptRoot(b, dir, entry.name)) continue;
+            if (!has_root and std.mem.eql(u8, directory, "kosmoi") and script_root_file != null) continue;
+            if (holds_apps and script_root_file != null) {
+                const name = b.dupe(entry.name);
+                try found.append(b.allocator, .{
+                    .name = name,
+                    .root = generatedRoot(b, name),
+                    .origin = b.fmt("{s}/", .{package_path}),
+                    .is_directory = true,
+                    .missing_root = false,
+                    .both_roots = has_root,
+                    .script = b.fmt("{s}/{s}", .{ package_path, script_root_file.? }),
+                });
+                continue;
+            }
             try found.append(b.allocator, .{
                 .name = b.dupe(entry.name),
                 .root = b.fmt("{s}/root.zig", .{package_path}),
@@ -215,18 +320,24 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
     return found.items;
 }
 
-/// Whether the folder `name` in `dir` holds a script giving its kosmos: `root` with an extension
-/// other than Zig's and its manifests'.
-fn holdsScriptRoot(b: *std.Build, dir: std.Io.Dir, name: []const u8) !bool {
+/// The file name of the script in the folder `name` of `dir` giving its kosmos or app: `root`
+/// with an extension other than Zig's and its manifests'; null for none.
+fn scriptRootFile(b: *std.Build, dir: std.Io.Dir, name: []const u8) !?[]const u8 {
     const io = b.graph.io;
     var folder = try dir.openDir(io, name, .{ .iterate = true });
     defer folder.close(io);
     var iterator = folder.iterate();
     while (try iterator.next(io)) |file| {
         if (file.kind != .file and file.kind != .sym_link) continue;
-        if (isScriptFile(file.name) and std.mem.eql(u8, scriptStem(file.name), script_root)) return true;
+        if (isScriptFile(file.name) and std.mem.eql(u8, scriptStem(file.name), script_root)) return b.dupe(file.name);
     }
-    return false;
+    return null;
+}
+
+/// The generated module of the app `name` written through a frontend, relative to the config
+/// root.
+fn generatedRoot(b: *std.Build, name: []const u8) []const u8 {
+    return b.fmt("{s}/{s}.zig", .{ generated_apps_folder, name });
 }
 
 /// The file name a script giving its folder's kosmos has before its extension.
@@ -306,7 +417,9 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const root_module = b.createModule(.{ .root_source_file = main, .target = target, .optimize = optimize });
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
-    return b.addExecutable(.{ .name = "kosmos", .root_module = root_module });
+    const runner = b.addExecutable(.{ .name = "kosmos", .root_module = root_module });
+    dependOnGenerated(runner, entries);
+    return runner;
 }
 
 /// Writes one `Places.Folder` line per entry; fails the build and returns false when a
@@ -380,6 +493,7 @@ fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
     const runner = b.addExecutable(.{ .name = "scripts", .root_module = root_module });
+    dependOnGenerated(runner, entries);
     b.installArtifact(runner);
     addScriptCompletions(b, runner, entries);
 }
@@ -488,6 +602,11 @@ fn checkScriptNames(b: *std.Build, entries: []const Entry) bool {
 /// for, and for a kosmos where its relative paths start. Fails the build and returns null when the root is no file of
 /// the config or a package.
 fn moduleFolder(b: *std.Build, entry: Entry) ?[]const u8 {
+    // An app written through a frontend lives where its script is, not where its module is.
+    if (entry.local) |local| if (local.script) |script| {
+        const config_root = b.root.joinString(b.allocator, "") catch @panic("OOM");
+        return std.Io.Dir.path.resolveAlloc(b.allocator, &.{ config_root, std.Io.Dir.path.dirname(script) orelse "." }) catch @panic("OOM");
+    };
     const root = entry.module.root_source_file orelse {
         fail(b, "{s}: the module has no root file, so its folder is unknown", .{entry.origin});
         return null;
@@ -543,7 +662,9 @@ fn addColors(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source), .target = target, .optimize = optimize });
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
-    b.installArtifact(b.addExecutable(.{ .name = "colors", .root_module = root_module }));
+    const colors_executable = b.addExecutable(.{ .name = "colors", .root_module = root_module });
+    dependOnGenerated(colors_executable, entries);
+    b.installArtifact(colors_executable);
 }
 
 /// Generates a main reporting what each installed package in `inspected` provides, in order,
@@ -575,7 +696,9 @@ fn addInspector(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source.written()), .target = target, .optimize = optimize });
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (packages) |package| root_module.addImport(package.name, package.module);
-    b.installArtifact(b.addExecutable(.{ .name = "inspect", .root_module = root_module }));
+    const inspector = b.addExecutable(.{ .name = "inspect", .root_module = root_module });
+    dependOnGenerated(inspector, entries);
+    b.installArtifact(inspector);
 }
 
 fn findPackage(entries: []const Entry, name: []const u8) ?Entry {
@@ -621,7 +744,9 @@ fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source.written()), .target = target, .optimize = optimize });
     root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
     for (entries) |entry| root_module.addImport(entry.name, entry.module);
-    b.installArtifact(b.addExecutable(.{ .name = "list", .root_module = root_module }));
+    const list_executable = b.addExecutable(.{ .name = "list", .root_module = root_module });
+    dependOnGenerated(list_executable, entries);
+    b.installArtifact(list_executable);
 }
 
 /// Every local kosmos, app and adapter, and every installed package but kosm itself: each may
@@ -667,6 +792,8 @@ fn reachedLocals(b: *std.Build, entries: []const Entry, start: Entry) ![]const E
 fn localImports(b: *std.Build, local: Local) ![]const []const u8 {
     const io = b.graph.io;
     var imports: std.ArrayList([]const u8) = .empty;
+    // A script holds no Zig, and its generated module imports only packages.
+    if (local.script != null) return imports.items;
     if (!local.is_directory) {
         const source = try std.Io.Dir.cwd().readFileAllocOptions(io, try b.root.joinString(b.allocator, local.root), b.allocator, .limited(max_file_size), .of(u8), 0);
         try import_scanner.appendImports(b.allocator, source, &imports);

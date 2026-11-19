@@ -49,8 +49,9 @@ pub fn failure(reloader: *const Reloader) []const u8 {
     return reloader.failure_buffer[0..reloader.failure_length];
 }
 
-/// Records the failure. Too-long messages are cut short, like Diagnostics does.
-fn fail(reloader: *Reloader, comptime format: []const u8, arguments: anytype) Error {
+/// Records why the reload failed and returns `error.ReloadFailed`, for a reload that fails
+/// without running a command. Too-long messages are cut short, like Diagnostics does.
+pub fn fail(reloader: *Reloader, comptime format: []const u8, arguments: anytype) Error {
     const written = std.fmt.bufPrint(&reloader.failure_buffer, format, arguments) catch reloader.failure_buffer[0..];
     reloader.failure_length = written.len;
     return error.ReloadFailed;

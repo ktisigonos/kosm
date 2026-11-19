@@ -81,6 +81,13 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
             var methods: std.ArrayList(Completion.Function) = .empty;
             // Named by its declaration before its functions describe it under other names.
             const record: ?[]const u8 = if (path.len != 0 and @typeInfo(Space) == .@"struct") try builder.declaredRecord(Space, module, path) else null;
+            // So are the types it declares, which a function before them may take (`*Output`).
+            inline for (comptime declNames(Space)) |decl_name| {
+                const decl = @field(Space, decl_name);
+                if (@TypeOf(decl) == type and depth < max_depth and @typeInfo(decl) == .@"struct" and comptime isWalkable(decl) and NamespaceOf(decl, name ++ "." ++ decl_name, depth + 1).namespace.entries.len != 0) {
+                    _ = try builder.declaredRecord(decl, module, path ++ .{decl_name});
+                }
+            }
             inline for (comptime declNames(Space)) |decl_name| {
                 const decl = @field(Space, decl_name);
                 const Declared = @TypeOf(decl);
@@ -92,7 +99,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                         try values.append(arena, .{ .name = decl_name, .type = .{ .namespace = full } });
                     }
                 } else if (@typeInfo(Declared) == .@"fn") {
-                    if (comptime !isKosmos(Space, decl_name) and isBindable(Declared)) {
+                    if (comptime !isKosmos(Space, decl_name) and !isRunByKosm(Space, decl_name) and isBindable(Declared)) {
                         const written = try builder.sources.declarationPath(module, decl_path);
                         const declaration = if (written) |found| try builder.sources.followAlias(found) else null;
                         const function = try builder.describeFunction(Declared, decl_name, full, declaration);
@@ -133,7 +140,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                         if (child.entries.len != 0) entries = entries ++ .{Namespace.Entry{ .name = decl_name, .kind = .{ .namespace = child } }};
                     }
                 } else if (@typeInfo(Declared) == .@"fn") {
-                    if (comptime !isKosmos(Space, decl_name) and isBindable(Declared)) {
+                    if (comptime !isKosmos(Space, decl_name) and !isRunByKosm(Space, decl_name) and isBindable(Declared)) {
                         entries = entries ++ .{Namespace.Entry{ .name = decl_name, .kind = .{ .function = bind(decl, decl_name, full) } }};
                     }
                 } else if (comptime isData(Declared, 0)) {
@@ -240,8 +247,14 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                         if (@as(anyerror, err) == error.KosmosFailed) {
                             if (kosm.failure.message()) |message| return given.fail("{s}: {s}", .{ full, message });
                         }
+                        if (comptime serviceMessage(info.param_types)) |Service| {
+                            const message = if (Service == kosm.Output) tuple[0].diagnostics.message() else tuple[0].failure();
+                            if (message.len != 0) return given.fail("{s}: {s}", .{ full, message });
+                        }
                         return given.fail("{s} failed: {s}", .{ full, @errorName(err) });
                     } else returned;
+                    // An app's `from` cannot fail, so a script's failure in it is only recorded.
+                    if (kosm.failure.message()) |message| return given.fail("{s}: {s}", .{ full, message });
                     if (try lifetime.findDeadList(given.arena, result, &.{stack})) |path|
                         return given.fail("{s}: what it returns at {s} points into a function that has returned, so it is garbage; it must keep run-time lists with kosm.keep", .{ full, path });
                     return owned(Result, given, result);
@@ -323,7 +336,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                 const table: Handle.Type = .{
                     .id = Handle.id(T),
                     .name = nameOf(T),
-                    .fields = fieldNames(T),
+                    .fields = if (isService(T)) &.{} else fieldNames(T),
                     .list = isList(T),
                     .methods = methodsOf(T),
                     .get = get,
@@ -332,6 +345,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                 };
 
                 fn get(given: *Call, pointer: *anyopaque, key: Handle.Key) Call.Error!Loose {
+                    if (comptime isService(T)) return serviceField(given, key);
                     const value: *T = @ptrCast(@alignCast(pointer));
                     switch (@typeInfo(T)) {
                         .@"struct" => |info| {
@@ -363,6 +377,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                 }
 
                 fn set(given: *Call, pointer: *anyopaque, key: Handle.Key, loose: Loose) Call.Error!void {
+                    if (comptime isService(T)) return serviceField(given, key);
                     const value: *T = @ptrCast(@alignCast(pointer));
                     var diagnostics: kosm.Diagnostics = .{};
                     const result = switch (@typeInfo(T)) {
@@ -388,6 +403,13 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                     if (comptime !isList(T)) return 0;
                     const value: *T = @ptrCast(@alignCast(pointer));
                     return itemsOf(value).len;
+                }
+
+                fn serviceField(given: *Call, key: Handle.Key) Call.Error {
+                    return switch (key) {
+                        .field => |name| given.fail("{s} has no '{s}'; it gives only methods: {s}", .{ nameOf(T), name, comptime methodList(T) }),
+                        .item => given.fail("{s} has no items; it gives only methods: {s}", .{ nameOf(T), comptime methodList(T) }),
+                    };
                 }
 
                 fn fieldKey(given: *Call, key: Handle.Key) Call.Error![]const u8 {
@@ -427,6 +449,13 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
             };
         }
 
+        /// The names of `T`'s methods, comma-separated.
+        fn methodList(comptime T: type) []const u8 {
+            comptime var names: []const u8 = "";
+            inline for (comptime methodsOf(T), 0..) |method, index| names = names ++ (if (index == 0) "" else ", ") ++ method.name;
+            return names;
+        }
+
         /// The functions declared in `T` taking a `T` (or a pointer to one) first.
         fn methodsOf(comptime T: type) []const Function {
             @setEvalBranchQuota(branch_quota);
@@ -435,7 +464,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
             inline for (comptime declNames(T)) |decl_name| {
                 const decl = @field(T, decl_name);
                 const Declared = @TypeOf(decl);
-                if (@typeInfo(Declared) == .@"fn" and comptime isBindable(Declared) and takesSelf(Declared, T)) {
+                if (@typeInfo(Declared) == .@"fn" and comptime isBindable(Declared) and takesSelf(Declared, T) and !isRunByKosm(T, decl_name)) {
                     methods = methods ++ .{bind(decl, decl_name, nameOf(T) ++ "." ++ decl_name)};
                 }
             }
@@ -482,7 +511,8 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
 }
 
 /// Whether a script can call a function of type `F`: not generic, every parameter a value a
-/// script gives (or a pointer to a struct or union, for a handle), returning such a value.
+/// script gives (or a pointer to a struct or union, or to a service, for a handle), returning
+/// such a value.
 pub fn isBindable(comptime F: type) bool {
     const info = @typeInfo(F).@"fn";
     if (info.is_generic or info.attrs.varargs or info.attrs.@"callconv" != .auto) return false;
@@ -493,11 +523,35 @@ pub fn isBindable(comptime F: type) bool {
         const Parameter = maybe orelse return false;
         const parameter = @typeInfo(Parameter);
         if (parameter == .pointer and parameter.pointer.size == .one) {
+            if (isService(parameter.pointer.child)) continue;
             const pointee = @typeInfo(parameter.pointer.child);
             if ((pointee != .@"struct" and pointee != .@"union") or !isData(parameter.pointer.child, 0)) return false;
         } else if (!isData(Parameter, 0)) return false;
     }
     return true;
+}
+
+/// Whether `name` is a declaration of app `T` that only kosm uses: its `apply` and `reload`,
+/// and the `script` of an app written through a frontend.
+fn isRunByKosm(comptime T: type, comptime name: []const u8) bool {
+    if (!kosm.app.is(T)) return false;
+    if (std.mem.eql(u8, name, "script")) return @TypeOf(@field(T, name)) == kosm.Frontend.ScriptApp;
+    return std.mem.eql(u8, name, "apply") or std.mem.eql(u8, name, "reload");
+}
+
+/// Values a script holds only to call their methods (an app's output, its reloader): kosm's own
+/// writers, which hold an allocator or `Io` and so are no data.
+pub fn isService(comptime T: type) bool {
+    return T == kosm.Output or T == kosm.Reloader;
+}
+
+/// The service a function taking one first records its failures in, or null.
+fn serviceMessage(comptime parameters: []const ?type) ?type {
+    if (parameters.len == 0) return null;
+    const First = parameters[0] orelse return null;
+    if (@typeInfo(First) != .pointer or @typeInfo(First).pointer.size != .one) return null;
+    const Service = @typeInfo(First).pointer.child;
+    return if (isService(Service)) Service else null;
 }
 
 /// Whether `F`'s first parameter is `T`, `*T` or `*const T`.
@@ -846,4 +900,9 @@ test "completion describes the namespaces, their functions and values, and recor
     const app = completion.find("test_package.App").?;
     try testing.expectEqual(2, app.methods.len);
     try testing.expectEqualStrings("grown", app.methods[0].name);
+    // Named by its declaration though a function declared before it takes one.
+    const output = completion.find("kosm.Output").?;
+    try testing.expect(for (output.methods) |method| {
+        if (std.mem.eql(u8, method.name, "generateValue")) break true;
+    } else false);
 }
