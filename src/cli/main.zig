@@ -30,7 +30,7 @@ const usage =
     \\usage: kosm init [--config dir]
     \\       kosm new kosmos|app|adapter <name> [--config dir]
     \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
-    \\       kosm list [kosmos] [--config dir]
+    \\       kosm list [<kosmos> | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]
     \\       kosm colors <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]
     \\       kosm current
     \\       kosm source [<dir> | --default]
@@ -84,7 +84,8 @@ pub fn main(init: std.process.Init) !u8 {
         .init => |init_arguments| return runInit(init, builds, init_arguments, &stderr.interface),
         .new => |new| return runNew(init, builds, new, &stderr.interface),
         .build => |build_arguments| return runBuildCommand(init, builds, build_arguments, &stderr.interface),
-        .add, .remove, .update, .clean, .list => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
+        .add, .remove, .update, .clean => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
+        .list => |list| return runList(init, builds, list, &stderr.interface),
         .complete => |words| return runComplete(init, builds, words),
         .current, .source, .completions, .relay => unreachable, // Handled above.
     }
@@ -125,7 +126,7 @@ fn expectedArguments(command: []const u8) []const u8 {
     if (std.mem.eql(u8, command, "add")) return "one url, e.g. kosm add git+https://example.com/kosm_kitty#main";
     if (std.mem.eql(u8, command, "remove")) return "one package name, e.g. kosm remove kosm_kitty";
     if (std.mem.eql(u8, command, "update")) return "at most one package name";
-    if (std.mem.eql(u8, command, "list")) return "at most one kosmos, e.g. kosm list frost";
+    if (std.mem.eql(u8, command, "list")) return "at most one kosmos, e.g. kosm list frost, or the kinds to list: --kosmoi, --apps, --adapters, --frontends, --packages";
     if (std.mem.eql(u8, command, "build")) return "kosmoi, --except and kosmoi, or --all, e.g. kosm build frost nord";
     if (std.mem.eql(u8, command, "completions")) return "one shell: fish, bash or zsh";
     if (std.mem.eql(u8, command, "new")) return "a kind and a name, e.g. kosm new app my_bar";
@@ -279,8 +280,22 @@ fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, k
     return true;
 }
 
-/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm clean` or `kosm list` against the
-/// config project.
+/// Runs `kosm list` against the config project.
+fn runList(init: std.process.Init, builds: Builds, command: List, stderr: *std.Io.Writer) !u8 {
+    const config = try configPath(init, command.config, stderr) orelse return 1;
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    defer stdout.interface.flush() catch {};
+    var context = builds.context(init, config, &stdout.interface, stderr);
+    context.show_build_output = true;
+    list_command.list(context, command.kosmos, command.kinds) catch |err| switch (err) {
+        error.Failed => return 1,
+        else => |other| return other,
+    };
+    return 0;
+}
+
+/// Runs `kosm add`, `kosm remove`, `kosm update` or `kosm clean` against the config project.
 fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, config_command: ConfigCommand, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, config_command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
@@ -293,8 +308,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .remove => package_commands.remove(context, config_command.argument.?),
         .update => package_commands.update(context, config_command.argument),
         .clean => clean_command.clean(context),
-        .list => list_command.list(context, config_command.argument),
-        .apply, .colors, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the five above.
+        .apply, .colors, .list, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the four above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -381,7 +395,7 @@ const Command = union(enum) {
     /// The directory, `--default`, or null to print which sources builds use.
     source: ?[]const u8,
     new: New,
-    list: ConfigCommand,
+    list: List,
     /// Like `apply`, printing the themes of the tree its kosmos builds instead of applying it.
     colors: Apply,
     /// The shell whose completion script to print.
@@ -431,7 +445,7 @@ const Command = union(enum) {
         }
         if (std.mem.eql(u8, arguments[0], "init")) return .{ .init = try .parse(arguments[1..], .none) };
         if (std.mem.eql(u8, arguments[0], "new")) return .{ .new = try .parse(arguments[1..]) };
-        if (std.mem.eql(u8, arguments[0], "list")) return .{ .list = try .parse(arguments[1..], .optional) };
+        if (std.mem.eql(u8, arguments[0], "list")) return .{ .list = try .parse(arena, arguments[1..]) };
         if (std.mem.eql(u8, arguments[0], "colors")) return .{ .colors = try Apply.parse(arena, arguments) };
         if (std.mem.eql(u8, arguments[0], "add")) return .{ .add = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "remove")) return .{ .remove = try .parse(arguments[1..], .required) };
@@ -439,6 +453,46 @@ const Command = union(enum) {
         if (std.mem.eql(u8, arguments[0], "clean")) return .{ .clean = try .parse(arguments[1..], .none) };
         if (std.mem.eql(u8, arguments[0], "build")) return .{ .build = try .parse(arena, arguments[1..]) };
         return .{ .apply = try Apply.parse(arena, arguments) };
+    }
+};
+
+/// `kosm list` read: at most one kosmos, or the kinds to list alone.
+const List = struct {
+    kosmos: ?[]const u8 = null,
+    /// Some of `list_command.kind_flags`, as typed.
+    kinds: []const []const u8 = &.{},
+    /// The `--config` directory, or null for the default.
+    config: ?[]const u8 = null,
+
+    const ParseError = ConfigCommand.ParseError || std.mem.Allocator.Error;
+
+    /// Reads the arguments after `list`. `--config dir` may appear anywhere.
+    fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!List {
+        var command: List = .{};
+        var kinds: std.ArrayList([]const u8) = .empty;
+        var index: usize = 0;
+        while (index < arguments.len) : (index += 1) {
+            const argument = arguments[index];
+            if (std.mem.eql(u8, argument, "--config")) {
+                index += 1;
+                if (index == arguments.len) return error.MissingConfigDirectory;
+                command.config = arguments[index];
+            } else if (isKindFlag(argument)) {
+                if (command.kosmos != null) return error.UnexpectedArgument;
+                try kinds.append(arena, argument);
+            } else if (command.kosmos != null or kinds.items.len > 0 or std.mem.startsWith(u8, argument, "-")) {
+                return error.UnexpectedArgument;
+            } else command.kosmos = argument;
+        }
+        command.kinds = kinds.items;
+        return command;
+    }
+
+    fn isKindFlag(argument: []const u8) bool {
+        for (list_command.kind_flags) |flag| {
+            if (std.mem.eql(u8, argument, flag)) return true;
+        }
+        return false;
     }
 };
 
@@ -684,14 +738,21 @@ test "package commands take their one argument and --config anywhere" {
     try testing.expectEqualStrings("kosm_css", (try Command.parse(arena.allocator(), &.{ "remove", "kosm_css" })).remove.argument.?);
 }
 
-test "init takes only --config, and list at most one kosmos" {
+test "init takes only --config, and list at most one kosmos or the kinds to list" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
     try testing.expectEqualStrings("/c", (try Command.parse(arena.allocator(), &.{ "init", "--config", "/c" })).init.config.?);
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "init", "frost" }));
-    try testing.expectEqualStrings("frost.iced", (try Command.parse(arena.allocator(), &.{ "list", "frost.iced" })).list.argument.?);
-    try testing.expectEqual(null, (try Command.parse(arena.allocator(), &.{"list"})).list.argument);
+    try testing.expectEqualStrings("frost.iced", (try Command.parse(arena.allocator(), &.{ "list", "frost.iced" })).list.kosmos.?);
+    try testing.expectEqual(null, (try Command.parse(arena.allocator(), &.{"list"})).list.kosmos);
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "list", "a", "b" }));
+    const kinds = (try Command.parse(arena.allocator(), &.{ "list", "--apps", "--config", "/c", "--frontends" })).list;
+    try testing.expectEqual(2, kinds.kinds.len);
+    try testing.expectEqualStrings("--frontends", kinds.kinds[1]);
+    try testing.expectEqualStrings("/c", kinds.config.?);
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "list", "frost", "--apps" }));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "list", "--apps", "frost" }));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "list", "--themes" }));
     const colors = (try Command.parse(arena.allocator(), &.{ "colors", "frost.light", "--set", "kitty=null", "--config", "/c" })).colors;
     try testing.expectEqualStrings("frost.light", colors.kosmos);
     try testing.expectEqualStrings("/c", colors.config.?);
@@ -901,7 +962,7 @@ test "local packages provide their adapters, kosmoi and folders wherever they li
     // The starting kosmos needs the real official packages, so it can't be listed here.
     try tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
     stdout.clearRetainingCapacity();
-    try list_command.list(context, null);
+    try list_command.list(context, null, &.{});
     try testing.expect(std.mem.startsWith(u8, stdout.written(),
         \\kosmoi:
         \\  frost   kosmoi/frost.zig

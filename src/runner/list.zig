@@ -49,12 +49,17 @@ pub fn list(init: std.process.Init, comptime sources: []const Source, comptime s
     const parsed = parseArguments(arena, arguments[1..]) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.UnexpectedArgument => {
-            try stderr.interface.writeAll("error: kosm list takes at most one kosmos, e.g. kosm list frost\n");
+            try stderr.interface.writeAll("error: kosm list takes at most one kosmos, e.g. kosm list frost, or the kinds to list: --kosmoi, --apps, --adapters, --frontends, --packages\n");
             try stderr.interface.flush();
             return 1;
         },
     };
-    const table: Table = .{ .kosmoi = try withScriptKosmoi(arena, declared.kosmoi, parsed.script_kosmoi), .packages = declared.packages };
+    const table: Table = .{
+        .kosmoi = try withScriptKosmoi(arena, declared.kosmoi, parsed.script_kosmoi),
+        .packages = declared.packages,
+        .locals = declared.locals,
+        .frontends = try frontendsOf(arena, parsed.frontends, sources),
+    };
 
     if (init.environ_map.get(interface.runner_variable) != null) {
         try table.writeBuildingOnKosmoi(&stdout.interface);
@@ -78,6 +83,8 @@ pub fn list(init: std.process.Init, comptime sources: []const Source, comptime s
                 },
                 error.WriteFailed => return error.WriteFailed,
             };
+        } else if (parsed.kinds.count() > 0) {
+            try table.writeKinds(arena, parsed.kinds, &stdout.interface);
         } else try table.writeAll(&stdout.interface);
         break :status 0;
     };
@@ -92,13 +99,49 @@ const Parsed = struct {
     filter: ?[]const u8 = null,
     /// The script kosmoi and variants the command line got from the runner of scripts.
     script_kosmoi: []const Kosmos = &.{},
+    /// The kinds to list alone; none lists everything.
+    kinds: Kinds = .{},
+    /// The frontends the command line got from the runner of scripts, by the module giving each.
+    frontends: []const Row = &.{},
 };
 
-/// Reads `[kosmos] [--config dir] [--script-kosmos name file]...`; `--config dir` is the
-/// command line's.
+/// The kinds `kosm list` lists alone, each asked for by its flag (`--apps`).
+pub const Kinds = struct {
+    kosmoi: bool = false,
+    apps: bool = false,
+    adapters: bool = false,
+    frontends: bool = false,
+    packages: bool = false,
+
+    /// How many kinds are asked for.
+    pub fn count(kinds: Kinds) usize {
+        var total: usize = 0;
+        inline for (@typeInfo(Kinds).@"struct".field_names) |name| total += @intFromBool(@field(kinds, name));
+        return total;
+    }
+
+    /// Asks for the kind `flag` names (`--apps`); false when it names none.
+    fn set(kinds: *Kinds, flag: []const u8) bool {
+        inline for (@typeInfo(Kinds).@"struct".field_names) |name| {
+            if (std.mem.eql(u8, flag, "--" ++ name)) {
+                @field(kinds, name) = true;
+                return true;
+            }
+        }
+        return false;
+    }
+};
+
+/// One line of a listing of one kind: a name and where it comes from, empty for a package.
+pub const Row = struct { name: []const u8, origin: []const u8 };
+
+/// Reads `[kosmos | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]
+/// [--script-kosmos name file]... [--frontend name module]...`; `--config dir` is the command
+/// line's.
 fn parseArguments(arena: std.mem.Allocator, arguments: []const []const u8) (error{UnexpectedArgument} || std.mem.Allocator.Error)!Parsed {
     var parsed: Parsed = .{};
     var script_kosmoi: std.ArrayList(Kosmos) = .empty;
+    var frontends: std.ArrayList(Row) = .empty;
     var index: usize = 0;
     while (index < arguments.len) : (index += 1) {
         if (std.mem.eql(u8, arguments[index], "--config")) {
@@ -108,11 +151,18 @@ fn parseArguments(arena: std.mem.Allocator, arguments: []const []const u8) (erro
             const name = arguments[index + 1];
             try script_kosmoi.append(arena, .{ .name = name, .file = name[0 .. std.mem.findScalar(u8, name, '.') orelse name.len], .origin = arguments[index + 2], .apps = &.{} });
             index += 2;
-        } else if (parsed.filter != null or std.mem.startsWith(u8, arguments[index], "-")) {
+        } else if (std.mem.eql(u8, arguments[index], interface.frontend_flag)) {
+            if (index + 2 >= arguments.len) return error.UnexpectedArgument;
+            try frontends.append(arena, .{ .name = arguments[index + 1], .origin = arguments[index + 2] });
+            index += 2;
+        } else if (parsed.kinds.set(arguments[index])) {
+            if (parsed.filter != null) return error.UnexpectedArgument;
+        } else if (parsed.filter != null or parsed.kinds.count() > 0 or std.mem.startsWith(u8, arguments[index], "-")) {
             return error.UnexpectedArgument;
         } else parsed.filter = arguments[index];
     }
     parsed.script_kosmoi = script_kosmoi.items;
+    parsed.frontends = frontends.items;
     return parsed;
 }
 
@@ -152,16 +202,34 @@ pub const App = struct {
     type_name: []const u8,
 };
 
-/// A package and what it provides.
+/// A package or local module and what it provides.
 pub const Package = struct {
     name: []const u8,
+    /// "package kosm_kitty" or "apps/my_bar/".
+    origin: []const u8,
     provided: inspect.Provided,
 };
+
+/// `frontends` with the module giving each replaced by its origin ("package kosm_lua",
+/// "frontends/lines.lua"), or kept when no source is that module.
+fn frontendsOf(arena: std.mem.Allocator, frontends: []const Row, comptime sources: []const Source) std.mem.Allocator.Error![]const Row {
+    const found = try arena.alloc(Row, frontends.len);
+    for (frontends, found) |frontend, *row| {
+        row.* = frontend;
+        inline for (sources) |source| {
+            if (std.mem.eql(u8, source.name, frontend.origin)) row.origin = source.origin;
+        }
+    }
+    return found;
+}
 
 /// Everything the listing prints.
 pub const Table = struct {
     kosmoi: []const Kosmos,
     packages: []const Package,
+    /// The local kosmoi, apps and adapters, for the apps and adapters they declare.
+    locals: []const Package = &.{},
+    frontends: []const Row = &.{},
 
     /// Every kosmos with its origin, then every package with what it provides.
     pub fn writeAll(table: Table, writer: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -179,6 +247,58 @@ pub const Table = struct {
             try writer.print("  {s}\n", .{package.name});
             try package.provided.writeItems("    ", writer);
         }
+    }
+
+    /// Only the `kinds` asked for, one `name  origin` line each (only the name for a package).
+    /// Several kinds each get a heading (`apps:`) with their lines indented below it; a kind
+    /// with nothing in it says `none`.
+    pub fn writeKinds(table: Table, arena: std.mem.Allocator, kinds: Kinds, writer: *std.Io.Writer) (std.mem.Allocator.Error || std.Io.Writer.Error)!void {
+        const several = kinds.count() > 1;
+        inline for (@typeInfo(Kinds).@"struct".field_names) |kind| {
+            if (@field(kinds, kind)) {
+                const rows = try table.rowsOf(arena, @field(RowKind, kind));
+                if (rows.len == 0) {
+                    try writer.writeAll(kind ++ ": none\n");
+                } else {
+                    if (several) try writer.writeAll(kind ++ ":\n");
+                    try writeRows(writer, rows, if (several) "  " else "");
+                }
+            }
+        }
+    }
+
+    const RowKind = enum { kosmoi, apps, adapters, frontends, packages };
+
+    fn rowsOf(table: Table, arena: std.mem.Allocator, kind: RowKind) std.mem.Allocator.Error![]const Row {
+        var rows: std.ArrayList(Row) = .empty;
+        switch (kind) {
+            .kosmoi => for (table.kosmoi) |kosmos| try rows.append(arena, .{ .name = kosmos.name, .origin = kosmos.origin }),
+            .packages => for (table.packages) |package| try rows.append(arena, .{ .name = package.name, .origin = "" }),
+            .frontends => try rows.appendSlice(arena, table.frontends),
+            .apps => for ([_][]const Package{ table.packages, table.locals }) |owners| {
+                for (owners) |owner| {
+                    for (owner.provided.apps) |name| try rows.append(arena, .{ .name = name, .origin = owner.origin });
+                }
+            },
+            .adapters => for ([_][]const Package{ table.packages, table.locals }) |owners| {
+                for (owners) |owner| {
+                    for (owner.provided.adapters) |name| try addAdapter(arena, &rows, name, owner);
+                }
+            },
+        }
+        return rows.items;
+    }
+
+    /// Adds adapter `name` from `owner` once: an app's package exports the adapters it writes
+    /// with, so the package named after the adapter (`kosm_xml` for `xml`) wins over them.
+    fn addAdapter(arena: std.mem.Allocator, rows: *std.ArrayList(Row), name: []const u8, owner: Package) std.mem.Allocator.Error!void {
+        const own = std.mem.startsWith(u8, owner.name, "kosm_") and std.mem.eql(u8, owner.name["kosm_".len..], name);
+        for (rows.items) |*row| {
+            if (!std.mem.eql(u8, row.name, name)) continue;
+            if (own) row.origin = owner.origin;
+            return;
+        }
+        try rows.append(arena, .{ .name = name, .origin = owner.origin });
     }
 
     /// The kosmoi `name` picks: a file ("frost") or group ("frost.cold") with every kosmos in
@@ -237,6 +357,22 @@ fn nameWidth(kosmoi: []const Kosmos, filter: ?[]const u8) usize {
     return width;
 }
 
+/// Each row after `indent`, names padded so the origins line up.
+fn writeRows(writer: *std.Io.Writer, rows: []const Row, indent: []const u8) std.Io.Writer.Error!void {
+    var width: usize = 0;
+    for (rows) |row| width = @max(width, row.name.len);
+    for (rows) |row| {
+        try writer.writeAll(indent);
+        if (row.origin.len == 0) {
+            try writer.print("{s}\n", .{row.name});
+            continue;
+        }
+        try writer.writeAll(row.name);
+        try writer.splatByteAll(' ', width - row.name.len + 2);
+        try writer.print("{s}\n", .{row.origin});
+    }
+}
+
 /// `name  origin`, with names padded to `width` so the origins line up.
 fn writeRow(writer: *std.Io.Writer, kosmos: Kosmos, width: usize) std.Io.Writer.Error!void {
     try writer.writeAll(kosmos.name);
@@ -250,6 +386,7 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
     @setEvalBranchQuota(discovery.branch_quota);
     comptime var kosmoi: []const Kosmos = &.{};
     comptime var packages: []const Package = &.{};
+    comptime var locals: []const Package = &.{};
     inline for (sources) |source| {
         // A root script gives the kosmos of a folder whose Zig module gives only variants.
         inline for (scripts) |script| {
@@ -272,7 +409,8 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
                 if (comptime std.mem.eql(u8, parent, source.name)) kosmoi = kosmoi ++ .{scriptRow(script)};
             }
         }
-        if (source.kind == .package) packages = packages ++ .{Package{ .name = source.name, .provided = inspect.provided(source.name, source.module) }};
+        const package: Package = .{ .name = source.name, .origin = source.origin, .provided = inspect.provided(source.name, source.module) };
+        if (source.kind == .package) packages = packages ++ .{package} else locals = locals ++ .{package};
     }
     inline for (scripts) |script| {
         const folder = comptime parentOf(script.name) orelse script.name;
@@ -283,7 +421,8 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
     }
     const final_kosmoi = kosmoi[0..kosmoi.len].*;
     const final_packages = packages[0..packages.len].*;
-    const table: Table = .{ .kosmoi = &final_kosmoi, .packages = &final_packages };
+    const final_locals = locals[0..locals.len].*;
+    const table: Table = .{ .kosmoi = &final_kosmoi, .packages = &final_packages, .locals = &final_locals };
     return table;
 }
 
@@ -464,6 +603,36 @@ test "a script kosmos is listed by its name and file" {
     try testing.expectEqualStrings("minimal  kosmoi/minimal.lua\n", writer.buffered());
 }
 
+test "listing kinds shows each alone, an adapter once under its own package, and none where empty" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const no_kosmoi: []const []const u8 = &.{};
+    const table: Table = .{
+        .kosmoi = &.{.{ .name = "frost", .file = "frost", .origin = "kosmoi/frost.zig", .apps = &.{} }},
+        .packages = &.{
+            .{ .name = "kosm_kitty", .origin = "package kosm_kitty", .provided = .{ .apps = &.{"kosm_kitty.App"}, .adapters = &.{ "kitty", "xml" }, .kosmoi = no_kosmoi, .bases = no_kosmoi } },
+            .{ .name = "kosm_xml", .origin = "package kosm_xml", .provided = .{ .apps = no_kosmoi, .adapters = &.{"xml"}, .kosmoi = no_kosmoi, .bases = no_kosmoi } },
+        },
+        .locals = &.{.{ .name = "my_bar", .origin = "apps/my_bar/", .provided = .{ .apps = &.{"my_bar.App"}, .adapters = no_kosmoi, .kosmoi = no_kosmoi, .bases = no_kosmoi } }},
+    };
+    var buffer: [512]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try table.writeKinds(arena.allocator(), .{ .apps = true }, &writer);
+    try testing.expectEqualStrings("kosm_kitty.App  package kosm_kitty\nmy_bar.App      apps/my_bar/\n", writer.buffered());
+    writer = .fixed(&buffer);
+    try table.writeKinds(arena.allocator(), .{ .adapters = true, .frontends = true, .packages = true }, &writer);
+    try testing.expectEqualStrings(
+        \\adapters:
+        \\  kitty  package kosm_kitty
+        \\  xml    package kosm_xml
+        \\frontends: none
+        \\packages:
+        \\  kosm_kitty
+        \\  kosm_xml
+        \\
+    , writer.buffered());
+}
+
 test "an empty config lists nothing, saying so" {
     var buffer: [64]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
@@ -479,6 +648,11 @@ test "list takes one kosmos and skips --config" {
     try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{ "a", "b" }));
     try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{"--diff"}));
     try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{ interface.script_kosmos_flag, "minimal.light" }));
+    const kinds = try parseArguments(arena.allocator(), &.{ "--apps", interface.frontend_flag, "lua", "kosm_lua", "--frontends" });
+    try testing.expectEqual(2, kinds.kinds.count());
+    try testing.expectEqualStrings("kosm_lua", kinds.frontends[0].origin);
+    try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{ "--apps", "frost" }));
+    try testing.expectError(error.UnexpectedArgument, parseArguments(arena.allocator(), &.{ "frost", "--apps" }));
 }
 
 test "script kosmoi from the command line follow the kosmoi of their file, each listed once" {

@@ -34,6 +34,13 @@ const commands = [_]Candidate{
     .{ .text = "completions", .description = "print a shell's completion script" },
     .{ .text = "relay", .description = "forward a file to a browser extension" },
 };
+const list_flags = [_]Candidate{
+    .{ .text = "--kosmoi", .description = "list only kosmoi" },
+    .{ .text = "--apps", .description = "list only apps" },
+    .{ .text = "--adapters", .description = "list only adapters" },
+    .{ .text = "--frontends", .description = "list only frontends" },
+    .{ .text = "--packages", .description = "list only packages" },
+};
 const kinds = [_]Candidate{
     .{ .text = "kosmos", .description = "a rice" },
     .{ .text = "app", .description = "support for one program" },
@@ -79,11 +86,26 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
     if (std.mem.eql(u8, command, "apply") or std.mem.eql(u8, command, "colors")) return completeApply(context, before, previous, current);
     if (std.mem.eql(u8, command, "build")) return completeBuild(context, before, current);
 
+    if (std.mem.eql(u8, command, "list") and std.mem.startsWith(u8, current, "-")) {
+        // Kinds replace the kosmos, so only `--config` follows one.
+        if (firstPositional(before) == null) try writeAll(context.stdout, &list_flags);
+        return writeAll(context.stdout, &.{config_flag});
+    }
     if (std.mem.startsWith(u8, current, "-")) return writeAll(context.stdout, &.{config_flag});
     if (firstPositional(before) != null) return;
-    if (std.mem.eql(u8, command, "list")) return writeKosmoi(context);
+    if (std.mem.eql(u8, command, "list")) return if (!holdsKind(before)) writeKosmoi(context);
     if (std.mem.eql(u8, command, "remove")) return writeInstalled(context);
     if (std.mem.eql(u8, command, "update")) return writeUpdatable(context);
+}
+
+/// Whether `words` hold a kind flag of `kosm list`, after which no kosmos is offered.
+fn holdsKind(words: []const []const u8) bool {
+    for (words) |word| {
+        for (list_flags) |flag| {
+            if (std.mem.eql(u8, word, flag.text)) return true;
+        }
+    }
+    return false;
 }
 
 /// `kosm apply` and `kosm colors`: the kosmos first, then its flags; after `--set`, its paths.
@@ -275,7 +297,9 @@ test "a directory after --config is left to the shell, and a flag being typed ge
     const config = try tmp.dir.realPathFileAlloc(testing.io, ".", arena.allocator());
 
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "apply", "--config", "" }));
-    try testing.expectEqualStrings("--config\tthe config project's directory\n", try testComplete(arena.allocator(), config, &.{ "list", "--" }));
+    try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "list", "--" }), "--kosmoi\tlist only kosmoi\n--apps\t");
+    try testing.expectEqualStrings("--config\tthe config project's directory\n", try testComplete(arena.allocator(), config, &.{ "list", "frost", "--" }));
+    try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "list", "--apps", "" }));
     try testing.expectEqualStrings("--config\tthe config project's directory\n", try testComplete(arena.allocator(), config, &.{ "apply", "-" }));
     try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "build", "-" }), "--except\t");
     try testing.expectEqualStrings("--config\tthe config project's directory\n", try testComplete(arena.allocator(), config, &.{ "build", "frost", "-" }));

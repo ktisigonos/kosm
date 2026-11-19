@@ -753,7 +753,7 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
 
     // `kosm list` shows scripts, and `kosm build` takes a script's name.
     stdout.clearRetainingCapacity();
-    try @import("list.zig").list(context, null);
+    try @import("list.zig").list(context, null, &.{});
     try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/on.kosmos\n") != null);
     try testing.expect(std.mem.find(u8, stdout.written(), "  snow.nord ") != null);
     try testing.expect(std.mem.find(u8, stdout.written(), " kosmoi/snow/nord.kosmos\n") != null);
@@ -770,7 +770,7 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try testing.expectError(error.Failed, @import("known_kosmoi.zig").check(context, "bare.ligth", .kosmos, ""));
     try testing.expectEqualStrings("error: there is no kosmos 'bare.ligth'; did you mean 'bare.light'?\n", stderr.written());
     stderr.clearRetainingCapacity();
-    try testing.expectError(error.Failed, @import("list.zig").list(context, "bare.ligth"));
+    try testing.expectError(error.Failed, @import("list.zig").list(context, "bare.ligth", &.{}));
     try testing.expectEqualStrings("error: there is no kosmos 'bare.ligth'; did you mean 'bare.light'?\n", stderr.written());
     stdout.clearRetainingCapacity();
     try @import("build_kosmoi.zig").build(context, .{ .only = &.{"on"} });
@@ -970,6 +970,10 @@ test "a frontend written through a frontend reads kosmoi, completes them, and a 
     try testing.expectEqualStrings("w kosm.Standalone\n", try tmp.dir.readFileAlloc(testing.io, "project/zig-out/completions/words/words.txt", arena, .limited(1024)));
     try testing.expect(std.mem.find(u8, try testDiff(context, "mine"), "+font_size 12\n") != null);
     try testing.expect(std.mem.find(u8, try testDiff(context, "mine.light"), "+font_size 12\n") != null);
+    // Frontends, written in Zig or through one, are listed from the runner of scripts.
+    stdout.clearRetainingCapacity();
+    try @import("list.zig").list(context, null, &.{"--frontends"});
+    try testing.expectEqualStrings("lines  adapters/lines.zig\nwords  frontends/words.kosmos\n", stdout.written());
     // A value's error names the kosmos' line, and so does an error the script raises about it.
     try testing.expect(std.mem.find(u8, try testDiff(context, "bad"), "kosmoi/bad.words:2") != null);
     // Every script's variants are listed first, so one the script cannot read fails them all.

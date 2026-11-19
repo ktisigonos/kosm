@@ -448,15 +448,29 @@ test "an initialized config builds with the forked kosm sources, applies a kosmo
     try testing.expectEqualStrings("font_size 13\n", kitty);
 
     test_config.stdout.clearRetainingCapacity();
-    try @import("list.zig").list(context, "check");
+    try @import("list.zig").list(context, "check", &.{});
     try testing.expectEqualStrings(
         \\check  kosmoi/check.zig
         \\  kitty: kosm_kitty.App
         \\
     , test_config.stdout.written());
     test_config.stdout.clearRetainingCapacity();
-    try @import("list.zig").list(context, null);
+    try @import("list.zig").list(context, null, &.{});
     try testing.expect(std.mem.startsWith(u8, test_config.stdout.written(), "kosmoi:\n  check  kosmoi/check.zig\npackages:\n  kosm_kitty\n    app      kosm_kitty.App\n    adapter  kitty\n"));
+    test_config.stdout.clearRetainingCapacity();
+    try @import("list.zig").list(context, null, &.{"--apps"});
+    try testing.expectEqualStrings("kosm_kitty.App  package kosm_kitty\n", test_config.stdout.written());
+    test_config.stdout.clearRetainingCapacity();
+    try @import("list.zig").list(context, null, &.{ "--packages", "--adapters", "--kosmoi" });
+    try testing.expectEqualStrings(
+        \\kosmoi:
+        \\  check  kosmoi/check.zig
+        \\adapters:
+        \\  kitty  package kosm_kitty
+        \\packages:
+        \\  kosm_kitty
+        \\
+    , test_config.stdout.written());
 
     // `kosm colors` runs the runner with the colors variable set: it prints the theme the kosmos
     // built, after the `--set`s, and plans nothing.

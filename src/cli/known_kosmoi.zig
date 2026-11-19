@@ -110,6 +110,28 @@ pub fn scriptVariantArguments(context: Context) Error![]const []const u8 {
     return arguments.items;
 }
 
+/// The lister's arguments giving it every frontend the runner of scripts holds, built first
+/// when it is stale: `--frontend <name> <module>` each.
+pub fn frontendArguments(context: Context) Error![]const []const u8 {
+    if (!try scripts.prepare(context))
+        return context.fail("the script runner does not build, so the config's frontends cannot be listed", .{});
+    const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, scripts.runner_path });
+    const result = try context.run(&.{ runner, interface.list_frontends_flag, "--config", context.config });
+    if (!result.term.success()) {
+        try context.stderr.writeAll(result.stderr);
+        return context.fail("cannot list the frontends of {s}", .{context.config});
+    }
+    var arguments: std.ArrayList([]const u8) = .empty;
+    var lines = std.mem.tokenizeScalar(u8, result.stdout, '\n');
+    while (lines.next()) |line| {
+        var fields = std.mem.splitScalar(u8, line, '\t');
+        const name = fields.first();
+        const module = fields.next() orelse return context.fail("the script runner listed a frontend without its module: '{s}'", .{line});
+        try arguments.appendSlice(context.arena, &.{ interface.frontend_flag, name, module });
+    }
+    return arguments.items;
+}
+
 /// The lister's completion lines, `name<TAB>origin` each.
 fn parseListing(arena: std.mem.Allocator, listing: []const u8) std.mem.Allocator.Error![]const Listed {
     var listed: std.ArrayList(Listed) = .empty;

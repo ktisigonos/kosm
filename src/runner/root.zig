@@ -95,6 +95,13 @@ pub fn runScript(init: std.process.Init, comptime target: ScriptTarget) !u8 {
         var diagnostics: kosm.Diagnostics = .{ .kosmos = "" };
         return finishRun(writeScriptKosmoi(init, target, streams, &diagnostics), &diagnostics, streams);
     }
+    if (std.mem.eql(u8, all_arguments[1], interface.list_frontends_flag)) {
+        inline for (comptime discovery.frontends(target.adapter_sources)) |declared| {
+            try streams.stdout.print("{s}\t{s}\n", .{ declared.frontend.name, declared.package });
+        }
+        try streams.stdout.flush();
+        return 0;
+    }
     if (std.mem.eql(u8, all_arguments[1], write_completions_flag)) {
         var diagnostics: kosm.Diagnostics = .{ .kosmos = "" };
         return finishRun(writeFrontendCompletions(init, target, all_arguments[2..], &diagnostics), &diagnostics, streams);
