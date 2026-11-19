@@ -33,6 +33,28 @@ Steps 21j4-21j6: the other parts of kosm written through a frontend, Lua first, 
   - Do: a frontend written through a frontend also writes apps and adapters in its own language (`declare`, `declare_adapter`, `call`), which needs the build to generate the frontend's module before the modules of the apps and adapters written through it.
   - Done when: a scratch app in such a language, through a frontend written in Lua, applies with `--diff`.
 
+Steps 22a-22e: command-line improvements the human asked for.
+
+- **22a. `kosm new` in any language** `ASK`
+  - Do: `kosm new kosmos|app|adapter|frontend <name>` scaffolds in any language with a frontend, chosen by a flag (`--lang lua`, Zig by default): the frontend gives the scaffold's text, so kosm core still knows no language. Propose the flag's name, how a frontend provides scaffolds, and single file versus folder first.
+  - Done when: each kind scaffolds in Zig and Lua and the scaffold builds and applies with `--diff`.
+
+- **22b. `kosm init` creates only `kosmoi/`**
+  - Do: `kosm init` no longer creates `apps/` and `adapters/`; `kosm new` creates the folder it writes into when it is missing, and the build already treats a missing folder as empty.
+  - Done when: a new config has only `kosmoi/`, and `kosm new app` in it works.
+
+- **22c. Install shell completions** `ASK`
+  - Do: kosm installs its completion scripts itself (`kosm completions <shell>` already prints them), where each shell auto-loads them outside the user's dotfiles (fish: `~/.local/share/fish/vendor_completions.d`, bash: `~/.local/share/bash-completion/completions`; zsh has no such folder). Propose when it happens (`kosm init`, a `kosm completions --install`, or every run) and what to do for zsh first.
+  - Done when: in a scratch HOME, fish and bash complete kosm without the user adding anything.
+
+- **22d. Fix `kosm colors`** `ASK`
+  - Do: find out what is wrong with it (run it on each of the human's kosmoi, which only prints, including script kosmoi and variants); ask the human what they saw if it is not obvious.
+  - Done when: the human has confirmed it prints what they expect, under a test.
+
+- **22e. List only one kind** `ASK`
+  - Do: `kosm list` takes a filter for kosmoi, apps, adapters, frontends or packages (`kosm list kosmoi`, or a flag); propose the form, since `kosm list <kosmos>` already lists one kosmos.
+  - Done when: each filter lists only its kind, under a test.
+
 - **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
   - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.
   - Done when: the human has agreed on the prompt, and picking a suggestion applies that kosmos, under a test.
