@@ -260,8 +260,8 @@ const test_frontend =
     \\const integer_type: kosm.Frontend.Declaration.Type = .integer;
     \\
     \\/// `doc <text>` documents the next field or, before the first, the app; `field <name>
-    \\/// integer [default]` or `field <name> optional-integer` declares one; `from` and
-    \\/// `apply <file>` give those functions.
+    \\/// integer [default]` or `field <name> optional-integer` declares one; `from` gives that
+    \\/// function, and `apply <file>` or `edit <files> <path> <text>` gives `apply`.
     \\fn declare(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.Declaration {
     \\    var fields: std.ArrayList(kosm.Frontend.Declaration.Field) = .empty;
     \\    var functions: std.ArrayList([]const u8) = .empty;
@@ -283,7 +283,7 @@ const test_frontend =
     \\            doc = null;
     \\        } else if (std.mem.eql(u8, line, "from") or std.mem.startsWith(u8, line, "from ")) {
     \\            try functions.append(context.arena, "from");
-    \\        } else if (std.mem.startsWith(u8, line, "apply ")) {
+    \\        } else if (std.mem.startsWith(u8, line, "apply ") or std.mem.startsWith(u8, line, "edit ")) {
     \\            try functions.append(context.arena, "apply");
     \\        }
     \\    }
@@ -401,6 +401,7 @@ const test_frontend =
     \\        const peak: i64 = if (std.mem.eql(u8, mode.value.string, "light")) 2 else 1;
     \\        return .{ .value = .{ .table = try context.arena.dupe(kosm.Loose.Entry, &.{.{ .key = "peak", .value = .{ .value = .{ .integer = peak } } }}) } };
     \\    }
+    \\    if (lineOf(source, "edit ")) |line| return editFile(context, &frontend_call, lineAt(source, line)["edit ".len..], line, arguments[1]);
     \\    const line = lineOf(source, "apply ").?;
     \\    var lines = std.mem.splitScalar(u8, source, '\n');
     \\    for (1..line) |_| _ = lines.next();
@@ -415,6 +416,20 @@ const test_frontend =
     \\    const options: kosm.Loose = .{ .value = .{ .table = try context.arena.dupe(kosm.Loose.Entry, &.{ .{ .key = "file", .value = .{ .value = .{ .string = file } } }, .{ .key = "lang", .value = .{ .value = .{ .string = "kitty" } } } }) } };
     \\    _ = generate.call(&frontend_call, &.{ arguments[1], options, .{ .value = .{ .table = values.items } } }) catch
     \\        return context.fail("{s}: {s}", .{ try context.at(line), frontend_call.message orelse "it failed" });
+    \\    return .{ .value = .null };
+    \\}
+    \\
+    \\/// `edit <files> <path> <text>`: sets the value at `path` to `text` through `output:edit`.
+    \\fn editFile(context: *kosm.Frontend.Context, frontend_call: *kosm.Frontend.Call, words: []const u8, line: usize, output: kosm.Loose) kosm.Frontend.Error!kosm.Loose {
+    \\    var parts = std.mem.splitScalar(u8, words, ' ');
+    \\    const files = parts.first();
+    \\    const path = parts.next().?;
+    \\    const text = parts.rest();
+    \\    const edit = output.value.handle.type.method("edit") orelse return context.fail("kosm.Output has no edit", .{});
+    \\    const options = try table(context.arena, &.{.{ .key = "files", .value = .{ .value = .{ .string = files } } }});
+    \\    const selection = edit.call(frontend_call, &.{ output, options }) catch return context.fail("{s}: {s}", .{ try context.at(line), frontend_call.message orelse "it failed" });
+    \\    const set = selection.value.handle.type.method("setValue") orelse return context.fail("kosm.Output.Selection has no setValue", .{});
+    \\    _ = set.call(frontend_call, &.{ selection, .{ .value = .{ .string = path } }, .{ .value = .{ .string = text } } }) catch return context.fail("{s}: {s}", .{ try context.at(line), frontend_call.message orelse "it failed" });
     \\    return .{ .value = .null };
     \\}
     \\
@@ -804,9 +819,10 @@ const test_keyed_app =
 
 const test_keyed =
     \\const keyed = @import("keyed");
+    \\const namer = @import("namer");
     \\
-    \\pub fn kosmos() struct { keyed: keyed.App } {
-    \\    return .{ .keyed = .{ .size = 12 } };
+    \\pub fn kosmos() struct { keyed: keyed.App, namer: namer.App } {
+    \\    return .{ .keyed = .{ .size = 12 }, .namer = .{} };
     \\}
     \\
 ;
@@ -824,6 +840,7 @@ test "an adapter written through a frontend reads and writes files for a Zig app
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/lines.zig", .data = test_frontend });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/keys.kosmos", .data = test_keys });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/apps/keyed.zig", .data = test_keyed_app });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/apps/namer.kosmos", .data = "field size integer 1\nedit ~/.config/keyed/main.keys name kosm\n" });
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/keyed_kosmos.zig", .data = test_keyed });
     try tmp.dir.createDirPath(testing.io, "home/.config/keyed");
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.config/keyed/main.keys", .data = "# sizes\nsize = 4\nname = \"x\"\n" });
@@ -836,7 +853,8 @@ test "an adapter written through a frontend reads and writes files for a Zig app
     // Only the value's bytes change, the include is added at the end, and the generated file
     // spells its values in the adapter's format.
     const diff = try testDiff(context, "keyed_kosmos");
-    try testing.expect(std.mem.find(u8, diff, "-size = 4\n+size = 12\n name = \"x\"\n+include = \"kosm.keys\"\n") != null);
+    // A script app edits the same file through the script adapter, by a path in text.
+    try testing.expect(std.mem.find(u8, diff, "-size = 4\n-name = \"x\"\n+size = 12\n+name = \"kosm\"\n+include = \"kosm.keys\"\n") != null);
     try testing.expect(std.mem.find(u8, diff, "+blur = yes\n+accent = #ff0000\n+name = \"kosm\"\n+gaps = 0.25\n") != null);
     // Its own runner sends the kosmos to the runner of scripts, which alone runs scripts.
     try testing.expect(try context.runBuild(&.{ "build", "-Dkosmos=keyed_kosmos" }));

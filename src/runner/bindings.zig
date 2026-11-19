@@ -248,13 +248,23 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                             if (kosm.failure.message()) |message| return given.fail("{s}: {s}", .{ full, message });
                         }
                         if (comptime serviceMessage(info.param_types)) |Service| {
-                            const message = if (Service == kosm.Output) tuple[0].diagnostics.message() else tuple[0].failure();
+                            const message = switch (Service) {
+                                kosm.Output => tuple[0].diagnostics.message(),
+                                kosm.Output.Selection => tuple[0].output.diagnostics.message(),
+                                else => tuple[0].failure(),
+                            };
                             if (message.len != 0) return given.fail("{s}: {s}", .{ full, message });
                         }
                         return given.fail("{s} failed: {s}", .{ full, @errorName(err) });
                     } else returned;
                     // An app's `from` cannot fail, so a script's failure in it is only recorded.
                     if (kosm.failure.message()) |message| return given.fail("{s}: {s}", .{ full, message });
+                    // A service lives in kosm's own allocator, never on a stack.
+                    if (comptime isService(Result)) {
+                        const kept = try given.arena.create(Result);
+                        kept.* = result;
+                        return handleOf(Result, kept);
+                    }
                     if (try lifetime.findDeadList(given.arena, result, &.{stack})) |path|
                         return given.fail("{s}: what it returns at {s} points into a function that has returned, so it is garbage; it must keep run-time lists with kosm.keep", .{ full, path });
                     return owned(Result, given, result);
@@ -518,7 +528,7 @@ pub fn isBindable(comptime F: type) bool {
     if (info.is_generic or info.attrs.varargs or info.attrs.@"callconv" != .auto) return false;
     const Returned = info.return_type orelse return false;
     const Result = discovery.Payload(Returned);
-    if (Result != void and !isData(Result, 0)) return false;
+    if (Result != void and !isData(Result, 0) and !isService(Result)) return false;
     for (info.param_types) |maybe| {
         const Parameter = maybe orelse return false;
         const parameter = @typeInfo(Parameter);
@@ -539,10 +549,10 @@ fn isRunByKosm(comptime T: type, comptime name: []const u8) bool {
     return std.mem.eql(u8, name, "apply") or std.mem.eql(u8, name, "reload");
 }
 
-/// Values a script holds only to call their methods (an app's output, its reloader): kosm's own
-/// writers, which hold an allocator or `Io` and so are no data.
+/// Values a script holds only to call their methods (an app's output, the files it edits, its
+/// reloader): kosm's own writers, which hold an allocator or `Io` and so are no data.
 pub fn isService(comptime T: type) bool {
-    return T == kosm.Output or T == kosm.Reloader;
+    return T == kosm.Output or T == kosm.Output.Selection or T == kosm.Reloader;
 }
 
 /// The service a function taking one first records its failures in, or null.

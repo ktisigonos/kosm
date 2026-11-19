@@ -77,6 +77,56 @@ pub fn setOptions(selection: *Selection, path: anytype, value: anytype, options:
     for (chosen) |match| try selection.write(match, text);
 }
 
+/// `set` for scripts: `path` is text (`general."col.active_border"`), `value` built at run time.
+pub fn setValue(selection: *Selection, path: []const u8, value: value_tree.Value) Error!void {
+    return selection.setOptions(path, value, .{});
+}
+
+/// `setFirst` for scripts, as `setValue`.
+pub fn setFirstValue(selection: *Selection, path: []const u8, value: value_tree.Value) Error!void {
+    return selection.setOptions(path, value, .{ .match = .first });
+}
+
+/// `setAll` for scripts, as `setValue`.
+pub fn setAllValue(selection: *Selection, path: []const u8, value: value_tree.Value) Error!void {
+    return selection.setOptions(path, value, .{ .match = .all });
+}
+
+/// `setNth` for scripts, as `setValue`; `index` counts matches from 0.
+pub fn setNthValue(selection: *Selection, path: []const u8, index: usize, value: value_tree.Value) Error!void {
+    return selection.setOptions(path, value, .{ .match = .{ .nth = index } });
+}
+
+/// `setIndices` for scripts, as `setValue`.
+pub fn setIndicesValue(selection: *Selection, path: []const u8, indices: []const usize, value: value_tree.Value) Error!void {
+    return selection.setOptions(path, value, .{ .match = .{ .indices = indices } });
+}
+
+/// `setRange` for scripts, as `setValue`.
+pub fn setRangeValue(selection: *Selection, path: []const u8, start: usize, end: usize, value: value_tree.Value) Error!void {
+    return selection.setOptions(path, value, .{ .match = .{ .range = .{ .start = start, .end = end } } });
+}
+
+/// `nodes` for scripts: `path` is text, `""` each file's top-level value.
+pub fn nodesAt(selection: *Selection, path: []const u8) Error![]const Match {
+    return selection.nodes(path);
+}
+
+/// `replace` for scripts, `value` built at run time.
+pub fn replaceValue(selection: *Selection, match: Match, value: value_tree.Value) Error!void {
+    return selection.replace(match, value);
+}
+
+/// `insert` for scripts, `value` built at run time.
+pub fn insertValue(selection: *Selection, match: Match, key: []const u8, value: value_tree.Value) Error!void {
+    return selection.insert(match, key, value);
+}
+
+/// `append` for scripts, `value` built at run time.
+pub fn appendValue(selection: *Selection, match: Match, value: value_tree.Value) Error!void {
+    return selection.append(match, value);
+}
+
 /// Every value at `path`, in match order; empty when there is none. For reading, for
 /// `elements`, and for `replace`. The empty path `""` is each file's top-level value.
 pub fn nodes(selection: *Selection, path: anytype) Error![]const Match {
