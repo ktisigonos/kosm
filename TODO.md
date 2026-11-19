@@ -17,21 +17,6 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-- **21e. Lua completion**
-  - Do: the Lua frontend generates LuaLS annotation files (`---@class`, `---@field` with the `///` doc comments) for every app, base, look, Zig kosmos and its `Params` in the config, when the script runner is built, into `zig-out/completions/lua/`. `kosm.Frontend` gains the capability (and the editor file, `.luarc.json`, that `kosm init` writes); kosm hands it the types, with doc comments read from the sources by `std.zig.Ast`, since reflection has none.
-  - Do: the `.luarc.json` sets `runtime.version` to the frontend's Lua 5.5, and leaves out the globals the frontend removes (`io`, `os`, `package`, `debug`, `require`, `dofile`, `loadfile`, `load`, `print`) while declaring `kosm.null`; check that the installed LuaLS takes "Lua 5.5", else use "Lua 5.4".
-  - Do: `kosm add` and `kosm update` build the script runner when `kosmoi/` holds a script, so completion is current right after; today they only leave it stale for the next apply.
-  - Built: kosm writes `zig-out/completions/lua/` and creates `.luarc.json` on every build of the script runner, and `kosm_lua` gives the annotations; checked with `lua-language-server --check` on a scratch copy of the human's config (types of `personal`, `kitty` and the theme input resolve, wrong values and `print` are flagged). Left for the human: push kosm, `kosm update`, then try completion in the editor.
-  - Done when: in an editor with LuaLS, a Lua kosmos completes app fields with their docs, including a Zig kosmos of the config right after `kosm build`.
-
-- **21f. Calls from Lua** `PLAN FIRST`
-  - Do: a Lua kosmos calls Zig functions: a Zig kosmos or base (`kosmoi.personal(params)`) returning a tree it overrides, `from` after changed inputs, theme building, modifiers and variations, and Lua variants as plain function calls. Bindings are generated from the Zig declarations by reflection inside kosm; package authors write none. Completion covers the calls.
-  - Decided: values cross as handles (typed Zig values in kosm's arena; assigning one copies it deeply), every bindable public function, value and struct/union of every module and `kosm` is bound by reflection, spelled `kosmoi.personal(...)`, `kosm_kitty.from(theme)`, `kosm.Theme.from(...)`; one step.
-  - Built: kosm (calls, handles, script variants, scripts returning a tree, completion of every call) and `kosm_lua` `69de873` (pinned on kosm `1fbab7c`; not pushed: the forge's credential lookup timed out). Checked on a scratch copy of the human's config with `kosm_lua` by path: `kosm apply mine --diff` and `mine.image` (a variant calling `kosmoi.personal.image` with another wallpaper, `kosm_kitty.from` a new theme, and `color:mix`) give the expected diffs, and `lua-language-server --check` flags only real mistakes.
-  - Built since: `personal.themed(input, name, wallpaper)` in the human's config (Krystallos' fonts and values in any theme, callable from a script) and `kosmoi/personal/nord.lua` (`personal.nord`) using it, both uncommitted there; `kosm apply personal.nord --diff` gives Nord. `kosm_lua` is pushed.
-  - Left for the human: push kosm, `kosm update` in the config, then try completion in the editor.
-  - Done when: the human's `personal` kosmos has a Lua variant built on the Zig one with a changed input and a few overrides, applying with `--diff` and completing in the editor.
-
 - **21j. Apps, adapters and the rest of kosm in any language** `ASK` `PLAN FIRST` (later)
   - Do: a frontend can also give apps and adapters (and whatever else kosm is built from), so kosm is moddable in any supported language. A frontend then runs code at apply time (parsing and formatting files), not only building trees. Plan with the human first.
 
