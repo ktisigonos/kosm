@@ -15,11 +15,17 @@ const failure = @import("../failure.zig");
 const Host = @import("Host.zig");
 const Call = @import("Call.zig");
 const Handle = @import("Handle.zig");
+const ScriptFile = @import("ScriptFile.zig");
 
 /// The frontend reading the script, by `Frontend.name`: "lua".
 frontend: []const u8,
 /// The script, relative to the config: "apps/cava/root.lua".
 path: []const u8,
+
+/// The script, as the host runs it.
+pub fn file(app: ScriptApp) ScriptFile {
+    return .{ .frontend = app.frontend, .path = app.path };
+}
 
 /// The app the script's `from(theme)` gives: the fields of the table it returns, set on the
 /// app's defaults. Like a Zig app's `from` it cannot fail: a failure is recorded like
@@ -40,7 +46,7 @@ fn fill(app: ScriptApp, comptime App: type, built: *App, theme: Theme) (std.mem.
     kept.* = theme;
     const theme_handle = host.handleOf(Theme, kept) orelse return failure.fail("{s}: a kosm.Theme cannot be handed to a script here", .{app.path});
     var call = host.call();
-    const given = host.run(host.state, &call, app, "from", &.{.{ .value = .{ .handle = theme_handle } }}) catch |err| switch (err) {
+    const given = host.run(host.state, &call, app.file(), "from", &.{.{ .value = .{ .handle = theme_handle } }}) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.CallFailed => return failure.fail("{s}", .{call.message orelse "from failed and did not say why"}),
     };
@@ -68,12 +74,12 @@ pub fn apply(app: ScriptApp, comptime App: type, self: App, output: *Output) Out
     const self_handle = host.handleOf(App, kept) orelse return output.fail("", "{s}: the app cannot be handed to its script", .{app.path});
     const output_handle = host.handleOf(Output, output) orelse return output.fail("", "{s}: a kosm.Output cannot be handed to a script here", .{app.path});
     var call = host.call();
-    _ = host.run(host.state, &call, app, "apply", &.{ .{ .value = .{ .handle = self_handle } }, .{ .value = .{ .handle = output_handle } } }) catch |err| switch (err) {
+    _ = host.run(host.state, &call, app.file(), "apply", &.{ .{ .value = .{ .handle = self_handle } }, .{ .value = .{ .handle = output_handle } } }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.CallFailed => {
             // A call on `output` that failed recorded its file; the script's message holds its own.
-            const file = if (output.diagnostics.message().len != 0) output.diagnostics.file else "";
-            return output.fail(file, "{s}", .{call.message orelse "apply failed and did not say why"});
+            const failed_file = if (output.diagnostics.message().len != 0) output.diagnostics.file else "";
+            return output.fail(failed_file, "{s}", .{call.message orelse "apply failed and did not say why"});
         },
     };
 }
@@ -86,7 +92,7 @@ pub fn reload(app: ScriptApp, comptime App: type, self: App, reloader: *Reloader
     const self_handle = host.handleOf(App, kept) orelse return reloader.fail("{s}: the app cannot be handed to its script", .{app.path});
     const reloader_handle = host.handleOf(Reloader, reloader) orelse return reloader.fail("{s}: a kosm.Reloader cannot be handed to a script here", .{app.path});
     var call = host.call();
-    _ = host.run(host.state, &call, app, "reload", &.{ .{ .value = .{ .handle = self_handle } }, .{ .value = .{ .handle = reloader_handle } } }) catch |err| switch (err) {
+    _ = host.run(host.state, &call, app.file(), "reload", &.{ .{ .value = .{ .handle = self_handle } }, .{ .value = .{ .handle = reloader_handle } } }) catch |err| switch (err) {
         error.OutOfMemory => return reloader.fail("out of memory", .{}),
         error.CallFailed => return reloader.fail("{s}", .{call.message orelse "reload failed and did not say why"}),
     };
@@ -97,7 +103,7 @@ const testing = std.testing;
 /// A host whose `from` returns a table (or fails, for `apps/broken.lua`) and whose `apply`
 /// fails after a call on `output` failed.
 const TestHost = struct {
-    fn run(state: *anyopaque, call: *Call, app: ScriptApp, function: []const u8, arguments: []const Loose) Call.Error!Loose {
+    fn run(state: *anyopaque, call: *Call, app: ScriptFile, function: []const u8, arguments: []const Loose) Call.Error!Loose {
         _ = state;
         if (std.mem.eql(u8, function, "from")) {
             if (std.mem.eql(u8, app.path, "apps/broken.lua")) return call.fail("apps/broken.lua:3: attempt to index a nil value", .{});

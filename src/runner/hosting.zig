@@ -42,12 +42,12 @@ pub fn Hosting(comptime frontends: []const discovery.DeclaredFrontend, comptime 
             return .{ .state = state, .arena = state.arena, .run = run, .handle = handle };
         }
 
-        fn run(state_pointer: *anyopaque, call: *Call, app: ScriptApp, function: []const u8, arguments: []const Loose) Call.Error!Loose {
+        fn run(state_pointer: *anyopaque, call: *Call, app: kosm.Frontend.ScriptFile, function: []const u8, arguments: []const Loose) Call.Error!Loose {
             const state: *State = @ptrCast(@alignCast(state_pointer));
             const frontend = for (frontends) |declared| {
                 if (std.mem.eql(u8, declared.frontend.name, app.frontend)) break declared.frontend;
             } else return call.fail("{s}: no frontend of the config is named '{s}'", .{ app.path, app.frontend });
-            const call_function = frontend.call orelse return call.fail("{s}: the {s} frontend runs no apps", .{ app.path, frontend.name });
+            const call_function = frontend.call orelse return call.fail("{s}: the {s} frontend runs no apps or adapters", .{ app.path, frontend.name });
             const text = state.source(app.path) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => return call.fail("cannot read {s}: {s}", .{ app.path, @errorName(err) }),
@@ -73,10 +73,10 @@ pub fn Hosting(comptime frontends: []const discovery.DeclaredFrontend, comptime 
     };
 }
 
-/// The types the host hands scripts: the theme, the output and reloader, and every app in
-/// `sources` written through a frontend.
+/// The types the host hands scripts: the theme, the output and reloader, colors (for adapters),
+/// and every app in `sources` written through a frontend.
 pub fn handledTypes(comptime sources: []const discovery.AppSource) []const type {
-    comptime var found: []const type = &.{ kosm.Theme, kosm.Output, kosm.Reloader };
+    comptime var found: []const type = &.{ kosm.Theme, kosm.Output, kosm.Reloader, kosm.Color };
     inline for (sources) |source| {
         if (comptime isScriptApp(source.module)) found = found ++ .{source.module.App};
     }
@@ -89,6 +89,20 @@ pub fn isScriptApp(comptime Module: type) bool {
     if (@typeInfo(Module) != .@"struct" or !@hasDecl(Module, "App")) return false;
     const App = Module.App;
     return @TypeOf(App) == type and @typeInfo(App) == .@"struct" and @hasDecl(App, "script") and @TypeOf(App.script) == ScriptApp;
+}
+
+/// Whether any module of `sources` is the generated module of an adapter written through a
+/// frontend, which only the runner of scripts can run.
+pub fn holdsScriptAdapters(comptime sources: []const @import("Target.zig").AdapterSource) bool {
+    inline for (sources) |source| {
+        if (comptime isScriptAdapter(source.module)) return true;
+    }
+    return false;
+}
+
+/// Whether `Module` is the generated module of an adapter written through a frontend.
+pub fn isScriptAdapter(comptime Module: type) bool {
+    return @typeInfo(Module) == .@"struct" and @hasDecl(Module, "script") and @TypeOf(Module.script) == kosm.Frontend.ScriptAdapter;
 }
 
 /// Whether a tree of type `T` holds an app written through a frontend anywhere, which only the
@@ -134,6 +148,14 @@ const TestZigApp = struct {
         _ = output;
     }
 };
+
+test "sources hold script adapters when any module is one" {
+    const script_adapter = struct {
+        pub const script: kosm.Frontend.ScriptAdapter = .{ .frontend = "test", .path = "adapters/keys.lua" };
+    };
+    try testing.expect(holdsScriptAdapters(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "keys", .module = script_adapter } }));
+    try testing.expect(!holdsScriptAdapters(&.{.{ .package = "kitty", .module = struct {} }}));
+}
 
 test "a tree holds script apps when any app inside it, at any depth or optional, is one" {
     try testing.expect(holdsScriptApps(struct { terminal: struct { visualizer: ?TestScriptApp = null } }));

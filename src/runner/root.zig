@@ -59,8 +59,9 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     }
 
     if (init.environ_map.get(interface.runner_variable) != null) {
-        // Only the runner of scripts builds other kosmoi and runs apps written through a frontend.
-        if (comptime kosmos_call.buildsOnKosmoi(ParamsOf(kosmos)) or hosting.holdsScriptApps(TreeOf(kosmos))) try streams.stdout.writeAll(interface.script_runner ++ "\n");
+        // Only the runner of scripts builds other kosmoi and runs apps and adapters written
+        // through a frontend.
+        if (comptime kosmos_call.buildsOnKosmoi(ParamsOf(kosmos)) or hosting.holdsScriptApps(TreeOf(kosmos)) or hosting.holdsScriptAdapters(target.adapter_sources)) try streams.stdout.writeAll(interface.script_runner ++ "\n");
         try streams.stdout.flush();
         return 0;
     }
@@ -768,6 +769,7 @@ fn fail(diagnostics: *kosm.Diagnostics, comptime format: []const u8, arguments: 
 test {
     std.testing.refAllDecls(Arguments);
     std.testing.refAllDecls(@import("app_modules.zig"));
+    std.testing.refAllDecls(@import("adapter_modules.zig"));
     std.testing.refAllDecls(hosting);
     std.testing.refAllDecls(set);
     std.testing.refAllDecls(discovery);

@@ -1,4 +1,5 @@
-//! The Zig modules of apps written through a frontend: kosm reads what each script declares
+//! The Zig modules of apps written through a frontend (and, through `adapter_modules`, of
+//! adapters): kosm reads what each script declares
 //! while it builds the config, and writes a module giving `App`, `from` and `App.apply` like a
 //! Zig app's, its functions running the script's own. A module is written only when its contents
 //! change, so a script edit that leaves its declaration alone compiles nothing.
@@ -254,7 +255,7 @@ fn fail(diagnostics: *kosm.Diagnostics, script: Script, line: usize, comptime fo
     return error.InvalidDeclaration;
 }
 
-/// Writes the module of each script app the process arguments name, for the build of a config:
+/// Writes the module of each script app and adapter the process arguments name, for the build of a config:
 /// `<output folder> <module>,<module>... [<name>=<path in the config>=<absolute path>]...`. Each
 /// is `<output folder>/<name>.zig`, rewritten only when its contents change; stdout lists them,
 /// so the build caches the run. Returns the exit status, 1 after printing what went wrong.
@@ -321,23 +322,39 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
     const found = for (frontends) |candidate| {
         if (candidate.frontend.claims(extension)) break candidate.frontend;
     } else {
-        diagnostics.set("", "", "{s}: no frontend claims '{s}' files; an app is Zig, or a script a frontend of the config reads", .{ path, extension });
+        diagnostics.set("", "", "{s}: no frontend claims '{s}' files; an app or adapter is Zig, or a script a frontend of the config reads", .{ path, extension });
         return error.InvalidDeclaration;
     };
+    const script: Script = .{ .name = name, .path = path, .frontend = found.name };
+    var context: kosm.Frontend.Context = .{ .arena = arena, .path = path };
+    if (std.mem.startsWith(u8, path, adapters_folder)) {
+        const declare = found.declare_adapter orelse {
+            diagnostics.set("", "", "{s}: the {s} frontend writes no adapters", .{ path, found.name });
+            return error.InvalidDeclaration;
+        };
+        const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
+        return @import("adapter_modules.zig").source(arena, script, declaration, found.counts_from, diagnostics);
+    }
     const declare = found.declare orelse {
         diagnostics.set("", "", "{s}: the {s} frontend writes no apps", .{ path, found.name });
         return error.InvalidDeclaration;
     };
-    var context: kosm.Frontend.Context = .{ .arena = arena, .path = path };
-    const declaration = declare(&context, text) catch |err| switch (err) {
+    const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
+    return source(arena, script, declaration, modules, diagnostics);
+}
+
+/// The config's folder of adapters, whose scripts declare adapters rather than apps.
+const adapters_folder = "adapters/";
+
+fn declareFailed(err: kosm.Frontend.Error, context: kosm.Frontend.Context, path: []const u8, diagnostics: *kosm.Diagnostics) Error {
+    switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.InvalidScript => {
             const message = context.message orelse "it cannot be read, and the frontend did not say why";
             if (std.mem.startsWith(u8, message, path)) diagnostics.set("", "", "{s}", .{message}) else diagnostics.set("", "", "{s}: {s}", .{ path, message });
             return error.InvalidDeclaration;
         },
-    };
-    return source(arena, .{ .name = name, .path = path, .frontend = found.name }, declaration, modules, diagnostics);
+    }
 }
 
 /// Writes `contents` to `path` unless it holds them already, so an unchanged module keeps its

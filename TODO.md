@@ -21,10 +21,6 @@ Steps 21j2-21j5: adapters, frontends and the other parts of kosm written through
 - Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
 - They keep every rule of their kind: Lua adapters know no app.
 
-- **21j2. Adapters written in Lua** `PLAN FIRST`
-  - Do: a local `adapters/<name>/root.lua` gives an adapter's capabilities (`format`, `parser`, `serialize`, `comment`, `insert`), its nodes and values crossing as tables, usable by Zig and Lua apps alike.
-  - Done when: parse -> match -> format round trips are tested on a Lua adapter, and an app writes a file through it.
-
 - **21j3. Frontends written in Lua** `PLAN FIRST`
   - Do: a frontend (reading scripts into loose values, listing variants, writing completion) can be written in Lua, so a language's support needs no Zig. Propose a small second language to prove it on.
   - Done when: a kosmos in that language, through a frontend written in Lua, applies with `--diff`.

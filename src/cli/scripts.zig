@@ -22,9 +22,9 @@ const kosmoi_directory = "kosmoi";
 /// The config's own files and folders the runner is built from.
 const config_files = [_][]const u8{ "build.zig", "build.zig.zon" };
 const config_folders = [_][]const u8{ "kosmoi", "apps", "adapters" };
-/// The config's folders whose every file counts: an app's script may change what it declares,
-/// which only a build sees. A build finding the declaration unchanged compiles nothing.
-const script_app_folders = [_][]const u8{"apps"};
+/// The config's folders whose every file counts: an app's or adapter's script may change what it
+/// declares, which only a build sees. A build finding the declaration unchanged compiles nothing.
+const script_app_folders = [_][]const u8{ "apps", "adapters" };
 /// Kosm's own files and folders in its sources.
 const source_files = [_][]const u8{ "build.zig", "build.zig.zon" };
 const source_folders = [_][]const u8{ "src", "build" };
@@ -252,7 +252,9 @@ const test_frontend =
     \\    .complete = complete,
     \\    .editor_file = .{ .path = ".lines.json", .contents = "{}\n" },
     \\    .declare = declare,
+    \\    .declare_adapter = declareAdapter,
     \\    .call = call,
+    \\    .counts_from = 1,
     \\};
     \\
     \\const integer_type: kosm.Frontend.Declaration.Type = .integer;
@@ -288,9 +290,109 @@ const test_frontend =
     \\    return .{ .fields = fields.items, .functions = functions.items, .doc = app_doc };
     \\}
     \\
+    \\/// `name <name>`, `extension <.ext>`, `comment <start>` and `boolean <spelling>` give the
+    \\/// adapter's data; `gives <capability>` each capability.
+    \\fn declareAdapter(context: *kosm.Frontend.Context, source: []const u8) kosm.Frontend.Error!kosm.Frontend.AdapterDeclaration {
+    \\    var declaration: kosm.Frontend.AdapterDeclaration = .{ .name = "" };
+    \\    var extensions: std.ArrayList([]const u8) = .empty;
+    \\    var functions: std.ArrayList([]const u8) = .empty;
+    \\    var lines = std.mem.splitScalar(u8, source, '\n');
+    \\    var number: usize = 0;
+    \\    while (lines.next()) |line| {
+    \\        number += 1;
+    \\        const space = std.mem.findScalar(u8, line, ' ') orelse continue;
+    \\        const word = line[0..space];
+    \\        const rest = line[space + 1 ..];
+    \\        if (std.mem.eql(u8, word, "name")) declaration.name = rest;
+    \\        if (std.mem.eql(u8, word, "extension")) try extensions.append(context.arena, rest);
+    \\        if (std.mem.eql(u8, word, "comment")) declaration.comment = .{ .line = rest };
+    \\        if (std.mem.eql(u8, word, "gives")) try functions.append(context.arena, rest);
+    \\        if (std.mem.eql(u8, word, "boolean")) declaration.default_format = .{ .value = .{ .table = try context.arena.dupe(kosm.Loose.Entry, &.{.{ .key = "boolean", .value = .{ .value = .{ .string = rest }, .origin = try context.at(number) } }}) } };
+    \\    }
+    \\    declaration.extensions = extensions.items;
+    \\    declaration.functions = functions.items;
+    \\    return declaration;
+    \\}
+    \\
+    \\/// An adapter's capabilities for `key = value` lines, positions counting from 1: `format`
+    \\/// quotes strings with the script's `quote <character>`, and `parser` fails on `fails parser`.
+    \\fn callAdapter(context: *kosm.Frontend.Context, source: []const u8, function: []const u8, arguments: []const kosm.Loose) kosm.Frontend.Error!kosm.Loose {
+    \\    const arena = context.arena;
+    \\    if (std.mem.eql(u8, function, "format")) return .{ .value = .{ .string = try formatTagged(context, source, arguments[0]) } };
+    \\    if (std.mem.eql(u8, function, "serialize")) {
+    \\        var text: std.Io.Writer.Allocating = .init(arena);
+    \\        for (field(arguments[0], "value").?.value.list) |entry| {
+    \\            text.writer.print("{s} = {s}\n", .{ field(entry, "key").?.value.string, try formatTagged(context, source, field(entry, "value").?) }) catch return error.OutOfMemory;
+    \\        }
+    \\        return .{ .value = .{ .string = text.written() } };
+    \\    }
+    \\    if (std.mem.eql(u8, function, "parser")) {
+    \\        if (lineOf(source, "fails parser")) |line| return context.fail("{s}: the file is not read on purpose", .{try context.at(line)});
+    \\        const file = arguments[0].value.string;
+    \\        var children: std.ArrayList(kosm.Loose) = .empty;
+    \\        var start: usize = 0;
+    \\        while (start < file.len) {
+    \\            const end = std.mem.findScalarPos(u8, file, start, '\n') orelse file.len;
+    \\            const line = file[start..end];
+    \\            if (line.len != 0 and line[0] != '#') if (std.mem.find(u8, line, " = ")) |equals| {
+    \\                const first: i64 = @intCast(start + equals + 3 + 1);
+    \\                try children.append(arena, try table(arena, &.{
+    \\                    .{ .key = "key", .value = .{ .value = .{ .string = line[0..equals] } } },
+    \\                    .{ .key = "kind", .value = .{ .value = .{ .string = "scalar" } } },
+    \\                    .{ .key = "position", .value = .{ .value = .{ .integer = @intCast(start + 1) } } },
+    \\                    .{ .key = "value", .value = .{ .value = .{ .list = try arena.dupe(kosm.Loose, &.{ .{ .value = .{ .integer = first } }, .{ .value = .{ .integer = @intCast(end) } } }) } } },
+    \\                }));
+    \\            };
+    \\            start = end + 1;
+    \\        }
+    \\        return table(arena, &.{
+    \\            .{ .key = "kind", .value = .{ .value = .{ .string = "table" } } },
+    \\            .{ .key = "position", .value = .{ .value = .{ .integer = 1 } } },
+    \\            .{ .key = "value", .value = .{ .value = .{ .list = try arena.dupe(kosm.Loose, &.{ .{ .value = .{ .integer = 1 } }, .{ .value = .{ .integer = @intCast(file.len) } } }) } } },
+    \\            .{ .key = "children", .value = .{ .value = .{ .list = children.items } } },
+    \\        });
+    \\    }
+    \\    // insert: a new line at the end of the file.
+    \\    const length: i64 = @intCast(arguments[0].value.string.len);
+    \\    const content = try arena.print("{s} = {s}\n", .{ arguments[2].value.string, arguments[3].value.string });
+    \\    const insertion = try table(arena, &.{
+    \\        .{ .key = "range", .value = .{ .value = .{ .list = try arena.dupe(kosm.Loose, &.{ .{ .value = .{ .integer = length + 1 } }, .{ .value = .{ .integer = length } } }) } } },
+    \\        .{ .key = "content", .value = .{ .value = .{ .string = content } } },
+    \\    });
+    \\    return .{ .value = .{ .list = try arena.dupe(kosm.Loose, &.{insertion}) } };
+    \\}
+    \\
+    \\fn formatTagged(context: *kosm.Frontend.Context, source: []const u8, value: kosm.Loose) kosm.Frontend.Error![]const u8 {
+    \\    if (field(value, "text")) |text| return text.value.string;
+    \\    const kind = field(value, "kind").?.value.string;
+    \\    const held = field(value, "value").?;
+    \\    if (std.mem.eql(u8, kind, "integer")) return context.arena.print("{d}", .{held.value.integer});
+    \\    const quote: []const u8 = if (lineOf(source, "quote ")) |line| lineAt(source, line)["quote ".len..] else "\"";
+    \\    if (std.mem.eql(u8, kind, "string")) return context.arena.print("{s}{s}{s}", .{ quote, held.value.string, quote });
+    \\    return context.fail("cannot write a {s}", .{kind});
+    \\}
+    \\
+    \\fn field(value: kosm.Loose, name: []const u8) ?kosm.Loose {
+    \\    for (value.value.table) |entry| {
+    \\        if (std.mem.eql(u8, entry.key, name)) return entry.value;
+    \\    }
+    \\    return null;
+    \\}
+    \\
+    \\fn table(arena: std.mem.Allocator, entries: []const kosm.Loose.Entry) !kosm.Loose {
+    \\    return .{ .value = .{ .table = try arena.dupe(kosm.Loose.Entry, entries) } };
+    \\}
+    \\
+    \\fn lineAt(source: []const u8, number: usize) []const u8 {
+    \\    var lines = std.mem.splitScalar(u8, source, '\n');
+    \\    for (1..number) |_| _ = lines.next();
+    \\    return lines.next().?;
+    \\}
+    \\
     \\/// `from` sets `peak` from the theme's mode (1 dark, 2 light), or fails on `from fails`;
     \\/// `apply` writes `size` and `peak` to its file through the kitty adapter.
     \\fn call(context: *kosm.Frontend.Context, source: []const u8, function: []const u8, arguments: []const kosm.Loose) kosm.Frontend.Error!kosm.Loose {
+    \\    if (std.mem.startsWith(u8, context.path, "adapters/")) return callAdapter(context, source, function, arguments);
     \\    var frontend_call = context.library.call(context.arena);
     \\    if (std.mem.eql(u8, function, "from")) {
     \\        if (lineOf(source, "from fails")) |line| return context.fail("{s}: from fails on purpose", .{try context.at(line)});
@@ -642,7 +744,7 @@ test "an app written through a frontend applies from a Zig kosmos and a script, 
 
     try testing.expect(try prepare(context));
     // The module kosm wrote from the script, documented, which a Zig kosmos uses like any app.
-    const generated = "project/.zig-cache/kosm/apps/meter.zig";
+    const generated = "project/.zig-cache/kosm/modules/meter.zig";
     const module = try tmp.dir.readFileAlloc(testing.io, generated, arena, .limited(1024 * 1024));
     try testing.expect(std.mem.find(u8, module, "/// A meter, for tests.\npub const App = struct {\n    /// How many bars.\n    size: i64 = 3,\n    peak: ?i64 = null,\n") != null);
     try testing.expect(std.mem.find(u8, try testDiff(context, "gauge"), "+size 5\n+peak 2\n") != null);
@@ -667,4 +769,89 @@ test "an app written through a frontend applies from a Zig kosmos and a script, 
     stderr.clearRetainingCapacity();
     try testing.expect(!try prepare(context));
     try testing.expect(std.mem.find(u8, stderr.written(), "apps/meter.kosmos:1: a field needs a type") != null);
+}
+
+/// An adapter written through the test frontend, for `key = value` files.
+const test_keys =
+    \\name keys
+    \\extension .keys
+    \\comment #
+    \\boolean yes_no
+    \\gives format
+    \\gives parser
+    \\gives serialize
+    \\gives insert
+    \\
+;
+
+/// A Zig app writing through the keys adapter: it sets `size` in a file of the user's, adds
+/// `include`, and writes a file of its own.
+const test_keyed_app =
+    \\const kosm = @import("kosm");
+    \\
+    \\pub const App = struct {
+    \\    size: i64 = 3,
+    \\
+    \\    pub fn apply(self: App, output: *kosm.Output) !void {
+    \\        var selection = try output.edit(.{ .files = "~/.config/keyed/main.keys" });
+    \\        try selection.set("size", self.size);
+    \\        for (try selection.nodes("")) |root| try selection.insert(root, "include", "kosm.keys");
+    \\        try output.generate(.{ .file = "~/.config/keyed/kosm.keys" }, .{ .blur = true, .accent = kosm.hex("ff0000"), .name = "kosm", .gaps = 0.25 });
+    \\    }
+    \\};
+    \\
+;
+
+const test_keyed =
+    \\const keyed = @import("keyed");
+    \\
+    \\pub fn kosmos() struct { keyed: keyed.App } {
+    \\    return .{ .keyed = .{ .size = 12 } };
+    \\}
+    \\
+;
+
+test "an adapter written through a frontend reads and writes files for a Zig app, and a script edit compiles nothing" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var stdout: std.Io.Writer.Allocating = .init(arena);
+    var stderr: std.Io.Writer.Allocating = .init(arena);
+    const context = try testProject(arena, tmp.dir, &stdout, &stderr);
+    try tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/lines.zig", .data = test_frontend });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/keys.kosmos", .data = test_keys });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/apps/keyed.zig", .data = test_keyed_app });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/keyed_kosmos.zig", .data = test_keyed });
+    try tmp.dir.createDirPath(testing.io, "home/.config/keyed");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "home/.config/keyed/main.keys", .data = "# sizes\nsize = 4\nname = \"x\"\n" });
+
+    try testing.expect(try prepare(context));
+    const generated = "project/.zig-cache/kosm/modules/keys.zig";
+    const module = try tmp.dir.readFileAlloc(testing.io, generated, arena, .limited(1024 * 1024));
+    try testing.expect(std.mem.find(u8, module, ".counts_from = 1 };") != null);
+    try testing.expect(std.mem.find(u8, module, "    .default_format = .{ .boolean = .yes_no },\n    .comment = .{ .line = \"#\" },\n") != null);
+    // Only the value's bytes change, the include is added at the end, and the generated file
+    // spells its values in the adapter's format.
+    const diff = try testDiff(context, "keyed_kosmos");
+    try testing.expect(std.mem.find(u8, diff, "-size = 4\n+size = 12\n name = \"x\"\n+include = \"kosm.keys\"\n") != null);
+    try testing.expect(std.mem.find(u8, diff, "+blur = yes\n+accent = #ff0000\n+name = \"kosm\"\n+gaps = 0.25\n") != null);
+    // Its own runner sends the kosmos to the runner of scripts, which alone runs scripts.
+    try testing.expect(try context.runBuild(&.{ "build", "-Dkosmos=keyed_kosmos" }));
+    try testing.expect(try buildsOnKosmoi(context, try std.Io.Dir.path.join(arena, &.{ context.config, "zig-out/bin/kosmos" })));
+
+    // An edit leaving the declaration alone rebuilds the runner without touching the module.
+    try tmp.dir.setTimestamps(testing.io, generated, .{ .modify_timestamp = .{ .new = .{ .nanoseconds = 0 } } });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/keys.kosmos", .data = try std.mem.concat(arena, u8, &.{ test_keys, "quote '\n" }) });
+    try testing.expect(try isStale(context));
+    try testing.expect(try prepare(context));
+    try testing.expectEqual(0, (try tmp.dir.statFile(testing.io, generated, .{})).mtime.nanoseconds);
+    try testing.expect(std.mem.find(u8, try testDiff(context, "keyed_kosmos"), "+name = 'kosm'\n") != null);
+    // A script's failure names the file being read and the script's line.
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/adapters/keys.kosmos", .data = try std.mem.concat(arena, u8, &.{ test_keys, "fails parser\n" }) });
+    const failed = try testDiff(context, "keyed_kosmos");
+    try testing.expect(std.mem.find(u8, failed, "~/.config/keyed/main.keys") != null);
+    try testing.expect(std.mem.find(u8, failed, "adapters/keys.kosmos:9: the file is not read on purpose") != null);
 }

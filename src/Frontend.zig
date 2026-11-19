@@ -34,12 +34,21 @@ editor_file: ?Completion.File = null,
 /// the config, to write the Zig module the app is used through. `context.library` is empty
 /// there. Null for a frontend writing no apps.
 declare: ?*const fn (context: *Context, source: []const u8) Error!Declaration = null,
-/// Calls function `function` of the script at `context.path`, whose text is `source`, with
-/// `arguments`, and returns what it returns: a table as a loose table, a Zig value as its
-/// handle. The script runs once, on the first call naming it, in the frontend's one
+/// Reads what an adapter's script declares (its name, extensions, comment syntax, default format
+/// and the capabilities it gives as functions) without calling any of its functions; kosm calls
+/// it while building the config, to write the Zig module the adapter is used through.
+/// `context.library` is empty there. Null for a frontend writing no adapters.
+declare_adapter: ?*const fn (context: *Context, source: []const u8) Error!AdapterDeclaration = null,
+/// Calls function `function` of the app's or adapter's script at `context.path`, whose text is
+/// `source`, with `arguments`, and returns what it returns: a table as a loose table, a Zig
+/// value as its handle. The script runs once, on the first call naming it, in the frontend's one
 /// interpreter, so its later calls share its values. Fail through `Context.fail`, the message
-/// starting with the script's place. Null for a frontend writing no apps.
+/// starting with the script's place. Null for a frontend writing no apps or adapters.
 call: ?*const fn (context: *Context, source: []const u8, function: []const u8, arguments: []const Loose) Error!Loose = null,
+/// Where the language counts byte positions from, as an adapter's script gives and gets them:
+/// 0 for Zig's own, whose ranges end one past their last byte; 1 for Lua's, whose ranges end on
+/// their last byte, as `string.sub` takes them.
+counts_from: u1 = 0,
 
 /// What a script kosmos says: what it builds on, and the values it sets.
 pub const Script = @import("Frontend/Script.zig");
@@ -47,8 +56,17 @@ pub const Script = @import("Frontend/Script.zig");
 /// What an app's script declares, for `declare`.
 pub const Declaration = @import("Frontend/Declaration.zig");
 
+/// What an adapter's script declares, for `declare_adapter`.
+pub const AdapterDeclaration = @import("Frontend/AdapterDeclaration.zig");
+
 /// An app written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptApp = @import("Frontend/ScriptApp.zig");
+
+/// An adapter written through a frontend, which the Zig module kosm generates for it runs.
+pub const ScriptAdapter = @import("Frontend/ScriptAdapter.zig");
+
+/// The script of an app or adapter written through a frontend.
+pub const ScriptFile = @import("Frontend/ScriptFile.zig");
 
 /// What runs the functions of apps written through a frontend.
 pub const Host = @import("Frontend/Host.zig");
@@ -75,7 +93,7 @@ pub const Handle = @import("Frontend/Handle.zig");
 /// What a function or handle gets from its frontend when a script uses it.
 pub const Call = @import("Frontend/Call.zig");
 
-/// Errors `load`, `declare` and `call` may return. Return `InvalidScript` through `Context.fail`.
+/// Errors `load`, `declare`, `declare_adapter` and `call` may return. Return `InvalidScript` through `Context.fail`.
 pub const Error = std.mem.Allocator.Error || error{InvalidScript};
 
 /// Whether this frontend claims `extension` (".lua").
