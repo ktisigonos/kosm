@@ -43,11 +43,6 @@ Steps 22a-22e: command-line improvements the human asked for.
   - Do: kosm installs its completion scripts itself (`kosm completions <shell>` already prints them), where each shell auto-loads them outside the user's dotfiles (fish: `~/.local/share/fish/vendor_completions.d`, bash: `~/.local/share/bash-completion/completions`; zsh has no such folder). Propose when it happens (`kosm init`, a `kosm completions --install`, or every run) and what to do for zsh first.
   - Done when: in a scratch HOME, fish and bash complete kosm without the user adding anything.
 
-- **22d. Fix `kosm colors`** `ASK`
-  - Do: find out what is wrong with it (run it on each of the human's kosmoi, which only prints, including script kosmoi and variants); ask the human what they saw if it is not obvious.
-  - Done: it read only a kosmos file's `pub const` palettes, so kosmoi on a look, an image, a script or a variant failed or showed the wrong colors. Now it builds the kosmos and prints the themes its tree holds (palette and roles); `kosm_base`'s `Base` keeps its theme in `theme`. Left: the human runs `kosm update kosm_base` and checks `kosm colors` on their kosmoi.
-  - Done when: the human has confirmed it prints what they expect, under a test.
-
 - **22e. List only one kind** `ASK`
   - Do: `kosm list` takes a filter for kosmoi, apps, adapters, frontends or packages (`kosm list kosmoi`, or a flag); propose the form, since `kosm list <kosmos>` already lists one kosmos.
   - Done when: each filter lists only its kind, under a test.
