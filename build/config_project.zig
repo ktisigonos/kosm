@@ -2,8 +2,7 @@
 //! adapter becomes a module importable by name, and `-Dkosmos=frost.iced` builds
 //! `zig-out/bin/kosmos`, the runner for that one kosmos. `-Dinspect=kosm_kitty` (repeatable) builds
 //! `zig-out/bin/inspect`, which reports what each named installed package provides. `-Dlist` builds
-//! `zig-out/bin/list`, which lists every kosmos and installed package. `-Dcolors=frost` builds
-//! `zig-out/bin/colors`, which prints the palettes that kosmos' file declares. `-Dprebuild=frost`
+//! `zig-out/bin/list`, which lists every kosmos and installed package. `-Dprebuild=frost`
 //! (repeatable) compiles the runner of each named kosmos without installing it, so a later
 //! `-Dkosmos=` of it is a cache hit, and installs `zig-out/prebuilt/<name>`, an empty file,
 //! for each one that compiled. `-Dscripts` builds `zig-out/bin/scripts`, the one runner every
@@ -35,7 +34,6 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const kosmos_name = b.option([]const u8, "kosmos", "The kosmos to build: frost, or a variant like frost.iced");
     const inspected_names = b.option([]const []const u8, "inspect", "An installed package to report on, for kosm add and kosm update; repeat it for several");
     const list = b.option(bool, "list", "Build the listing of every kosmos and package, for kosm list") orelse false;
-    const colors_name = b.option([]const u8, "colors", "The kosmos whose palettes to print, for kosm colors");
     const prebuilt_names = b.option([]const []const u8, "prebuild", "A kosmos whose runner to compile without installing it, for kosm build; repeat it for several");
     const scripts = b.option(bool, "scripts", "Build the runner every script kosmos shares, for kosm apply and kosm build") orelse false;
 
@@ -94,7 +92,6 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     addEditorCheck(b, names.modules.items);
     if (inspected_names) |inspected| addInspector(b, target, optimize, kosm_dependency, names.modules.items, inspected);
     if (list) addLister(b, target, optimize, kosm_dependency, names.modules.items);
-    if (colors_name) |name| addColors(b, target, optimize, kosm_dependency, names.modules.items, name);
     if (prebuilt_names) |prebuilt| addPrebuilt(b, target, optimize, kosm_dependency, names.modules.items, prebuilt);
     if (scripts) addScriptRunner(b, target, optimize, kosm_dependency, names.modules.items);
     const name = kosmos_name orelse return;
@@ -657,28 +654,6 @@ fn kosmosFile(b: *std.Build, entries: []const Entry, name: []const u8) ?Entry {
         name, file_name, file_name, nameList(b, entries, .kosmos), nameList(b, entries, .app), nameList(b, entries, .adapter), nameList(b, entries, .package),
     });
     return null;
-}
-
-/// Generates a main printing the palettes the file of kosmos `name` declares and installs it
-/// as `colors`.
-fn addColors(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []const Entry, name: []const u8) void {
-    const kosmos = kosmosFile(b, entries, name) orelse return;
-    const source = b.fmt(
-        \\const std = @import("std");
-        \\const runner = @import("kosm_runner");
-        \\
-        \\pub fn main(init: std.process.Init) !u8 {{
-        \\    return runner.colors(init, "{f}", @import("{f}"));
-        \\}}
-        \\
-    , .{ std.zig.fmtString(kosmos.name), std.zig.fmtString(kosmos.name) });
-    const files = b.addWriteFiles();
-    const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source), .target = target, .optimize = optimize });
-    root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
-    for (entries) |entry| root_module.addImport(entry.name, entry.module);
-    const colors_executable = b.addExecutable(.{ .name = "colors", .root_module = root_module });
-    dependOnGenerated(colors_executable, entries);
-    b.installArtifact(colors_executable);
 }
 
 /// Generates a main reporting what each installed package in `inspected` provides, in order,

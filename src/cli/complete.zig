@@ -23,7 +23,7 @@ const commands = [_]Candidate{
     .{ .text = "new", .description = "scaffold a kosmos, app or adapter" },
     .{ .text = "apply", .description = "apply a kosmos" },
     .{ .text = "list", .description = "list kosmoi and packages" },
-    .{ .text = "colors", .description = "show a kosmos' palettes" },
+    .{ .text = "colors", .description = "show the colors a kosmos wears" },
     .{ .text = "current", .description = "print the last apply as a command" },
     .{ .text = "source", .description = "choose the kosm sources builds use" },
     .{ .text = "add", .description = "install a package from a url" },
@@ -76,17 +76,17 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
     if (std.mem.eql(u8, command, "current")) return;
     // A file, which each shell completes itself.
     if (std.mem.eql(u8, command, "relay")) return;
-    if (std.mem.eql(u8, command, "apply")) return completeApply(context, before, previous, current);
+    if (std.mem.eql(u8, command, "apply") or std.mem.eql(u8, command, "colors")) return completeApply(context, before, previous, current);
     if (std.mem.eql(u8, command, "build")) return completeBuild(context, before, current);
 
     if (std.mem.startsWith(u8, current, "-")) return writeAll(context.stdout, &.{config_flag});
     if (firstPositional(before) != null) return;
-    if (std.mem.eql(u8, command, "list") or std.mem.eql(u8, command, "colors")) return writeKosmoi(context);
+    if (std.mem.eql(u8, command, "list")) return writeKosmoi(context);
     if (std.mem.eql(u8, command, "remove")) return writeInstalled(context);
     if (std.mem.eql(u8, command, "update")) return writeUpdatable(context);
 }
 
-/// `kosm apply`: the kosmos first, then its flags; after `--set`, its paths.
+/// `kosm apply` and `kosm colors`: the kosmos first, then its flags; after `--set`, its paths.
 fn completeApply(context: Context, before: []const []const u8, previous: []const u8, current: []const u8) Error!void {
     const kosmos = firstPositional(before) orelse {
         if (std.mem.startsWith(u8, current, "-")) return writeAll(context.stdout, &.{config_flag});

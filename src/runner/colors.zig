@@ -1,76 +1,64 @@
-//! What `kosm colors` prints: every palette a kosmos' file declares, each color with its hex
-//! value, a mark when that value is clipped from outside sRGB and, on a terminal, a block in
-//! that color.
+//! What `kosm colors` prints: every theme in a kosmos' tree as the kosmos built it (a base keeps
+//! the one its apps were built from), its palette and roles, each color with its hex value, a
+//! mark on a palette color the kosmos does not set itself or that is clipped from outside sRGB
+//! and, on a terminal, a block in that color.
 
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
-const interface = @import("kosm_interface");
-
-/// The argument asking for colored blocks. The command line passes it when its own stdout is a
-/// terminal, since this program's stdout is the command line's pipe.
-pub const blocks_argument = "--blocks";
-
-/// A palette found in a kosmos' file, under its declaration's name.
-pub const Named = struct { name: []const u8, palette: kosm.Palette };
 
 /// Width of a color's block, in spaces.
 const block_width = 6;
-/// The names are padded to the longest one, `magenta`, plus a gap.
-const name_width = 9;
+/// The names are padded to the longest one, `background`, plus a gap.
+const name_width = 12;
 
-/// Prints every public `kosm.Palette` at the top of `File`, the file of kosmos `name`, to
-/// stdout and returns 0, or says on stderr that it declares none and returns 1.
-pub fn colors(init: std.process.Init, comptime name: []const u8, comptime File: type) !u8 {
-    const palettes = comptime declaredPalettes(File);
-    var stderr_buffer: [512]u8 = undefined;
-    var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
-    if (!try interface.check(init.environ_map, &stderr.interface)) {
-        try stderr.interface.flush();
-        return 1;
-    }
-    if (palettes.len == 0) {
-        try stderr.interface.print("error: kosmos '{s}' declares no public kosm.Palette, so there are no colors to show; make its palette a `pub const` at the top of its file (root.zig for a directory kosmos)\n", .{name});
-        try stderr.interface.flush();
-        return 1;
-    }
-    const arguments = try init.minimal.args.toSlice(init.arena.allocator());
-    const blocks = for (arguments[1..]) |argument| {
-        if (std.mem.eql(u8, argument, blocks_argument)) break true;
-    } else false;
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
-    for (palettes, 0..) |named, index| {
-        if (index > 0) try stdout.interface.writeByte('\n');
-        try write(&stdout.interface, named, blocks);
-    }
-    try stdout.interface.flush();
-    return 0;
+/// Writes every `kosm.Theme` in `tree` outside its apps, in field order, each under its path in
+/// the tree, with an empty line between two. Returns how many it wrote. With `blocks`, a block
+/// in each color (truecolor escapes) comes before its hex value.
+pub fn writeThemes(writer: *std.Io.Writer, tree: anytype, blocks: bool) std.Io.Writer.Error!usize {
+    var count: usize = 0;
+    try writeNode(writer, tree, "", blocks, &count);
+    return count;
 }
 
-/// Every public `kosm.Palette` constant declared at the top of `File`.
-pub fn declaredPalettes(comptime File: type) []const Named {
+fn writeNode(writer: *std.Io.Writer, node: anytype, comptime path: []const u8, blocks: bool, count: *usize) std.Io.Writer.Error!void {
     @setEvalBranchQuota(discovery.branch_quota);
-    comptime var found: []const Named = &.{};
-    inline for (@typeInfo(File).@"struct".decl_names) |name| {
-        if (@TypeOf(@field(File, name)) == kosm.Palette) found = found ++ .{Named{ .name = name, .palette = @field(File, name) }};
+    const Node = @TypeOf(node);
+    if (@typeInfo(Node) == .optional) {
+        if (node) |present| try writeNode(writer, present, path, blocks, count);
+        return;
     }
-    const final = found[0..found.len].*;
-    return &final;
+    if (Node == kosm.Theme) {
+        if (count.* > 0) try writer.writeByte('\n');
+        count.* += 1;
+        return writeTheme(writer, if (path.len == 0) "theme" else path, node, blocks);
+    }
+    // An app's own theme is the one it was built from, which the tree's already shows.
+    if (comptime discovery.isApp(Node) or @typeInfo(Node) != .@"struct") return;
+    inline for (@typeInfo(Node).@"struct".field_names) |name| {
+        try writeNode(writer, @field(node, name), if (path.len == 0) name else path ++ "." ++ name, blocks, count);
+    }
 }
 
-/// One line for the palette's name, then one per color: black, white, gray and the 12 hues in
-/// wheel order, each `name  #rrggbb`, with `mixed` after a color the palette does not set
-/// itself and `clipped` after one outside sRGB, whose hex value is the nearest in it. With
-/// `blocks`, a block in the color (truecolor escapes) comes before its hex value.
-pub fn write(writer: *std.Io.Writer, named: Named, blocks: bool) std.Io.Writer.Error!void {
-    const resolved = named.palette.resolve();
-    try writer.print("{s}\n", .{named.name});
-    try writeColor(writer, "black", resolved.black, false, blocks);
-    try writeColor(writer, "white", resolved.white, false, blocks);
-    try writeColor(writer, "gray", resolved.gray, true, blocks);
+/// A line naming the theme (`base.theme: Krystallos, dark`, with its background alpha when
+/// below 1), then the palette (black, white, gray and the 12 hues in wheel order, `mixed` after
+/// a color the kosmos does not set itself) and the roles, a color per line as `name  #rrggbb`,
+/// with `clipped` after one outside sRGB, whose hex value is the nearest in it.
+pub fn writeTheme(writer: *std.Io.Writer, path: []const u8, theme: kosm.Theme, blocks: bool) std.Io.Writer.Error!void {
+    try writer.print("{s}: ", .{path});
+    if (theme.name) |name| try writer.print("{s}, ", .{name});
+    try writer.writeAll(@tagName(theme.mode));
+    if (theme.background_alpha < 1) try writer.print(", background alpha {d}", .{theme.background_alpha});
+    try writer.writeAll("\npalette\n");
+    try writeColor(writer, "black", theme.palette.black, false, blocks);
+    try writeColor(writer, "white", theme.palette.white, false, blocks);
+    try writeColor(writer, "gray", theme.palette.gray, true, blocks);
     inline for (@typeInfo(kosm.Palette.Hue).@"enum".field_names) |hue| {
-        try writeColor(writer, hue, @field(resolved, hue), @field(named.palette, hue) == null, blocks);
+        try writeColor(writer, hue, @field(theme.palette, hue), @field(theme.input.palette, hue) == null, blocks);
+    }
+    try writer.writeAll("roles\n");
+    inline for (@typeInfo(kosm.Theme.Roles).@"struct".field_names) |role| {
+        try writeColor(writer, role, @field(theme.roles, role), false, blocks);
     }
 }
 
@@ -97,68 +85,87 @@ fn writeColor(writer: *std.Io.Writer, name: []const u8, color: kosm.Color, mixed
 
 const testing = std.testing;
 
-const TestKosmos = struct {
-    pub const frost: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .red = kosm.hex("ff0000"), .cyan = kosm.hex("00ffff") };
-    pub const answer = 42;
-    const hidden: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff") };
-    pub const dusk: kosm.Palette = .{ .black = kosm.hex("101010"), .white = kosm.hex("f0f0f0") };
+const frost_palette: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .red = kosm.hex("ff0000"), .cyan = kosm.hex("00ffff") };
 
-    pub fn kosmos() void {
-        _ = hidden;
+/// An app holding the theme it was built from, which `writeThemes` must not show twice.
+const ThemedApp = struct {
+    theme: kosm.Theme,
+
+    pub fn apply(self: ThemedApp, output: *kosm.Output) !void {
+        _ = self;
+        _ = output;
     }
 };
 
-test "only the public palettes of a file are found, in order" {
-    const found = comptime declaredPalettes(TestKosmos);
-    try testing.expectEqual(2, found.len);
-    try testing.expectEqualStrings("frost", found[0].name);
-    try testing.expectEqualStrings("dusk", found[1].name);
-    try testing.expectEqual(0, (comptime declaredPalettes(struct {})).len);
+const Base = struct { kitty: ?ThemedApp, theme: kosm.Theme };
+const Tree = struct { base: Base, spare: ?Base, size: u32 };
+
+fn frostTree() Tree {
+    var theme: kosm.Theme = .from(.{ .palette = frost_palette, .mode = .light });
+    theme.name = "Frost";
+    theme.background_alpha = 0.75;
+    return .{ .base = .{ .kitty = .{ .theme = theme }, .theme = theme }, .spare = null, .size = 3 };
 }
 
-test "without blocks a palette is plain text, hues it does not set marked as mixed" {
+fn written(tree: anytype, blocks: bool, count: usize) ![]const u8 {
     var text: std.Io.Writer.Allocating = .init(testing.allocator);
-    defer text.deinit();
-    try write(&text.writer, comptime declaredPalettes(TestKosmos)[0], false);
-    const written = text.written();
-    try testing.expectStringStartsWith(written,
-        \\frost
-        \\  black    #000000
-        \\  white    #ffffff
-        \\  gray     #
+    errdefer text.deinit();
+    try testing.expectEqual(count, try writeThemes(&text.writer, tree, blocks));
+    return text.toOwnedSlice();
+}
+
+test "the themes of a tree are found by path, outside its apps and null optionals" {
+    const text = try written(frostTree(), false, 1);
+    defer testing.allocator.free(text);
+    try testing.expectStringStartsWith(text,
+        \\base.theme: Frost, light, background alpha 0.75
+        \\palette
+        \\  black       #000000
+        \\  white       #ffffff
+        \\  gray        #
     );
-    try testing.expect(std.mem.find(u8, written, "  red      #ff0000\n") != null);
-    try testing.expect(std.mem.find(u8, written, "  cyan     #00ffff\n") != null);
-    try testing.expect(std.mem.find(u8, written, "\x1b") == null);
-    var lines = std.mem.splitScalar(u8, std.mem.trimEnd(u8, written, "\n"), '\n');
-    var count: usize = 0;
+    try testing.expect(std.mem.find(u8, text, "  red         #ff0000\n") != null);
+    try testing.expect(std.mem.find(u8, text, "  cyan        #00ffff\n") != null);
+    try testing.expect(std.mem.find(u8, text, "\nroles\n  background  #") != null);
+    try testing.expect(std.mem.find(u8, text, "\n  error       #") != null);
+    try testing.expect(std.mem.find(u8, text, "\x1b") == null);
+
+    var both = frostTree();
+    both.spare = both.base;
+    const twice = try written(both, false, 2);
+    defer testing.allocator.free(twice);
+    try testing.expect(std.mem.find(u8, twice, "\n\nspare.theme: Frost, light") != null);
+    const none = try written(struct { size: u32 }{ .size = 1 }, false, 0);
+    defer testing.allocator.free(none);
+    try testing.expectEqualStrings("", none);
+}
+
+test "a palette color the kosmos does not set is marked mixed" {
+    const text = try written(frostTree(), false, 1);
+    defer testing.allocator.free(text);
+    const palette_text = text[0..std.mem.find(u8, text, "roles\n").?];
+    var lines = std.mem.splitScalar(u8, palette_text, '\n');
     var mixed: usize = 0;
     while (lines.next()) |line| {
-        count += 1;
         if (std.mem.find(u8, line, "  mixed") != null) mixed += 1;
     }
-    try testing.expectEqual(16, count);
     // Gray and the ten hues between red and cyan.
     try testing.expectEqual(11, mixed);
-    // Orange sits between red and cyan on the wheel, so it is neither.
-    try testing.expect(std.mem.find(u8, written, "  orange   #ff0000") == null);
-    try testing.expect(std.mem.find(u8, written, "  orange   #") != null);
 }
 
-test "a color outside sRGB is marked clipped after its nearest hex value" {
+test "a dark theme without a name or alpha shows only its mode, and clipped colors are marked" {
+    const vivid: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .green = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 } };
     var text: std.Io.Writer.Allocating = .init(testing.allocator);
     defer text.deinit();
-    const vivid: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .green = .{ .lightness = 0.9, .chroma = 0.4, .hue = 140 } };
-    try write(&text.writer, .{ .name = "vivid", .palette = vivid }, false);
-    try testing.expect(std.mem.find(u8, text.written(), "  green    #00ff00  clipped\n") != null);
-    try testing.expect(std.mem.find(u8, text.written(), "  white    #ffffff\n") != null);
+    try writeTheme(&text.writer, "theme", .from(.{ .palette = vivid, .mode = .dark }), false);
+    try testing.expectStringStartsWith(text.written(), "theme: dark\npalette\n");
+    try testing.expect(std.mem.find(u8, text.written(), "  green       #00ff00  clipped\n") != null);
+    try testing.expect(std.mem.find(u8, text.written(), "  white       #ffffff\n") != null);
 }
 
 test "with blocks each color is drawn in truecolor before its hex value" {
-    var text: std.Io.Writer.Allocating = .init(testing.allocator);
-    defer text.deinit();
-    try write(&text.writer, comptime declaredPalettes(TestKosmos)[0], true);
-    try testing.expect(std.mem.find(u8, text.written(), "  red      \x1b[48;2;255;0;0m      \x1b[0m  #ff0000\n") != null);
-    try testing.expect(std.mem.find(u8, text.written(), "  cyan     \x1b[48;2;0;255;255m      \x1b[0m  #00ffff\n") != null);
-    try testing.expectStringStartsWith(text.written(), "frost\n  black    \x1b[48;2;0;0;0m      \x1b[0m  #000000\n");
+    const text = try written(frostTree(), true, 1);
+    defer testing.allocator.free(text);
+    try testing.expect(std.mem.find(u8, text, "  red         \x1b[48;2;255;0;0m      \x1b[0m  #ff0000\n") != null);
+    try testing.expect(std.mem.find(u8, text, "palette\n  black       \x1b[48;2;0;0;0m      \x1b[0m  #000000\n") != null);
 }

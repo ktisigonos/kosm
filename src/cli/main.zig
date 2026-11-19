@@ -13,7 +13,6 @@ const directory_package = @import("directory_package.zig");
 const Context = @import("Context.zig");
 const init_command = @import("init.zig");
 const list_command = @import("list.zig");
-const colors_command = @import("colors.zig");
 const clean_command = @import("clean.zig");
 const build_command = @import("build_kosmoi.zig");
 const complete_command = @import("complete.zig");
@@ -32,7 +31,7 @@ const usage =
     \\       kosm new kosmos|app|adapter <name> [--config dir]
     \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
     \\       kosm list [kosmos] [--config dir]
-    \\       kosm colors <kosmos> [--config dir]
+    \\       kosm colors <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]
     \\       kosm current
     \\       kosm source [<dir> | --default]
     \\       kosm add <url>[#ref] [--config dir]
@@ -62,7 +61,7 @@ pub fn main(init: std.process.Init) !u8 {
         switch (err) {
             error.NoCommand => {},
             error.UnknownCommand => try stderr.interface.print("error: unknown command '{s}'\n", .{arguments[1]}),
-            error.MissingKosmos => try stderr.interface.writeAll("error: kosm apply needs a kosmos, e.g. kosm apply frost\n"),
+            error.MissingKosmos => try stderr.interface.print("error: kosm {s} needs a kosmos, e.g. kosm {s} frost\n", .{ arguments[1], arguments[1] }),
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
             error.MissingArgument, error.UnexpectedArgument => try stderr.interface.print("error: kosm {s} takes {s}\n", .{ arguments[1], expectedArguments(arguments[1]) }),
             error.UnknownKind => try stderr.interface.writeAll("error: kosm new makes a kosmos, an app or an adapter, e.g. kosm new app my_bar\n"),
@@ -81,11 +80,11 @@ pub fn main(init: std.process.Init) !u8 {
     }
     const builds = try Builds.prepare(init, &stderr.interface) orelse return 1;
     switch (command) {
-        .apply => |apply| return runApply(init, builds, apply, &stderr.interface),
+        .apply, .colors => |apply| return runApply(init, builds, apply, &stderr.interface),
         .init => |init_arguments| return runInit(init, builds, init_arguments, &stderr.interface),
         .new => |new| return runNew(init, builds, new, &stderr.interface),
         .build => |build_arguments| return runBuildCommand(init, builds, build_arguments, &stderr.interface),
-        .add, .remove, .update, .clean, .list, .colors => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
+        .add, .remove, .update, .clean, .list => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
         .complete => |words| return runComplete(init, builds, words),
         .current, .source, .completions, .relay => unreachable, // Handled above.
     }
@@ -128,7 +127,6 @@ fn expectedArguments(command: []const u8) []const u8 {
     if (std.mem.eql(u8, command, "update")) return "at most one package name";
     if (std.mem.eql(u8, command, "list")) return "at most one kosmos, e.g. kosm list frost";
     if (std.mem.eql(u8, command, "build")) return "kosmoi, --except and kosmoi, or --all, e.g. kosm build frost nord";
-    if (std.mem.eql(u8, command, "colors")) return "one kosmos, e.g. kosm colors frost";
     if (std.mem.eql(u8, command, "completions")) return "one shell: fish, bash or zsh";
     if (std.mem.eql(u8, command, "new")) return "a kind and a name, e.g. kosm new app my_bar";
     if (std.mem.eql(u8, command, "source")) return "at most one directory, or --default";
@@ -212,7 +210,7 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
             error.Failed => return 1,
             else => |other| return other,
         };
-        if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff, stderr)) return 1;
+        if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff or command.colors, stderr)) return 1;
         break :script try scriptRunnerArguments(arena, config, command);
     } else zig: {
         // The runner of scripts checks a script's name itself; a Zig kosmos' is checked here,
@@ -222,7 +220,7 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
             else => |other| return other,
         };
         if (!try build(context, command.kosmos)) return 1;
-        if (!try refreshManifest(init, builds, config, command.kosmos, command.diff, stderr)) return 1;
+        if (!try refreshManifest(init, builds, config, command.kosmos, command.diff or command.colors, stderr)) return 1;
         const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
         const builds_on_kosmoi = scripts.buildsOnKosmoi(context, runner) catch |err| switch (err) {
             error.Failed => return 1,
@@ -236,7 +234,13 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
         break :zig try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
     };
     const runner = runner_arguments[0];
-    const err = std.process.replace(init.io, .{ .argv = runner_arguments, .environ_map = builds.environ });
+    const environ = if (command.colors) colors: {
+        const with_colors = try arena.create(std.process.Environ.Map);
+        with_colors.* = try builds.environ.clone(arena);
+        try with_colors.put(interface.colors_variable, "1");
+        break :colors with_colors;
+    } else builds.environ;
+    const err = std.process.replace(init.io, .{ .argv = runner_arguments, .environ_map = environ });
     try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
     return 1;
 }
@@ -274,8 +278,8 @@ fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, k
     return true;
 }
 
-/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm clean`, `kosm list` or `kosm colors`
-/// against the config project.
+/// Runs `kosm add`, `kosm remove`, `kosm update`, `kosm clean` or `kosm list` against the
+/// config project.
 fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, config_command: ConfigCommand, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, config_command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
@@ -289,9 +293,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .update => package_commands.update(context, config_command.argument),
         .clean => clean_command.clean(context),
         .list => list_command.list(context, config_command.argument),
-        // Blocks only where they can be drawn: a pipe or a file gets plain text.
-        .colors => colors_command.colors(context, config_command.argument.?, try std.Io.File.stdout().isTty(init.io)),
-        .apply, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the six above.
+        .apply, .colors, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the five above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -379,7 +381,8 @@ const Command = union(enum) {
     source: ?[]const u8,
     new: New,
     list: ConfigCommand,
-    colors: ConfigCommand,
+    /// Like `apply`, printing the themes of the tree its kosmos builds instead of applying it.
+    colors: Apply,
     /// The shell whose completion script to print.
     completions: completions.Shell,
     /// The file to forward to a browser extension.
@@ -428,7 +431,7 @@ const Command = union(enum) {
         if (std.mem.eql(u8, arguments[0], "init")) return .{ .init = try .parse(arguments[1..], .none) };
         if (std.mem.eql(u8, arguments[0], "new")) return .{ .new = try .parse(arguments[1..]) };
         if (std.mem.eql(u8, arguments[0], "list")) return .{ .list = try .parse(arguments[1..], .optional) };
-        if (std.mem.eql(u8, arguments[0], "colors")) return .{ .colors = try .parse(arguments[1..], .required) };
+        if (std.mem.eql(u8, arguments[0], "colors")) return .{ .colors = try Apply.parse(arena, arguments) };
         if (std.mem.eql(u8, arguments[0], "add")) return .{ .add = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "remove")) return .{ .remove = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "update")) return .{ .update = try .parse(arguments[1..], .optional) };
@@ -442,7 +445,7 @@ const Command = union(enum) {
 /// `init`, `list`, `add`, `remove`, `update` or `clean`.
 const ConfigCommand = struct {
     /// add: the url and ref; remove: the name; update: the name, or null for every package;
-    /// list: the kosmos, or null for everything; colors: the kosmos; init and clean: always null.
+    /// list: the kosmos, or null for everything; init and clean: always null.
     argument: ?[]const u8,
     /// The `--config` directory, or null for the default.
     config: ?[]const u8,
@@ -557,7 +560,8 @@ fn runBuildCommand(init: std.process.Init, builds: Builds, command: Build, stder
     return 0;
 }
 
-/// `kosm apply` with its arguments sorted: kosm's own, and the ones the kosmos gets.
+/// `kosm apply` or `kosm colors` with its arguments sorted: kosm's own, and the ones the kosmos
+/// gets.
 const Apply = struct {
     /// As typed: "frost" or "frost.iced".
     kosmos: []const u8,
@@ -567,13 +571,17 @@ const Apply = struct {
     runner_arguments: []const []const u8,
     /// Whether `--diff` is among them, read like the runner reads it.
     diff: bool,
+    /// `kosm colors`: print the themes of the tree instead of applying it.
+    colors: bool = false,
 
     const ParseError = error{ NoCommand, UnknownCommand, MissingKosmos, MissingConfigDirectory, OutOfMemory };
 
-    /// Reads `apply <kosmos> ...` (without the program name). `--config dir` may appear anywhere.
+    /// Reads `apply <kosmos> ...` or `colors <kosmos> ...` (without the program name).
+    /// `--config dir` may appear anywhere.
     fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Apply {
         if (arguments.len == 0) return error.NoCommand;
-        if (!std.mem.eql(u8, arguments[0], "apply")) return error.UnknownCommand;
+        const colors = std.mem.eql(u8, arguments[0], "colors");
+        if (!colors and !std.mem.eql(u8, arguments[0], "apply")) return error.UnknownCommand;
         var config: ?[]const u8 = null;
         var diff = false;
         var rest: std.ArrayList([]const u8) = .empty;
@@ -594,7 +602,7 @@ const Apply = struct {
             }
         }
         if (rest.items.len == 0 or std.mem.startsWith(u8, rest.items[0], "-")) return error.MissingKosmos;
-        return .{ .kosmos = rest.items[0], .config = config, .runner_arguments = rest.items[1..], .diff = diff };
+        return .{ .kosmos = rest.items[0], .config = config, .runner_arguments = rest.items[1..], .diff = diff, .colors = colors };
     }
 };
 
@@ -605,7 +613,6 @@ test {
     std.testing.refAllDecls(directory_package);
     std.testing.refAllDecls(init_command);
     std.testing.refAllDecls(list_command);
-    std.testing.refAllDecls(colors_command);
     std.testing.refAllDecls(clean_command);
     std.testing.refAllDecls(build_command);
     std.testing.refAllDecls(scripts);
@@ -684,8 +691,13 @@ test "init takes only --config, and list at most one kosmos" {
     try testing.expectEqualStrings("frost.iced", (try Command.parse(arena.allocator(), &.{ "list", "frost.iced" })).list.argument.?);
     try testing.expectEqual(null, (try Command.parse(arena.allocator(), &.{"list"})).list.argument);
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "list", "a", "b" }));
-    try testing.expectEqualStrings("frost", (try Command.parse(arena.allocator(), &.{ "colors", "frost" })).colors.argument.?);
-    try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{"colors"}));
+    const colors = (try Command.parse(arena.allocator(), &.{ "colors", "frost.light", "--set", "kitty=null", "--config", "/c" })).colors;
+    try testing.expectEqualStrings("frost.light", colors.kosmos);
+    try testing.expectEqualStrings("/c", colors.config.?);
+    try testing.expectEqual(2, colors.runner_arguments.len);
+    try testing.expect(colors.colors and !colors.diff);
+    try testing.expect(!(try Command.parse(arena.allocator(), &.{ "apply", "frost" })).apply.colors);
+    try testing.expectError(error.MissingKosmos, Command.parse(arena.allocator(), &.{"colors"}));
     try testing.expectEqual(completions.Shell.fish, (try Command.parse(arena.allocator(), &.{ "completions", "fish" })).completions);
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "completions", "csh" }));
     try testing.expectEqual(2, (try Command.parse(arena.allocator(), &.{ "complete", "--", "apply", "" })).complete.len);

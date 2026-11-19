@@ -45,6 +45,7 @@ Steps 22a-22e: command-line improvements the human asked for.
 
 - **22d. Fix `kosm colors`** `ASK`
   - Do: find out what is wrong with it (run it on each of the human's kosmoi, which only prints, including script kosmoi and variants); ask the human what they saw if it is not obvious.
+  - Done: it read only a kosmos file's `pub const` palettes, so kosmoi on a look, an image, a script or a variant failed or showed the wrong colors. Now it builds the kosmos and prints the themes its tree holds (palette and roles); `kosm_base`'s `Base` keeps its theme in `theme`. Left: the human runs `kosm update kosm_base` and checks `kosm colors` on their kosmoi.
   - Done when: the human has confirmed it prints what they expect, under a test.
 
 - **22e. List only one kind** `ASK`

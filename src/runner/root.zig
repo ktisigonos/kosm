@@ -1,6 +1,6 @@
 //! The program `kosm apply` builds for one kosmos: parses its parameters and `--set`s, plans
 //! every app, then prints the plan as a diff or commits it all or nothing, records the apply and
-//! reloads the apps.
+//! reloads the apps. For `kosm colors` it prints the themes of the tree instead of planning it.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -10,6 +10,7 @@ const kosmos_names = @import("kosm_names");
 const Arguments = @import("Arguments.zig");
 const bindings = @import("bindings.zig");
 const Runtime = @import("Runtime.zig");
+const colors = @import("colors.zig");
 const completions = @import("completions.zig");
 const completion_types = @import("completion_types.zig");
 const discovery = @import("discovery.zig");
@@ -36,8 +37,6 @@ pub const inspect = @import("inspect.zig").inspect;
 pub const generateApps = @import("app_modules.zig").run;
 /// Lists every kosmos and installed package in a config, for `kosm list`.
 pub const list = list_module.list;
-/// Prints the palettes a kosmos' file declares, for `kosm colors`.
-pub const colors = @import("colors.zig").colors;
 /// A module `list` looks into.
 pub const ListSource = list_module.Source;
 
@@ -669,6 +668,7 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         error.InvalidAssignment => return error.Reported,
         error.OutOfMemory => return error.OutOfMemory,
     };
+    if (init.environ_map.get(interface.colors_variable) != null) return showColors(tree.*, diagnostics, streams);
 
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
@@ -685,6 +685,12 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         .diagnostics = diagnostics,
         .streams = streams,
     });
+}
+
+/// Prints every theme in `tree`, for `kosm colors`, or fails when it holds none.
+fn showColors(tree: anytype, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+    const shown = try colors.writeThemes(streams.stdout, tree, streams.stdout_mode == .escape_codes);
+    if (shown == 0) return fail(diagnostics, "it holds no kosm.Theme, so there are no colors to show; a base keeps the theme its apps were built from in its `theme` field", .{});
 }
 
 /// The name of every kosmos in `sources`.
@@ -820,7 +826,7 @@ test {
     std.testing.refAllDecls(discovery);
     std.testing.refAllDecls(@import("inspect.zig"));
     std.testing.refAllDecls(list_module);
-    std.testing.refAllDecls(@import("colors.zig"));
+    std.testing.refAllDecls(colors);
     std.testing.refAllDecls(completions);
     std.testing.refAllDecls(completion_types);
     std.testing.refAllDecls(Sources);

@@ -5,7 +5,7 @@ const std = @import("std");
 
 /// Bumped whenever the command line and the runner change how they talk to each other
 /// (arguments, environment, output the command line reads).
-pub const version: u32 = 5;
+pub const version: u32 = 6;
 
 /// The environment variable the command line passes its `version` to the runner in.
 pub const environment_variable = "KOSM_INTERFACE";
@@ -14,6 +14,10 @@ pub const environment_variable = "KOSM_INTERFACE";
 /// instead of doing its work: a runner prints its kosmos' parameters and `--set` paths and
 /// applies nothing, and the lister prints every kosmos' name.
 pub const completions_variable = "KOSM_COMPLETIONS";
+
+/// Set by the command line to make a runner print the themes of the tree its kosmos builds,
+/// for `kosm colors`, instead of planning and applying it.
+pub const colors_variable = "KOSM_COLORS";
 
 /// Set by the command line to ask a kosmos' runner which runner applies it: the runner prints
 /// `script_runner` when the kosmos builds on another kosmos, which only the runner of scripts
@@ -65,5 +69,5 @@ test "only another interface number is an error, naming both" {
 
     try environ.put(environment_variable, "999");
     try testing.expect(!try check(&environ, &stderr.writer));
-    try testing.expect(std.mem.startsWith(u8, stderr.written(), "error: the kosm command speaks interface 999, but the kosm this config builds with speaks interface 5;"));
+    try testing.expect(std.mem.startsWith(u8, stderr.written(), "error: the kosm command speaks interface 999, but the kosm this config builds with speaks interface " ++ std.fmt.comptimePrint("{d}", .{version}) ++ ";"));
 }

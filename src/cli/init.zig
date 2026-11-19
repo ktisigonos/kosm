@@ -210,6 +210,7 @@ fn isEmpty(context: Context, name: []const u8) Error!bool {
 
 const testing = std.testing;
 const test_kosm = @import("test_kosm.zig");
+const interface = @import("kosm_interface");
 
 /// A temp directory holding a stub kosm and a stub official package to fetch, offline, and the
 /// config project `project/`. Zig's global cache is the tests' own, so nothing lands in ~/.cache/zig.
@@ -406,12 +407,13 @@ const check_kosmos =
     \\const kosm = @import("kosm");
     \\const kitty = @import("kosm_kitty");
     \\
-    \\pub const Check = struct { kitty: kitty.App };
+    \\pub const Check = struct { kitty: kitty.App, theme: kosm.Theme };
     \\
     \\pub const palette: kosm.Palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .red = kosm.hex("ff0000") };
     \\
     \\pub fn kosmos() Check {
-    \\    var check: Check = .{ .kitty = kitty.from(kosm.Theme.from(.{ .palette = palette, .mode = .dark })) };
+    \\    const theme: kosm.Theme = .from(.{ .palette = palette, .mode = .dark });
+    \\    var check: Check = .{ .kitty = kitty.from(theme), .theme = theme };
     \\    check.kitty.fonts.font_size = 13;
     \\    return check;
     \\}
@@ -456,16 +458,21 @@ test "an initialized config builds with the forked kosm sources, applies a kosmo
     try @import("list.zig").list(context, null);
     try testing.expect(std.mem.startsWith(u8, test_config.stdout.written(), "kosmoi:\n  check  kosmoi/check.zig\npackages:\n  kosm_kitty\n    app      kosm_kitty.App\n    adapter  kitty\n"));
 
-    test_config.stdout.clearRetainingCapacity();
-    try @import("colors.zig").colors(context, "check", false);
-    try testing.expectStringStartsWith(test_config.stdout.written(), "palette\n  black    #000000\n  white    #ffffff\n  gray     #");
-    try testing.expect(std.mem.find(u8, test_config.stdout.written(), "  pink     #ff0000  mixed\n") != null);
-    test_config.stdout.clearRetainingCapacity();
-    try @import("colors.zig").colors(context, "check", true);
-    try testing.expect(std.mem.find(u8, test_config.stdout.written(), "  red      \x1b[48;2;255;0;0m      \x1b[0m  #ff0000\n") != null);
-    test_config.stderr.clearRetainingCapacity();
-    try testing.expectError(error.Failed, @import("colors.zig").colors(context, "missing", false));
-    try testing.expect(std.mem.find(u8, test_config.stderr.written(), "there is no kosmos 'missing'") != null);
+    // `kosm colors` runs the runner with the colors variable set: it prints the theme the kosmos
+    // built, after the `--set`s, and plans nothing.
+    var colors_context = context;
+    const colors_environ = try arena.create(std.process.Environ.Map);
+    colors_environ.* = try context.environ_map.?.clone(arena);
+    try colors_environ.put(interface.colors_variable, "1");
+    colors_context.environ_map = colors_environ;
+    try test_config.tmp.dir.deleteFile(testing.io, "home/.config/kitty/kosm.conf");
+    const shown = try colors_context.run(&.{ runner, "--set", "theme.mode=light", "--config", context.config });
+    if (!shown.term.success()) std.debug.print("{s}\n", .{shown.stderr});
+    try testing.expect(shown.term.success());
+    try testing.expectStringStartsWith(shown.stdout, "theme: light\npalette\n  black       #000000\n  white       #ffffff\n  gray        #");
+    try testing.expect(std.mem.find(u8, shown.stdout, "  pink        #ff0000  mixed\n") != null);
+    try testing.expect(std.mem.find(u8, shown.stdout, "\nroles\n  background  #") != null);
+    try testing.expectError(error.FileNotFound, test_config.tmp.dir.access(testing.io, "home/.config/kitty/kosm.conf", .{}));
 
     context.sources = null;
     const pinned = try context.runZig(&.{ "build", "-Dkosmos=check" });
