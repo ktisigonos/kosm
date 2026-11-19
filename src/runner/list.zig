@@ -305,7 +305,8 @@ fn appsIn(comptime sources: []const Source, comptime T: type, comptime path: []c
     const optional = @typeInfo(T) == .optional;
     const Unwrapped = if (optional) @typeInfo(T).optional.child else T;
     if (discovery.isApp(Unwrapped)) return &.{.{ .path = path, .type_name = (if (optional) "?" else "") ++ appName(sources, Unwrapped) }};
-    if (@typeInfo(Unwrapped) != .@"struct") return &.{};
+    // Skipping what holds no app keeps large values (a kept `kosm.Theme`) within the branch quota.
+    if (@typeInfo(Unwrapped) != .@"struct" or !discovery.containsApp(Unwrapped)) return &.{};
     comptime var found: []const App = &.{};
     const info = @typeInfo(Unwrapped).@"struct";
     inline for (info.field_names, info.field_types) |name, Field| {

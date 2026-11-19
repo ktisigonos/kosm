@@ -5,7 +5,7 @@ const kosm = @import("kosm");
 const Target = @import("Target.zig");
 
 /// Nested app trees and big package roots need far more than the default 1000 branches.
-pub const branch_quota = 100_000;
+pub const branch_quota = 10_000_000;
 
 /// Whether `T` is an app: a struct with exactly `pub fn apply(self: T, output: *kosm.Output) !void`.
 pub fn isApp(comptime T: type) bool {

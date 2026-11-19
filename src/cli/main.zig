@@ -210,7 +210,8 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
             error.Failed => return 1,
             else => |other| return other,
         };
-        if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff or command.colors, stderr)) return 1;
+        // Showing colors writes nothing, so it leaves stale manifests to the next apply.
+        if (!command.colors) if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff, stderr)) return 1;
         break :script try scriptRunnerArguments(arena, config, command);
     } else zig: {
         // The runner of scripts checks a script's name itself; a Zig kosmos' is checked here,
@@ -220,7 +221,7 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
             else => |other| return other,
         };
         if (!try build(context, command.kosmos)) return 1;
-        if (!try refreshManifest(init, builds, config, command.kosmos, command.diff or command.colors, stderr)) return 1;
+        if (!command.colors and !try refreshManifest(init, builds, config, command.kosmos, command.diff, stderr)) return 1;
         const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
         const builds_on_kosmoi = scripts.buildsOnKosmoi(context, runner) catch |err| switch (err) {
             error.Failed => return 1,
