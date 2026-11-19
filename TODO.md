@@ -36,6 +36,10 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: a frontend can also give apps and adapters (and whatever else kosm is built from), so kosm is moddable in any supported language. A frontend then runs code at apply time (parsing and formatting files), not only building trees. Plan with the human first.
 
 
+- **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
+  - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.
+  - Done when: the human has agreed on the prompt, and picking a suggestion applies that kosmos, under a test.
+
 - **18h. Equibop theme** `ASK`
   - Do: find out how Equibop (the Vesktop-based Discord client) takes a theme (Vencord's QuickCSS or a CSS file in its themes folder, Discord's CSS variables, live reload) and propose `kosm_equibop` from it, with its fields and the Krystallos values.
   - Done when: the human has agreed on the app, and Equibop takes the kosmos' colors and fonts.
