@@ -31,15 +31,10 @@ Steps 21j4-21j6: the other parts of kosm written through a frontend, Lua first, 
 
 - **21j6. Apps and adapters in a language whose frontend is a script** `PLAN FIRST` (later)
   - Do: a frontend written through a frontend also writes apps and adapters in its own language (`declare`, `declare_adapter`, `call`), which needs the build to generate the frontend's module before the modules of the apps and adapters written through it.
+  - Do: a frontend written through a frontend gives scaffolds for `kosm new --language` as plain data too (its declaration has none yet, so `kosm new` says it gives no scaffold).
   - Done when: a scratch app in such a language, through a frontend written in Lua, applies with `--diff`.
 
-Steps 22a-22e: command-line improvements the human asked for.
-
-- **22a. `kosm new` in any language** `PLAN FIRST`
-  - Do: `kosm new kosmos|app|adapter|frontend <name>` scaffolds in any language with a frontend, chosen by `--language <frontend name>` (Zig without it): the frontend gives the scaffold's text, so kosm core still knows no language.
-  - Do: a frontend gives scaffolds as plain data, an optional text per kind on `kosm.Frontend` (null for a kind it cannot write), with the `scaffold_name` placeholder the Zig scaffolds use; `kosm new` gets the text from the runner of scripts, which holds the frontends, and writes the file itself.
-  - Do: a script scaffold is a single file (`kosmoi/<name>.lua`); Zig scaffolds stay folders.
-  - Done when: each kind scaffolds in Zig and Lua and the scaffold builds and applies with `--diff`.
+Step 22c: a command-line improvement the human asked for.
 
 - **22c. Install shell completions**
   - Done: `kosm init` and `kosm update` write the fish and bash scripts where each shell loads them (`$XDG_DATA_HOME/fish/vendor_completions.d/kosm.fish`, `${BASH_COMPLETION_USER_DIR:-$XDG_DATA_HOME/bash-completion}/completions/kosm`), rewriting one only when it changed; zsh keeps `kosm completions zsh`. fish completes in a scratch HOME.
