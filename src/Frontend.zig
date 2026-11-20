@@ -55,6 +55,11 @@ call: ?*const fn (context: *Context, source: []const u8, function: []const u8, a
 /// 0 for Zig's own, whose ranges end one past their last byte; 1 for Lua's, whose ranges end on
 /// their last byte, as `string.sub` takes them.
 counts_from: u1 = 0,
+/// What `kosm new --language <name>` writes for each kind, in the first of `extensions`.
+scaffolds: Scaffolds = .{},
+
+/// The scripts `kosm new` starts a kosmos, app, adapter or frontend from.
+pub const Scaffolds = @import("Frontend/Scaffolds.zig");
 
 /// What a script kosmos says: what it builds on, and the values it sets.
 pub const Script = @import("Frontend/Script.zig");

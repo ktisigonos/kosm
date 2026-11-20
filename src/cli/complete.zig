@@ -20,7 +20,7 @@ const Candidate = struct {
 
 const commands = [_]Candidate{
     .{ .text = "init", .description = "create what a config project is missing" },
-    .{ .text = "new", .description = "scaffold a kosmos, app or adapter" },
+    .{ .text = "new", .description = "scaffold a kosmos, app, adapter or frontend" },
     .{ .text = "apply", .description = "apply a kosmos" },
     .{ .text = "list", .description = "list kosmoi and packages" },
     .{ .text = "colors", .description = "show the colors a kosmos wears" },
@@ -45,6 +45,7 @@ const kinds = [_]Candidate{
     .{ .text = "kosmos", .description = "a rice" },
     .{ .text = "app", .description = "support for one program" },
     .{ .text = "adapter", .description = "support for one file format" },
+    .{ .text = "frontend", .description = "support for writing in one language" },
 };
 const shells = [_]Candidate{
     .{ .text = "fish", .description = "completions for fish" },
@@ -52,6 +53,7 @@ const shells = [_]Candidate{
     .{ .text = "zsh", .description = "completions for zsh" },
 };
 const config_flag: Candidate = .{ .text = "--config", .description = "the config project's directory" };
+const language_flag: Candidate = .{ .text = "--language", .description = "the frontend to write it in; Zig without it" };
 const apply_flags = [_]Candidate{
     .{ .text = "--diff", .description = "print what would change and write nothing" },
     .{ .text = "--set", .description = "set one value of the kosmos: path=value" },
@@ -77,7 +79,7 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
     // A directory, which each shell completes itself.
     if (std.mem.eql(u8, previous, config_flag.text)) return;
 
-    if (std.mem.eql(u8, command, "new")) return if (before.len == 0) writeAll(context.stdout, &kinds);
+    if (std.mem.eql(u8, command, "new")) return completeNew(context, before, previous, current);
     if (std.mem.eql(u8, command, "completions")) return if (before.len == 0) writeAll(context.stdout, &shells);
     if (std.mem.eql(u8, command, "source")) return if (before.len == 0) writeAll(context.stdout, &.{.{ .text = "--default", .description = "use the installed sources again" }});
     if (std.mem.eql(u8, command, "current")) return;
@@ -96,6 +98,31 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
     if (std.mem.eql(u8, command, "list")) return if (!holdsKind(before)) writeKosmoi(context);
     if (std.mem.eql(u8, command, "remove")) return writeInstalled(context);
     if (std.mem.eql(u8, command, "update")) return writeUpdatable(context);
+}
+
+/// `kosm new`: a kind first, the config's frontends after `--language`.
+fn completeNew(context: Context, before: []const []const u8, previous: []const u8, current: []const u8) Error!void {
+    if (std.mem.eql(u8, previous, language_flag.text)) return writeFrontends(context);
+    if (std.mem.startsWith(u8, current, "-")) return writeAll(context.stdout, &.{ language_flag, config_flag });
+    if (firstPositional(before) == null) return writeAll(context.stdout, &kinds);
+}
+
+/// Every frontend the runner of scripts holds, building it first when it is stale.
+fn writeFrontends(context: Context) Error!void {
+    var quiet = context;
+    var discarded: std.Io.Writer.Discarding = .init(&.{});
+    quiet.stderr = &discarded.writer;
+    quiet.stdout = &discarded.writer;
+    quiet.show_build_output = false;
+    const arguments = known_kosmoi.frontendArguments(quiet) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return,
+    };
+    // Each frontend is `--frontend <name> <module>`.
+    var index: usize = 0;
+    while (index + 2 < arguments.len) : (index += 3) {
+        try context.stdout.print("{s}\tfrontend from {s}\n", .{ arguments[index + 1], arguments[index + 2] });
+    }
 }
 
 /// Whether `words` hold a kind flag of `kosm list`, after which no kosmos is offered.
@@ -139,7 +166,7 @@ fn completeBuild(context: Context, before: []const []const u8, current: []const 
 fn firstPositional(words: []const []const u8) ?[]const u8 {
     var index: usize = 0;
     while (index < words.len) : (index += 1) {
-        if (std.mem.eql(u8, words[index], config_flag.text)) {
+        if (std.mem.eql(u8, words[index], config_flag.text) or std.mem.eql(u8, words[index], language_flag.text)) {
             index += 1;
         } else if (!std.mem.startsWith(u8, words[index], "-")) return words[index];
     }
@@ -282,8 +309,10 @@ test "the first word completes to the commands, and new, completions and source 
     try testing.expect(std.mem.find(u8, first, "\napply\tapply a kosmos\n") != null);
     try testing.expect(std.mem.find(u8, first, "\ncolors\t") != null);
     try testing.expectEqualStrings(first, try testComplete(arena.allocator(), config, &.{}));
-    try testing.expectEqualStrings("kosmos\ta rice\napp\tsupport for one program\nadapter\tsupport for one file format\n", try testComplete(arena.allocator(), config, &.{ "new", "" }));
+    try testing.expectEqualStrings("kosmos\ta rice\napp\tsupport for one program\nadapter\tsupport for one file format\nfrontend\tsupport for writing in one language\n", try testComplete(arena.allocator(), config, &.{ "new", "" }));
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "new", "app", "" }));
+    try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "new", "--language", "lua", "app", "my_bar", "" }));
+    try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "new", "app", "-" }), "--language\t");
     try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "completions", "f" }), "fish\t");
     try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "source", "" }), "--default\t");
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "current", "" }));

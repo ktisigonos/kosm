@@ -102,6 +102,10 @@ pub fn runScript(init: std.process.Init, comptime target: ScriptTarget) !u8 {
         try streams.stdout.flush();
         return 0;
     }
+    if (std.mem.eql(u8, all_arguments[1], interface.scaffold_flag)) {
+        var diagnostics: kosm.Diagnostics = .{ .kosmos = "" };
+        return finishRun(writeScaffold(target, all_arguments[2..], streams.stdout, &diagnostics), &diagnostics, streams);
+    }
     if (std.mem.eql(u8, all_arguments[1], write_completions_flag)) {
         var diagnostics: kosm.Diagnostics = .{ .kosmos = "" };
         return finishRun(writeFrontendCompletions(init, target, all_arguments[2..], &diagnostics), &diagnostics, streams);
@@ -147,6 +151,30 @@ fn writeFrontendCompletions(init: std.process.Init, comptime target: ScriptTarge
         }
         if (frontend.editor_file) |file| try writeOutput(init.io, arena, arguments[1], file, diagnostics);
     }
+}
+
+/// Prints the extension and the scaffold `arguments` (a frontend's name and a kind) name, as
+/// `interface.scaffold_flag` says.
+fn writeScaffold(comptime target: ScriptTarget, arguments: []const []const u8, stdout: *std.Io.Writer, diagnostics: *kosm.Diagnostics) (Reported || std.Io.Writer.Error)!void {
+    if (arguments.len != 2) return fail(diagnostics, "{s} needs a frontend's name and a kind", .{interface.scaffold_flag});
+    const language = arguments[0];
+    const kind = arguments[1];
+    inline for (comptime discovery.frontends(target.adapter_sources)) |declared| {
+        const frontend = declared.frontend;
+        if (std.mem.eql(u8, frontend.name, language)) {
+            inline for (@typeInfo(kosm.Frontend.Scaffolds).@"struct".field_names) |field_name| {
+                if (std.mem.eql(u8, field_name, kind)) {
+                    const scaffold = @field(frontend.scaffolds, field_name) orelse
+                        return fail(diagnostics, "the {s} frontend gives no {s} scaffold", .{ language, kind });
+                    if (frontend.extensions.len == 0) return fail(diagnostics, "the {s} frontend claims no extension, so its scripts cannot be named", .{language});
+                    try stdout.print("{s}\n{s}", .{ frontend.extensions[0], scaffold });
+                    return;
+                }
+            }
+            return fail(diagnostics, "{s} is not a kind kosm new scaffolds: kosmos, app, adapter or frontend", .{kind});
+        }
+    }
+    return fail(diagnostics, "no frontend of this config is named '{s}'; kosm list --frontends lists them", .{language});
 }
 
 /// Prints every script kosmos and each variant it gives, `name<TAB>file` per line.

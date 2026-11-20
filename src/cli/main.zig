@@ -28,7 +28,7 @@ const interface = @import("kosm_interface");
 
 const usage =
     \\usage: kosm init [--config dir]
-    \\       kosm new kosmos|app|adapter <name> [--config dir]
+    \\       kosm new kosmos|app|adapter|frontend <name> [--language <frontend>] [--config dir]
     \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
     \\       kosm list [<kosmos> | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]
     \\       kosm colors <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]
@@ -64,7 +64,8 @@ pub fn main(init: std.process.Init) !u8 {
             error.MissingKosmos => try stderr.interface.print("error: kosm {s} needs a kosmos, e.g. kosm {s} frost\n", .{ arguments[1], arguments[1] }),
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
             error.MissingArgument, error.UnexpectedArgument => try stderr.interface.print("error: kosm {s} takes {s}\n", .{ arguments[1], expectedArguments(arguments[1]) }),
-            error.UnknownKind => try stderr.interface.writeAll("error: kosm new makes a kosmos, an app or an adapter, e.g. kosm new app my_bar\n"),
+            error.UnknownKind => try stderr.interface.writeAll("error: kosm new makes a kosmos, an app, an adapter or a frontend, e.g. kosm new app my_bar\n"),
+            error.MissingLanguage => try stderr.interface.writeAll("error: --language needs a frontend's name, e.g. --language lua\n"),
             error.ConfigNotRead => try stderr.interface.print("error: kosm {s} reads no config project, so it takes no --config\n", .{arguments[1]}),
             error.OutOfMemory => return error.OutOfMemory,
         }
@@ -179,14 +180,14 @@ fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stder
     return 0;
 }
 
-/// Scaffolds a directory package in the config project.
+/// Scaffolds a directory package, or a script in `--language`, in the config project.
 fn runNew(init: std.process.Init, builds: Builds, command: New, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     const context = builds.context(init, config, &stdout.interface, stderr);
-    new_command.new(context, command.kind, command.name) catch |err| switch (err) {
+    new_command.new(context, command.kind, command.name, command.language) catch |err| switch (err) {
         error.Failed => return 1,
         else => |other| return other,
     };
@@ -529,26 +530,33 @@ const ConfigCommand = struct {
     }
 };
 
-/// `kosm new <kind> <name> [--config dir]`.
+/// `kosm new <kind> <name> [--language <frontend>] [--config dir]`.
 const New = struct {
     kind: new_command.Kind,
     name: []const u8,
+    /// The frontend's name `--language` gives, or null for Zig.
+    language: ?[]const u8,
     /// The `--config` directory, or null for the default.
     config: ?[]const u8,
 
-    const ParseError = ConfigCommand.ParseError || error{UnknownKind};
+    const ParseError = ConfigCommand.ParseError || error{ UnknownKind, MissingLanguage };
 
-    /// Reads the arguments after `new`. `--config dir` may appear anywhere.
+    /// Reads the arguments after `new`. `--language` and `--config` may appear anywhere.
     fn parse(arguments: []const []const u8) ParseError!New {
         var words: [2][]const u8 = undefined;
         var count: usize = 0;
         var config: ?[]const u8 = null;
+        var language: ?[]const u8 = null;
         var index: usize = 0;
         while (index < arguments.len) : (index += 1) {
             if (std.mem.eql(u8, arguments[index], "--config")) {
                 index += 1;
                 if (index == arguments.len) return error.MissingConfigDirectory;
                 config = arguments[index];
+            } else if (std.mem.eql(u8, arguments[index], "--language")) {
+                index += 1;
+                if (index == arguments.len) return error.MissingLanguage;
+                language = arguments[index];
             } else if (count == words.len or std.mem.startsWith(u8, arguments[index], "-")) {
                 return error.UnexpectedArgument;
             } else {
@@ -558,7 +566,7 @@ const New = struct {
         }
         if (count < words.len) return error.MissingArgument;
         const kind = std.meta.stringToEnum(new_command.Kind, words[0]) orelse return error.UnknownKind;
-        return .{ .kind = kind, .name = words[1], .config = config };
+        return .{ .kind = kind, .name = words[1], .language = language, .config = config };
     }
 };
 
@@ -768,13 +776,16 @@ test "init takes only --config, and list at most one kosmos or the kinds to list
     try testing.expectEqual(2, (try Command.parse(arena.allocator(), &.{ "complete", "--", "apply", "" })).complete.len);
 }
 
-test "new takes a kind, a name and --config anywhere" {
+test "new takes a kind, a name, --language and --config anywhere" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
-    const command = (try Command.parse(arena.allocator(), &.{ "new", "--config", "/c", "app", "my_bar" })).new;
+    const command = (try Command.parse(arena.allocator(), &.{ "new", "--config", "/c", "app", "--language", "lua", "my_bar" })).new;
     try testing.expectEqual(.app, command.kind);
     try testing.expectEqualStrings("my_bar", command.name);
+    try testing.expectEqualStrings("lua", command.language.?);
     try testing.expectEqualStrings("/c", command.config.?);
+    try testing.expectEqual(null, (try Command.parse(arena.allocator(), &.{ "new", "frontend", "keys" })).new.language);
+    try testing.expectError(error.MissingLanguage, Command.parse(arena.allocator(), &.{ "new", "kosmos", "frost", "--language" }));
     try testing.expectError(error.UnknownKind, Command.parse(arena.allocator(), &.{ "new", "theme", "frost" }));
     try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{ "new", "kosmos" }));
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "new", "app", "a", "b" }));

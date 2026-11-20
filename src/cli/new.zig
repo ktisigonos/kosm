@@ -1,24 +1,29 @@
-//! `kosm new kosmos|app|adapter <name>`: scaffolds a directory package with a
-//! commented `root.zig`, and the `build.zig` and `build.zig.zon` every directory package has.
+//! `kosm new kosmos|app|adapter|frontend <name> [--language <frontend>]`: scaffolds a
+//! directory package with a commented `root.zig` and the `build.zig` and `build.zig.zon` every
+//! directory package has, or a single script from the scaffold the named frontend gives.
 
 const std = @import("std");
+const interface = @import("kosm_interface");
 const Context = @import("Context.zig");
 const directory_package = @import("directory_package.zig");
 const manifest = @import("manifest.zig");
+const scripts = @import("scripts.zig");
 
-pub const Error = Context.Failed || std.mem.Allocator.Error || std.Io.Writer.Error;
+pub const Error = Context.RunError;
 
 /// What `kosm new` scaffolds, and where it goes in the config.
 pub const Kind = enum {
     kosmos,
     app,
     adapter,
+    frontend,
 
     fn directory(kind: Kind) []const u8 {
         return switch (kind) {
             .kosmos => "kosmoi",
             .app => "apps",
             .adapter => "adapters",
+            .frontend => "frontends",
         };
     }
 
@@ -27,30 +32,58 @@ pub const Kind = enum {
             .kosmos => @embedFile("scaffolds/kosmos.zig"),
             .app => @embedFile("scaffolds/app.zig"),
             .adapter => @embedFile("scaffolds/adapter.zig"),
+            .frontend => @embedFile("scaffolds/frontend.zig"),
         };
     }
 };
 
-/// Stands for the package's name in the scaffolds.
+/// Stands for the name in the scaffolds; the same text as kosm.Frontend.Scaffolds.name_placeholder,
+/// which frontends write their scaffolds with.
 const name_placeholder = "scaffold_name";
 /// Import names Zig itself gives meaning to.
 const reserved_names = [_][]const u8{ "std", "builtin", "root" };
 
-/// Creates `<kind directory>/<name>/` in the config, printing each file it writes. A name that
-/// is no Zig identifier or already names a local kosmos, app or adapter or an installed
+/// Creates `<kind directory>/<name>/` in the config, or `<kind directory>/<name><extension>`
+/// from the scaffold of frontend `language`, printing each file it writes. A name that is no
+/// Zig identifier or already names a local kosmos, app, adapter or frontend or an installed
 /// package is refused, and nothing is written.
-pub fn new(context: Context, kind: Kind, name: []const u8) Error!void {
+pub fn new(context: Context, kind: Kind, name: []const u8, language: ?[]const u8) Error!void {
     try checkName(context, name);
+    if (language) |frontend| return newScript(context, kind, name, frontend);
     const directory = try std.Io.Dir.path.join(context.arena, &.{ kind.directory(), name });
     const root = try std.Io.Dir.path.join(context.arena, &.{ directory, "root.zig" });
-    const full_root = try std.Io.Dir.path.join(context.arena, &.{ context.config, root });
-    const source = try std.mem.replaceOwned(u8, context.arena, kind.scaffold(), name_placeholder, name);
-    std.Io.Dir.cwd().createDirPath(context.io, std.Io.Dir.path.dirname(full_root).?) catch |err|
-        return context.fail("cannot create {s}/: {s}", .{ directory, @errorName(err) });
-    std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = full_root, .data = source, .flags = .{ .exclusive = true } }) catch |err|
-        return context.fail("cannot create {s}: {s}", .{ root, @errorName(err) });
-    try context.stdout.print("created {s}\n", .{root});
+    try create(context, root, kind.scaffold(), name);
     try directory_package.refresh(context, directory, .write);
+}
+
+/// Writes `<kind directory>/<name><extension>` from the scaffold the runner of scripts gives
+/// for frontend `language`.
+fn newScript(context: Context, kind: Kind, name: []const u8, language: []const u8) Error!void {
+    if (!try scripts.prepare(context))
+        return context.fail("the script runner does not build, so the {s} frontend cannot give a scaffold", .{language});
+    const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, scripts.runner_path });
+    const result = try context.run(&.{ runner, interface.scaffold_flag, language, @tagName(kind) });
+    if (!result.term.success()) {
+        try context.stderr.writeAll(result.stderr);
+        return error.Failed;
+    }
+    const newline = std.mem.findScalar(u8, result.stdout, '\n') orelse
+        return context.fail("the script runner gave the {s} scaffold without its extension", .{language});
+    const extension = result.stdout[0..newline];
+    const file = try context.arena.print("{s}/{s}{s}", .{ kind.directory(), name, extension });
+    try create(context, file, result.stdout[newline + 1 ..], name);
+}
+
+/// Writes `scaffold` with `name` in place of the placeholder to `path` in the config, which
+/// must not exist yet.
+fn create(context: Context, path: []const u8, scaffold: []const u8, name: []const u8) Error!void {
+    const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, path });
+    const source = try std.mem.replaceOwned(u8, context.arena, scaffold, name_placeholder, name);
+    std.Io.Dir.cwd().createDirPath(context.io, std.Io.Dir.path.dirname(full_path).?) catch |err|
+        return context.fail("cannot create {s}/: {s}", .{ std.Io.Dir.path.dirname(path).?, @errorName(err) });
+    std.Io.Dir.cwd().writeFile(context.io, .{ .sub_path = full_path, .data = source, .flags = .{ .exclusive = true } }) catch |err|
+        return context.fail("cannot create {s}: {s}", .{ path, @errorName(err) });
+    try context.stdout.print("created {s}\n", .{path});
 }
 
 fn checkName(context: Context, name: []const u8) Error!void {
@@ -61,14 +94,8 @@ fn checkName(context: Context, name: []const u8) Error!void {
         if (std.mem.eql(u8, name, reserved)) return context.fail("'{s}' cannot be a package name: Zig's own @import(\"{s}\") already means something", .{ name, name });
     }
     for (directory_package.local_directories) |local_directory| {
-        for ([_][]const u8{ ".zig", "" }) |suffix| {
-            const path = try context.arena.print("{s}/{s}{s}", .{ local_directory, name, suffix });
-            const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, path });
-            std.Io.Dir.cwd().access(context.io, full_path, .{}) catch |err| switch (err) {
-                error.FileNotFound => continue,
-                else => return context.fail("cannot read {s}: {s}", .{ path, @errorName(err) }),
-            };
-            return context.fail("'{s}' is taken by {s}; kosmoi, apps, adapters and packages need unique names", .{ name, path });
+        if (try takenIn(context, local_directory, name)) |taken| {
+            return context.fail("'{s}' is taken by {s}; kosmoi, apps, adapters, frontends and packages need unique names", .{ name, taken });
         }
     }
     const config_manifest = std.Io.Dir.cwd().readFileAllocOptions(context.io, try std.Io.Dir.path.join(context.arena, &.{ context.config, "build.zig.zon" }), context.arena, .limited(16 * 1024 * 1024), .of(u8), 0) catch |err| switch (err) {
@@ -81,8 +108,25 @@ fn checkName(context: Context, name: []const u8) Error!void {
         error.InvalidManifest => return context.fail("build.zig.zon is not a valid manifest; zig build says why", .{}),
     };
     for (installed) |package| {
-        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the installed package '{s}'; kosmoi, apps, adapters and packages need unique names", .{ name, name });
+        if (std.mem.eql(u8, package, name)) return context.fail("'{s}' is taken by the installed package '{s}'; kosmoi, apps, adapters, frontends and packages need unique names", .{ name, name });
     }
+}
+
+/// The entry of `directory` named `name` in any language (`name`, `name.zig`, `name.lua`), as
+/// a path in the config, or null.
+fn takenIn(context: Context, directory: []const u8, name: []const u8) Error!?[]const u8 {
+    const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, directory });
+    var dir = std.Io.Dir.cwd().openDir(context.io, full_path, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return context.fail("cannot read {s}: {s}", .{ directory, @errorName(err) }),
+    };
+    defer dir.close(context.io);
+    var iterator = dir.iterate();
+    while (iterator.next(context.io) catch |err| return context.fail("cannot read {s}: {s}", .{ directory, @errorName(err) })) |entry| {
+        const stem = entry.name[0 .. std.mem.findScalar(u8, entry.name, '.') orelse entry.name.len];
+        if (std.mem.eql(u8, stem, name)) return try std.Io.Dir.path.join(context.arena, &.{ directory, entry.name });
+    }
+    return null;
 }
 
 const testing = std.testing;
@@ -144,7 +188,7 @@ test "new writes the scaffold with its name, and build files depending on what i
     defer test_config.deinit();
     try test_config.write("build.zig.zon", test_manifest);
 
-    try new(test_config.context(), .kosmos, "frost");
+    try new(test_config.context(), .kosmos, "frost", null);
     try testing.expectEqualStrings("created kosmoi/frost/root.zig\ncreated kosmoi/frost/build.zig\ncreated kosmoi/frost/build.zig.zon\n", test_config.stdout.written());
     const arena = test_config.arena.allocator();
     const root = try test_config.tmp.dir.readFileAlloc(testing.io, "kosmoi/frost/root.zig", arena, .limited(1024 * 1024));
@@ -163,15 +207,15 @@ test "new refuses a name that is taken or no identifier, and writes nothing" {
     try test_config.write("kosmoi/frost.zig", "");
     try test_config.write("adapters/lang/root.zig", "");
 
-    try testing.expectError(error.Failed, new(test_config.context(), .app, "frost"));
-    try testing.expectError(error.Failed, new(test_config.context(), .kosmos, "lang"));
-    try testing.expectError(error.Failed, new(test_config.context(), .adapter, "kosm_kitty"));
-    try testing.expectError(error.Failed, new(test_config.context(), .app, "my-bar"));
-    try testing.expectError(error.Failed, new(test_config.context(), .app, "std"));
+    try testing.expectError(error.Failed, new(test_config.context(), .app, "frost", null));
+    try testing.expectError(error.Failed, new(test_config.context(), .kosmos, "lang", null));
+    try testing.expectError(error.Failed, new(test_config.context(), .adapter, "kosm_kitty", null));
+    try testing.expectError(error.Failed, new(test_config.context(), .app, "my-bar", null));
+    try testing.expectError(error.Failed, new(test_config.context(), .app, "std", null));
     try testing.expectEqualStrings(
-        \\error: 'frost' is taken by kosmoi/frost.zig; kosmoi, apps, adapters and packages need unique names
-        \\error: 'lang' is taken by adapters/lang; kosmoi, apps, adapters and packages need unique names
-        \\error: 'kosm_kitty' is taken by the installed package 'kosm_kitty'; kosmoi, apps, adapters and packages need unique names
+        \\error: 'frost' is taken by kosmoi/frost.zig; kosmoi, apps, adapters, frontends and packages need unique names
+        \\error: 'lang' is taken by adapters/lang; kosmoi, apps, adapters, frontends and packages need unique names
+        \\error: 'kosm_kitty' is taken by the installed package 'kosm_kitty'; kosmoi, apps, adapters, frontends and packages need unique names
         \\error: 'my-bar' cannot be a package name: it must be a Zig identifier, like my_bar
         \\error: 'std' cannot be a package name: Zig's own @import("std") already means something
         \\
@@ -181,7 +225,7 @@ test "new refuses a name that is taken or no identifier, and writes nothing" {
     try testing.expect(!test_config.exists("kosmoi/lang"));
 }
 
-test "every scaffold builds in an initialized config, and the kosmos applies with --diff" {
+test "every scaffold builds in an initialized config, Zig or through the scaffolded frontend, and its kosmoi apply with --diff" {
     var test_config: TestConfig = undefined;
     try test_config.init();
     defer test_config.deinit();
@@ -202,12 +246,15 @@ test "every scaffold builds in an initialized config, and the kosmos applies wit
     const test_kosm = @import("test_kosm.zig");
     try @import("init.zig").init(context, try test_kosm.stub(arena, testing.io, test_config.tmp.dir, test_config.config));
     context.sources = try test_kosm.sources(arena, testing.io);
-    try new(context, .kosmos, "frost");
-    try new(context, .app, "my_bar");
-    try new(context, .adapter, "my_lang");
+    var stdout_before: usize = 0;
+    const stderr_before = test_config.stderr.written().len;
+    try new(context, .kosmos, "frost", null);
+    try new(context, .app, "my_bar", null);
+    try new(context, .adapter, "my_lang", null);
+    try new(context, .frontend, "keys", null);
 
     // Each package builds on its own, which proves its manifest.
-    for ([_][]const u8{ "kosmoi/frost", "apps/my_bar", "adapters/my_lang" }) |directory| {
+    for ([_][]const u8{ "kosmoi/frost", "apps/my_bar", "adapters/my_lang", "frontends/keys" }) |directory| {
         var package_context = context;
         package_context.config = try std.Io.Dir.path.join(arena, &.{ context.config, directory });
         const built = try package_context.runZig(&.{ "build", "test" });
@@ -221,6 +268,33 @@ test "every scaffold builds in an initialized config, and the kosmos applies wit
     const check = try applyDiff(context, "check");
     try testing.expect(std.mem.find(u8, check, "+foreground = #") != null);
     try testing.expect(std.mem.find(u8, check, "+size = 3\n") != null);
+
+    // The runner of scripts holds every Zig kosmos, and the starting one needs the real packages.
+    try test_config.tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
+    stdout_before = test_config.stdout.written().len;
+    try new(context, .kosmos, "snow", "keys");
+    try testing.expectEqualStrings("created kosmoi/snow.keys\n", test_config.stdout.written()[stdout_before..]);
+    const snow = try test_config.tmp.dir.readFileAlloc(testing.io, "project/kosmoi/snow.keys", arena, .limited(1024 * 1024));
+    try testing.expectStringStartsWith(snow, "# The snow kosmos, made by `kosm new kosmos snow --language keys`.\n");
+    try test_config.write("project/kosmoi/snow.keys", try std.mem.replaceOwned(u8, arena, try std.mem.replaceOwned(u8, arena, snow, "base kyanos\n", "base frost.light\n"), "# kitty.fonts.font_size = 12", "kitty.fonts.font_size = 15"));
+    try testing.expect(try scripts.prepare(context));
+    const runner = try std.Io.Dir.path.join(arena, &.{ context.config, scripts.runner_path });
+    const applied = try context.run(&.{ runner, "snow", "--diff", "--config", context.config });
+    if (!applied.term.success()) std.debug.print("{s}\n", .{applied.stderr});
+    try testing.expect(std.mem.find(u8, applied.stdout, "+font_size 15") != null);
+
+    stdout_before = test_config.stdout.written().len;
+    try testing.expectError(error.Failed, new(context, .kosmos, "snow", "keys"));
+    try testing.expectError(error.Failed, new(context, .app, "sled", "keys"));
+    try testing.expectError(error.Failed, new(context, .kosmos, "sled", "cobol"));
+    try testing.expectEqualStrings(
+        \\error: 'snow' is taken by kosmoi/snow.keys; kosmoi, apps, adapters, frontends and packages need unique names
+        \\error: the keys frontend gives no app scaffold
+        \\error: no frontend of this config is named 'cobol'; kosm list --frontends lists them
+        \\
+    , test_config.stderr.written()[stderr_before..]);
+    try testing.expectEqualStrings("", test_config.stdout.written()[stdout_before..]);
+    try testing.expect(!test_config.exists("project/apps/sled.keys"));
     try testing.expect(!test_config.exists("home/.config"));
 }
 

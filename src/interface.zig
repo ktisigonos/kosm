@@ -5,7 +5,7 @@ const std = @import("std");
 
 /// Bumped whenever the command line and the runner change how they talk to each other
 /// (arguments, environment, output the command line reads).
-pub const version: u32 = 7;
+pub const version: u32 = 8;
 
 /// The environment variable the command line passes its `version` to the runner in.
 pub const environment_variable = "KOSM_INTERFACE";
@@ -36,6 +36,11 @@ pub const list_scripts_flag = "--list-scripts";
 /// Given to the runner of scripts in place of a kosmos name, it prints every frontend it holds,
 /// `name<TAB>module` per line ("lua<TAB>kosm_lua"), and applies nothing.
 pub const list_frontends_flag = "--list-frontends";
+
+/// Given to the runner of scripts in place of a kosmos name, before a frontend's name and a
+/// kind (`--scaffold lua app`), it prints the extension the frontend's scripts get on the first
+/// line, then the frontend's scaffold for that kind, and applies nothing.
+pub const scaffold_flag = "--scaffold";
 
 /// Given to the lister before a frontend's name and the module giving it (`--frontend lua
 /// kosm_lua`), it lists that frontend. The command line passes what `list_frontends_flag`
