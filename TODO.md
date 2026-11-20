@@ -35,8 +35,10 @@ Steps 21j4-21j6: the other parts of kosm written through a frontend, Lua first, 
 
 Steps 22a-22e: command-line improvements the human asked for.
 
-- **22a. `kosm new` in any language** `ASK`
-  - Do: `kosm new kosmos|app|adapter|frontend <name>` scaffolds in any language with a frontend, chosen by a flag (`--lang lua`, Zig by default): the frontend gives the scaffold's text, so kosm core still knows no language. Propose the flag's name, how a frontend provides scaffolds, and single file versus folder first.
+- **22a. `kosm new` in any language** `PLAN FIRST`
+  - Do: `kosm new kosmos|app|adapter|frontend <name>` scaffolds in any language with a frontend, chosen by `--language <frontend name>` (Zig without it): the frontend gives the scaffold's text, so kosm core still knows no language.
+  - Do: a frontend gives scaffolds as plain data, an optional text per kind on `kosm.Frontend` (null for a kind it cannot write), with the `scaffold_name` placeholder the Zig scaffolds use; `kosm new` gets the text from the runner of scripts, which holds the frontends, and writes the file itself.
+  - Do: a script scaffold is a single file (`kosmoi/<name>.lua`); Zig scaffolds stay folders.
   - Done when: each kind scaffolds in Zig and Lua and the scaffold builds and applies with `--diff`.
 
 - **22c. Install shell completions**
