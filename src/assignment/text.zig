@@ -10,8 +10,9 @@ const Image = @import("../Image.zig");
 const File = @import("../File.zig");
 const kosmos = @import("../kosmos.zig");
 
-/// Reads one value of `T` from text: a color, text, bool, number or enum, or an optional of one.
-/// The returned text points into `text`.
+/// Reads one value of `T` from text: a color, text, bool, number or enum, a union's tag without
+/// a value (`vivid` of `kosm.Image.Style`), or an optional of one. The returned text points into
+/// `text`.
 pub fn parse(comptime T: type, text: []const u8) !T {
     if (T == Color) return Color.parse(text);
     if (T == ColorChoice) return ColorChoice.parse(text);
@@ -26,6 +27,13 @@ pub fn parse(comptime T: type, text: []const u8) !T {
             break :blk number;
         },
         .@"enum" => std.meta.stringToEnum(T, text) orelse error.InvalidEnum,
+        .@"union" => |info| blk: {
+            if (info.tag_type == null) @compileError("a " ++ @typeName(T) ++ " cannot be read from text; only a tagged union's tags can");
+            inline for (info.field_names, info.field_types) |name, Payload| {
+                if (Payload == void and std.mem.eql(u8, name, text)) break :blk @unionInit(T, name, {});
+            }
+            break :blk error.InvalidEnum;
+        },
         else => @compileError("a " ++ @typeName(T) ++ " cannot be read from text; use a bool, number, enum, string or color"),
     };
 }
@@ -110,6 +118,8 @@ test "parse reads every kind of value and rejects what is not one" {
     try testing.expectError(error.InvalidFloat, parse(f64, "inf"));
     try testing.expectEqualStrings("#ff0000", (try parse(Color, "rgb(255, 0, 0)")).hex().slice());
     try testing.expectEqual(Palette.Hue.sky, (try parse(ColorChoice, "sky")).hue);
+    try testing.expectEqual(.vivid, try parse(Image.Style, "vivid"));
+    try testing.expectError(error.InvalidEnum, parse(Image.Style, "function"));
 }
 
 test "describe names unions by their tags, with and without values" {

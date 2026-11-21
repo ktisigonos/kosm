@@ -40,6 +40,9 @@ declare: ?*const fn (context: *Context, source: []const u8) Error!Declaration = 
 /// building the config, to write the Zig module the modifier is used through. `context.library`
 /// is empty there. Null for a frontend writing no modifiers.
 declare_modifier: ?*const fn (context: *Context, source: []const u8) Error!Declaration = null,
+/// Reads what a palette style's script declares, as `declare_modifier` reads a modifier's. Null
+/// for a frontend writing no palette styles.
+declare_style: ?*const fn (context: *Context, source: []const u8) Error!Declaration = null,
 /// Reads what an adapter's script declares (its name, extensions, comment syntax, default format
 /// and the capabilities it gives as functions) without calling any of its functions; kosm calls
 /// it while building the config, to write the Zig module the adapter is used through.
@@ -50,16 +53,17 @@ declare_adapter: ?*const fn (context: *Context, source: []const u8) Error!Adapte
 /// write the Zig module the frontend is used through. `context.library` is empty there. Null
 /// for a frontend writing no frontends.
 declare_frontend: ?*const fn (context: *Context, source: []const u8) Error!FrontendDeclaration = null,
-/// Says what the script `source` gives (an app, an adapter, a frontend or a modifier) from what it returns,
+/// Says what the script `source` gives (an app, an adapter, a frontend, a modifier or a palette
+/// style) from what it returns,
 /// without calling any of its functions; kosm calls it for a package's root script, which no
 /// folder names the kind of. Fail through `Context.fail` when it gives none or more than one.
 /// Null for a frontend whose scripts cannot be packages' roots.
 declares: ?*const fn (context: *Context, source: []const u8) Error!Declared = null,
-/// Calls function `function` of the app's, adapter's or modifier's script at `context.path`, whose text is
-/// `source`, with `arguments`, and returns what it returns: a table as a loose table, a Zig
-/// value as its handle. The script runs once, on the first call naming it, in the frontend's one
+/// Calls function `function` of the script of an app, adapter, modifier or palette style at
+/// `context.path`, whose text is `source`, with `arguments`, and returns what it returns: a
+/// table as a loose table, a Zig value as its handle. The script runs once, on the first call naming it, in the frontend's one
 /// interpreter, so its later calls share its values. Fail through `Context.fail`, the message
-/// starting with the script's place. Null for a frontend writing no apps or adapters.
+/// starting with the script's place. Null for a frontend writing none of them.
 call: ?*const fn (context: *Context, source: []const u8, function: []const u8, arguments: []const Loose) Error!Loose = null,
 /// Where the language counts byte positions from, as an adapter's script gives and gets them:
 /// 0 for Zig's own, whose ranges end one past their last byte; 1 for Lua's, whose ranges end on
@@ -74,14 +78,15 @@ pub const Scaffolds = @import("Frontend/Scaffolds.zig");
 /// What a script kosmos says: what it builds on, and the values it sets.
 pub const Script = @import("Frontend/Script.zig");
 
-/// What an app's or a modifier's script declares, for `declare` and `declare_modifier`.
+/// What an app's, modifier's or palette style's script declares, for `declare`,
+/// `declare_modifier` and `declare_style`.
 pub const Declaration = @import("Frontend/Declaration.zig");
 
 /// What an adapter's script declares, for `declare_adapter`.
 pub const AdapterDeclaration = @import("Frontend/AdapterDeclaration.zig");
 
 /// What a script gives, for `declares`.
-pub const Declared = enum { app, adapter, frontend, modifier };
+pub const Declared = enum { app, adapter, frontend, modifier, style };
 
 /// What a frontend's script declares, for `declare_frontend`.
 pub const FrontendDeclaration = @import("Frontend/FrontendDeclaration.zig");
@@ -94,6 +99,9 @@ pub const ScriptApp = @import("Frontend/ScriptApp.zig");
 
 /// A modifier written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptModifier = @import("Frontend/ScriptModifier.zig");
+
+/// A palette style written through a frontend, which the Zig module kosm generates for it runs.
+pub const ScriptStyle = @import("Frontend/ScriptStyle.zig");
 
 /// An adapter written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptAdapter = @import("Frontend/ScriptAdapter.zig");

@@ -24,7 +24,8 @@ pixels: []const Color = &.{},
 /// How colors are taken from the image: the style, the mode, how the accent is picked, and the
 /// thresholds, each with a default.
 pub const Options = @import("Image/Options.zig");
-/// How colors are taken from the image: readable (the default), literal, vivid or muted.
+/// How colors are taken from the image: readable (the default), literal, vivid, muted, or a
+/// function of its own.
 pub const Style = Options.Style;
 /// How the image's hues score for the accent, secondary and tertiary roles.
 pub const AccentBy = Options.AccentBy;
@@ -216,6 +217,7 @@ fn styled(color: Color, background: Color, options: Options) Color {
         .readable => readable(color, background, options.minimum_contrast),
         .vivid => readable(scaledChroma(color, options.vivid_chroma), background, options.minimum_contrast),
         .muted => readable(scaledChroma(color, options.muted_chroma), background, options.minimum_contrast),
+        .function => |function| function.apply(color, background),
     };
 }
 
@@ -225,9 +227,10 @@ fn scaledChroma(color: Color, factor: f64) Color {
     return scaled;
 }
 
-/// `color` within sRGB, moved in lightness away from `background` until their contrast is at
-/// least `minimum`, or as far as it goes.
-fn readable(color: Color, background: Color, minimum: f64) Color {
+/// `color` within sRGB, moved in lightness away from `background` until their WCAG 2 contrast
+/// ratio (1..21) is at least `minimum`, or as far as it goes. What the built-in styles but
+/// `.literal` do to every hue, for a style function to call.
+pub fn readable(color: Color, background: Color, minimum: f64) Color {
     const start = withinGamut(color);
     if (start.contrastRatio(background) >= minimum) return start;
     const target: f64 = if (background.luminance() < 0.18) 1 else 0;
@@ -308,6 +311,28 @@ test "literal takes the image's colors exactly" {
     try testing.expectApproxEqAbs(0.25, result.white.lightness, 1e-9);
     try testing.expectApproxEqAbs(0.2, result.blue.?.lightness, 1e-9);
     try testing.expectApproxEqAbs(0.08, result.blue.?.chroma, 1e-9);
+    try testing.expectEqual(null, result.red);
+}
+
+/// A style turning every hue gray at the background's lightness plus `lift`, then readable.
+const GrayStyle = struct {
+    lift: f64 = 0.1,
+
+    pub fn apply(self: GrayStyle, hue: Color, background: Color) Color {
+        const gray_hue: Color = .{ .lightness = background.lightness + self.lift, .chroma = 0, .hue = hue.hue };
+        return readable(gray_hue, background, 3);
+    }
+};
+
+test "a style function gives every hue its final color, and black and white still move apart" {
+    var pixels: [100]Color = @splat(gray(0.1));
+    for (pixels[50..]) |*pixel| pixel.* = gray(0.25);
+    for (pixels[0..10]) |*pixel| pixel.* = wheelPixel(8, 0.2, 0.08);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const result = try image.palette(.{ .style = .{ .function = .of(GrayStyle, .{}) }, .fill = .extracted, .mode = .dark });
+    try testing.expectEqual(0.0, result.blue.?.chroma);
+    try testing.expectApproxEqAbs(3, result.blue.?.contrastRatio(result.black), 0.01);
+    try testing.expect(result.black.contrastRatio(result.white) >= 7);
     try testing.expectEqual(null, result.red);
 }
 

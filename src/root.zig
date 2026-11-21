@@ -106,6 +106,7 @@ test {
     std.testing.refAllDecls(@import("color_choice.zig"));
     std.testing.refAllDecls(Palette);
     std.testing.refAllDecls(Image);
+    std.testing.refAllDecls(Image.Style.Function);
     std.testing.refAllDecls(File);
     std.testing.refAllDecls(failure);
     std.testing.refAllDecls(@import("keep.zig"));
@@ -149,6 +150,7 @@ test {
     std.testing.refAllDecls(Frontend.Handle);
     std.testing.refAllDecls(Frontend.ScriptApp);
     std.testing.refAllDecls(Frontend.ScriptModifier);
+    std.testing.refAllDecls(Frontend.ScriptStyle);
     std.testing.refAllDecls(Frontend.ScriptFrontend);
     std.testing.refAllDecls(kosmos_file);
 }

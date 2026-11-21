@@ -542,9 +542,9 @@ pub fn isBindable(comptime F: type) bool {
 }
 
 /// Whether `name` is a declaration of `T` that only kosm uses: an app's `apply` and `reload`,
-/// and the `script` of an app or modifier written through a frontend.
+/// and the `script` of an app, modifier or palette style written through a frontend.
 fn isRunByKosm(comptime T: type, comptime name: []const u8) bool {
-    if (std.mem.eql(u8, name, "script") and @TypeOf(@field(T, name)) == kosm.Frontend.ScriptModifier) return true;
+    if (std.mem.eql(u8, name, "script") and (@TypeOf(@field(T, name)) == kosm.Frontend.ScriptModifier or @TypeOf(@field(T, name)) == kosm.Frontend.ScriptStyle)) return true;
     if (!kosm.app.is(T)) return false;
     if (std.mem.eql(u8, name, "script")) return @TypeOf(@field(T, name)) == kosm.Frontend.ScriptApp;
     return std.mem.eql(u8, name, "apply") or std.mem.eql(u8, name, "reload");

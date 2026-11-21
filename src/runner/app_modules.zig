@@ -1,8 +1,9 @@
 //! The Zig modules of apps written through a frontend (and, through `adapter_modules`,
-//! `frontend_modules` and `modifier_modules`, of adapters, frontends and modifiers): kosm reads what each script declares
-//! while it builds the config, and writes a module giving `App`, `from` and `App.apply` like a
-//! Zig app's, its functions running the script's own. A module is written only when its contents
-//! change, so a script edit that leaves its declaration alone compiles nothing.
+//! `frontend_modules` and `color_modules`, of adapters, frontends, modifiers and palette
+//! styles): kosm reads what each script declares while it builds the config, and writes a module
+//! giving `App`, `from` and `App.apply` like a Zig app's, its functions running the script's
+//! own. A module is written only when its contents change, so a script edit that leaves its
+//! declaration alone compiles nothing.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -350,13 +351,15 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
         const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
         return @import("frontend_modules.zig").source(arena, script, declaration, diagnostics);
     }
-    if (declared == .modifier) {
-        const declare = found.declare_modifier orelse {
-            diagnostics.set("", "", "{s}: the {s} frontend writes no modifiers", .{ path, found.name });
+    if (declared == .modifier or declared == .style) {
+        const color_modules = @import("color_modules.zig");
+        const kind = if (declared == .modifier) color_modules.modifier else color_modules.style;
+        const declare = (if (declared == .modifier) found.declare_modifier else found.declare_style) orelse {
+            diagnostics.set("", "", "{s}: the {s} frontend writes no {s}s", .{ path, found.name, kind.noun });
             return error.InvalidDeclaration;
         };
         const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
-        return @import("modifier_modules.zig").source(arena, script, declaration, modules, diagnostics);
+        return color_modules.source(arena, kind, script, declaration, modules, diagnostics);
     }
     const declare = found.declare orelse {
         diagnostics.set("", "", "{s}: the {s} frontend writes no apps", .{ path, found.name });
@@ -378,8 +381,8 @@ fn declaredBy(frontend: kosm.Frontend, context: *kosm.Frontend.Context, path: []
             return error.InvalidDeclaration;
         };
         const declared = declares(context, text) catch |err| return declareFailed(err, context.*, path, diagnostics);
-        if (declared != .modifier) {
-            diagnostics.set("", "", "{s} gives {s}; colors/ holds modifiers, and {s} belong in {s}/", .{ path, givenAs(declared), plural(declared), plural(declared) });
+        if (declared != .modifier and declared != .style) {
+            diagnostics.set("", "", "{s} gives {s}; colors/ holds modifiers and palette styles, and {s} belong in {s}/", .{ path, givenAs(declared), plural(declared), plural(declared) });
             return error.InvalidDeclaration;
         }
         return declared;
@@ -397,7 +400,7 @@ const adapters_folder = "adapters/";
 const frontends_folder = "frontends/";
 /// The config's folder of apps.
 const apps_folder = "apps/";
-/// The config's folder of modifiers, whose scripts say what they give.
+/// The config's folder of modifiers and palette styles, whose scripts say what they give.
 const colors_folder = "colors/";
 
 /// What a script gives, as messages name it: "an app".
@@ -407,6 +410,7 @@ fn givenAs(declared: kosm.Frontend.Declared) []const u8 {
         .adapter => "an adapter",
         .frontend => "a frontend",
         .modifier => "a modifier",
+        .style => "a palette style",
     };
 }
 
@@ -416,7 +420,7 @@ fn plural(declared: kosm.Frontend.Declared) []const u8 {
         .app => "apps",
         .adapter => "adapters",
         .frontend => "frontends",
-        .modifier => "colors",
+        .modifier, .style => "colors",
     };
 }
 
@@ -576,7 +580,7 @@ test "a package's root script is what its frontend says; a config's is what its 
     try testing.expectEqual(.app, try declaredBy(with, &context, "apps/cava/root.fake", "", &diagnostics));
     try testing.expectEqual(.frontend, try declaredBy(with, &context, "frontends/ini.fake", "", &diagnostics));
     try testing.expectError(error.InvalidDeclaration, declaredBy(with, &context, "colors/sepia.fake", "", &diagnostics));
-    try testing.expectEqualStrings("colors/sepia.fake gives an adapter; colors/ holds modifiers, and adapters belong in adapters/", diagnostics.message());
+    try testing.expectEqualStrings("colors/sepia.fake gives an adapter; colors/ holds modifiers and palette styles, and adapters belong in adapters/", diagnostics.message());
     with.declares = null;
     try testing.expectError(error.InvalidDeclaration, declaredBy(with, &context, "~~kosm_scratch/root.fake", "", &diagnostics));
     try testing.expectEqualStrings("~~kosm_scratch/root.fake: the fake frontend cannot tell what a package's root script gives, so it cannot be one", diagnostics.message());

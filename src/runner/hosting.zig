@@ -86,7 +86,8 @@ pub fn handledTypes(comptime sources: []const ScriptTarget.KosmosSource) []const
     comptime var found: []const type = &.{ kosm.Theme, kosm.Output, kosm.Reloader, kosm.Color };
     inline for (sources) |source| {
         if (comptime isScriptApp(source.module)) found = found ++ .{source.module.App};
-        if (comptime isScriptModifier(source.module)) found = found ++ .{source.module.Modifier};
+        if (comptime isScriptColor(source.module, "Modifier", kosm.Frontend.ScriptModifier)) found = found ++ .{source.module.Modifier};
+        if (comptime isScriptColor(source.module, "Style", kosm.Frontend.ScriptStyle)) found = found ++ .{source.module.Style};
     }
     const final = found[0..found.len].*;
     return &final;
@@ -99,19 +100,20 @@ pub fn isScriptApp(comptime Module: type) bool {
     return @TypeOf(App) == type and @typeInfo(App) == .@"struct" and @hasDecl(App, "script") and @TypeOf(App.script) == ScriptApp;
 }
 
-/// Whether `Module` is the generated module of a modifier written through a frontend.
-pub fn isScriptModifier(comptime Module: type) bool {
-    if (@typeInfo(Module) != .@"struct" or !@hasDecl(Module, "Modifier")) return false;
-    const Modifier = Module.Modifier;
-    return @TypeOf(Modifier) == type and @typeInfo(Modifier) == .@"struct" and @hasDecl(Modifier, "script") and @TypeOf(Modifier.script) == kosm.Frontend.ScriptModifier;
+/// Whether `Module` is the generated module of a modifier or palette style written through a
+/// frontend: its type `name` has a `script` of type `Script`.
+fn isScriptColor(comptime Module: type, comptime name: []const u8, comptime Script: type) bool {
+    if (@typeInfo(Module) != .@"struct" or !@hasDecl(Module, name)) return false;
+    const Fields = @field(Module, name);
+    return @TypeOf(Fields) == type and @typeInfo(Fields) == .@"struct" and @hasDecl(Fields, "script") and @TypeOf(Fields.script) == Script;
 }
 
-/// Whether any module of `sources` is the generated module of a modifier written through a
-/// frontend, which only the runner of scripts can run. A modifier is a value, so a tree's type
-/// cannot tell; every module the kosmos reaches is among the sources.
-pub fn holdsScriptModifiers(comptime sources: []const @import("Target.zig").AdapterSource) bool {
+/// Whether any module of `sources` is the generated module of a modifier or palette style
+/// written through a frontend, which only the runner of scripts can run. Either is a value, so
+/// a tree's type cannot tell; every module the kosmos reaches is among the sources.
+pub fn holdsScriptColors(comptime sources: []const @import("Target.zig").AdapterSource) bool {
     inline for (sources) |source| {
-        if (comptime isScriptModifier(source.module)) return true;
+        if (comptime isScriptColor(source.module, "Modifier", kosm.Frontend.ScriptModifier) or isScriptColor(source.module, "Style", kosm.Frontend.ScriptStyle)) return true;
     }
     return false;
 }
@@ -193,7 +195,7 @@ test "a tree holds script apps when any app inside it, at any depth or optional,
     }));
 }
 
-test "sources hold script modifiers when any module is a modifier's generated module" {
+test "sources hold script colors when any module is a modifier's or style's generated module" {
     const script_modifier = struct {
         pub const Modifier = struct {
             amount: f64 = 1,
@@ -203,6 +205,12 @@ test "sources hold script modifiers when any module is a modifier's generated mo
     const zig_modifier = struct {
         pub const Modifier = struct { amount: f64 = 1 };
     };
-    try testing.expect(holdsScriptModifiers(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "sepia", .module = script_modifier } }));
-    try testing.expect(!holdsScriptModifiers(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "gray", .module = zig_modifier } }));
+    const script_style = struct {
+        pub const Style = struct {
+            pub const script: kosm.Frontend.ScriptStyle = .{ .frontend = "test", .path = "colors/pastel.lua" };
+        };
+    };
+    try testing.expect(holdsScriptColors(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "sepia", .module = script_modifier } }));
+    try testing.expect(holdsScriptColors(&.{.{ .package = "pastel", .module = script_style }}));
+    try testing.expect(!holdsScriptColors(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "gray", .module = zig_modifier } }));
 }

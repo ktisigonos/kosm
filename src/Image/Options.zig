@@ -38,8 +38,8 @@ minimum_chroma: f64 = 0.03,
 /// A hue is set only if at least this share of all pixels is nearest it; the others are
 /// left out, to be mixed from their neighbours. Default: 0.01.
 minimum_share: f64 = 0.01,
-/// With a style other than `.literal`, the contrast every hue keeps against the background,
-/// reached by changing only its lightness. Default: 4.5.
+/// With a built-in style other than `.literal`, the contrast every hue keeps against the
+/// background, reached by changing only its lightness. Default: 4.5.
 minimum_contrast: f64 = 4.5,
 /// With a style other than `.literal`, the contrast between black and white, reached by
 /// moving them apart. Default: 7.
@@ -50,7 +50,7 @@ vivid_chroma: f64 = 1.3,
 muted_chroma: f64 = 0.6,
 
 /// How colors are taken from the image.
-pub const Style = enum {
+pub const Style = union(enum) {
     /// The image's colors, made readable: each hue keeps its hue and chroma and moves in
     /// lightness until it reaches `minimum_contrast` against the background, and black and
     /// white move apart until they reach `foreground_contrast`.
@@ -61,6 +61,14 @@ pub const Style = enum {
     vivid,
     /// Readable, with the hues' chroma lowered by `muted_chroma`.
     muted,
+    /// Code of its own, written in Zig or through a frontend: given each hue and the
+    /// background, it returns the hue's final color, and nothing runs after it
+    /// (`kosm.Image.readable` keeps a hue readable). Black and white move apart as for every
+    /// style but `.literal`. A style module's `style(...)`, or `Function.of`.
+    function: Function,
+
+    /// Code of a palette style's own, with the fields it was given.
+    pub const Function = @import("StyleFunction.zig");
 };
 
 /// What the hues the image lacks become. A made-up hue is the wheel position's reference hue

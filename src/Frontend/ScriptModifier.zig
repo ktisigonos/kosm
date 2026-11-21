@@ -8,9 +8,8 @@ const ScriptModifier = @This();
 const std = @import("std");
 const Loose = @import("../Loose.zig");
 const Color = @import("../Color.zig");
-const Diagnostics = @import("../Diagnostics.zig");
-const assignment = @import("../assignment.zig");
 const failure = @import("../failure.zig");
+const color_call = @import("color_call.zig");
 const Host = @import("Host.zig");
 const Call = @import("Call.zig");
 const Handle = @import("Handle.zig");
@@ -30,38 +29,7 @@ pub fn file(modifier: ScriptModifier) ScriptFile {
 /// failure is recorded like `kosm.fail`'s message, which kosm reports before anything is
 /// written, and `color` is given unchanged.
 pub fn apply(modifier: ScriptModifier, comptime Modifier: type, self: Modifier, color: Color) Color {
-    return modifier.run(Modifier, self, color) catch |err| {
-        switch (err) {
-            error.OutOfMemory => failure.record("{s}: out of memory", .{modifier.path}),
-            // `run` recorded why.
-            error.KosmosFailed => {},
-        }
-        return color;
-    };
-}
-
-fn run(modifier: ScriptModifier, comptime Modifier: type, self: Modifier, color: Color) (std.mem.Allocator.Error || failure.Error)!Color {
-    const host = Host.current() orelse return failure.fail("{s}: a modifier written through a frontend runs only in the runner of scripts, and this runner is none", .{modifier.path});
-    const kept_self = try host.arena.create(Modifier);
-    kept_self.* = self;
-    const kept_color = try host.arena.create(Color);
-    kept_color.* = color;
-    const self_handle = host.handleOf(Modifier, kept_self) orelse return failure.fail("{s}: the modifier cannot be handed to its script", .{modifier.path});
-    const color_handle = host.handleOf(Color, kept_color) orelse return failure.fail("{s}: a kosm.Color cannot be handed to a script here", .{modifier.path});
-    var call = host.call();
-    const given = host.run(host.state, &call, modifier.file(), "apply", &.{ .{ .value = .{ .handle = self_handle } }, .{ .value = .{ .handle = color_handle } } }) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.CallFailed => return failure.fail("{s}", .{call.message orelse "apply failed and did not say why"}),
-    };
-    var result = color;
-    var diagnostics: Diagnostics = .{};
-    var named = given;
-    if (named.origin == null) named.origin = try host.arena.print("{s}: apply", .{modifier.path});
-    assignment.assignNamed(Color, host.arena, &result, named, &diagnostics, "the color") catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.InvalidAssignment => return failure.fail("{s}", .{diagnostics.message()}),
-    };
-    return result;
+    return color_call.apply(Modifier, modifier.file(), "a modifier", self, &.{color});
 }
 
 const testing = std.testing;

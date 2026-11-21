@@ -58,9 +58,9 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
     }
 
     if (init.environ_map.get(interface.runner_variable) != null) {
-        // Only the runner of scripts builds other kosmoi and runs apps, adapters and modifiers
-        // written through a frontend.
-        if (comptime kosmos_call.buildsOnKosmoi(ParamsOf(kosmos)) or hosting.holdsScriptApps(TreeOf(kosmos)) or hosting.holdsScriptAdapters(target.adapter_sources) or hosting.holdsScriptModifiers(target.adapter_sources)) try streams.stdout.writeAll(interface.script_runner ++ "\n");
+        // Only the runner of scripts builds other kosmoi and runs apps, adapters, modifiers and
+        // palette styles written through a frontend.
+        if (comptime kosmos_call.buildsOnKosmoi(ParamsOf(kosmos)) or hosting.holdsScriptApps(TreeOf(kosmos)) or hosting.holdsScriptAdapters(target.adapter_sources) or hosting.holdsScriptColors(target.adapter_sources)) try streams.stdout.writeAll(interface.script_runner ++ "\n");
         try streams.stdout.flush();
         return 0;
     }
@@ -856,7 +856,7 @@ test {
     std.testing.refAllDecls(@import("app_modules.zig"));
     std.testing.refAllDecls(@import("adapter_modules.zig"));
     std.testing.refAllDecls(@import("frontend_modules.zig"));
-    std.testing.refAllDecls(@import("modifier_modules.zig"));
+    std.testing.refAllDecls(@import("color_modules.zig"));
     std.testing.refAllDecls(hosting);
     std.testing.refAllDecls(set);
     std.testing.refAllDecls(discovery);
