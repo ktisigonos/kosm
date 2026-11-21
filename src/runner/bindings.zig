@@ -389,6 +389,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                 fn set(given: *Call, pointer: *anyopaque, key: Handle.Key, loose: Loose) Call.Error!void {
                     if (comptime isService(T)) return serviceField(given, key);
                     const value: *T = @ptrCast(@alignCast(pointer));
+                    if (comptime isReadFromText(T)) return setPart(given, value, try fieldKey(given, key), loose);
                     var diagnostics: kosm.Diagnostics = .{};
                     const result = switch (@typeInfo(T)) {
                         .@"struct", .@"union" => blk: {
@@ -402,6 +403,31 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                             const label = try given.arena.print("item {d}", .{index + 1});
                             break :blk kosm.assignment.assignNamed(@TypeOf(items[0]), given.arena, &items[index], loose, &diagnostics, label);
                         },
+                    };
+                    result catch |err| switch (err) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.InvalidAssignment => return given.fail("{s}", .{diagnostics.message()}),
+                    };
+                }
+
+                /// Sets one field (or the tag of a union) of a value otherwise given as text, such
+                /// as a color's lightness, which assigning a table to the whole value cannot.
+                fn setPart(given: *Call, value: *T, name: []const u8, loose: Loose) Call.Error!void {
+                    var diagnostics: kosm.Diagnostics = .{};
+                    const result = switch (@typeInfo(T)) {
+                        .@"struct" => |info| inline for (info.field_names, info.field_types, info.field_attrs) |field_name, Field, attributes| {
+                            if (!attributes.@"comptime" and std.mem.eql(u8, field_name, name)) {
+                                break kosm.assignment.assignNamed(Field, given.arena, &@field(value.*, field_name), loose, &diagnostics, field_name);
+                            }
+                        } else return given.fail("{s} has no field '{s}'; its fields are {s}", .{ nameOf(T), name, comptime kosm.assignment.text.fieldList(T) }),
+                        .@"union" => |info| inline for (info.field_names, info.field_types) |tag_name, Payload| {
+                            if (std.mem.eql(u8, tag_name, name)) {
+                                break if (kosm.assignment.build(Payload, given.arena, loose, &diagnostics, tag_name)) |payload| {
+                                    value.* = @unionInit(T, tag_name, payload);
+                                } else |err| err;
+                            }
+                        } else return given.fail("{s} has no tag '{s}'; its tags are {s}", .{ nameOf(T), name, comptime tagList(T) }),
+                        else => comptime unreachable,
                     };
                     result catch |err| switch (err) {
                         error.OutOfMemory => return error.OutOfMemory,
@@ -628,6 +654,13 @@ fn declNames(comptime T: type) []const [:0]const u8 {
     };
 }
 
+/// Whether `T` is a struct or union kosm reads from text as a whole (a color), so a table
+/// given for it is no assignment of its fields.
+fn isReadFromText(comptime T: type) bool {
+    const container = @typeInfo(T) == .@"struct" or @typeInfo(T) == .@"union";
+    return container and kosm.assignment.text.isParseable(T);
+}
+
 fn isList(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .array => true,
@@ -692,6 +725,7 @@ const test_package = struct {
         background: ?kosm.Color = null,
         layouts: []const Layout = &.{},
         style: Style = .plain,
+        accent: kosm.ColorChoice = .{ .hue = .cyan },
 
         pub fn apply(self: App, output: *kosm.Output) !void {
             _ = .{ self, output };
@@ -853,10 +887,30 @@ test "a value built by calls is a handle whose fields read and set like the Zig 
     try script.set(app, .{ .field = "background" }, .{ .string = "#ff0000" });
     try testing.expectEqualStrings("#ff0000", app.value.handle.as(test_package.App).?.background.?.hex().slice());
     try script.expectFailure(script.set(app, .{ .field = "size" }, .{ .string = "big" }), "size: expected an integer that fits u8, got the string 'big'");
-    try script.expectFailure(script.get(app, .{ .field = "sise" }), "test_package.App has no field 'sise'; its fields are size, background, layouts, style");
+    try script.expectFailure(script.get(app, .{ .field = "sise" }), "test_package.App has no field 'sise'; its fields are size, background, layouts, style, accent");
     try testing.expectEqualStrings("plain", (try script.get(app, .{ .field = "style" })).value.handle.type.fields[0]);
     try testing.expectEqual(true, (try script.get(try script.get(app, .{ .field = "style" }), .{ .field = "plain" })).value.boolean);
     try testing.expectEqual(.null, std.meta.activeTag((try script.get(try script.get(app, .{ .field = "style" }), .{ .field = "size" })).value));
+}
+
+test "one field of a color, or a color choice's tag, is set like any struct's" {
+    var script: Script = undefined;
+    script.init();
+    defer script.deinit();
+    const app = try script.callAt(&.{ "test_package", "from" }, &.{try script.theme()});
+    const background = try script.get(app, .{ .field = "background" });
+    try script.set(background, .{ .field = "lightness" }, .{ .float = 0.5 });
+    try script.set(background, .{ .field = "alpha" }, .{ .integer = 1 });
+    try testing.expectEqual(0.5, background.value.handle.as(kosm.Color).?.lightness);
+    try script.expectFailure(script.set(background, .{ .field = "lightness" }, .{ .string = "dark" }), "lightness: expected a number, got the string 'dark'");
+    try script.expectFailure(script.set(background, .{ .field = "brightness" }, .{ .float = 1 }), "kosm.Color has no field 'brightness'; its fields are lightness, chroma, hue, alpha");
+
+    const accent = try script.get(app, .{ .field = "accent" });
+    try script.set(accent, .{ .field = "hue" }, .{ .string = "sky" });
+    try testing.expectEqual(kosm.Palette.Hue.sky, app.value.handle.as(test_package.App).?.accent.hue);
+    try script.set(accent, .{ .field = "color" }, .{ .string = "#ff0000" });
+    try testing.expectEqualStrings("#ff0000", app.value.handle.as(test_package.App).?.accent.color.hex().slice());
+    try script.expectFailure(script.set(accent, .{ .field = "shade" }, .{ .string = "sky" }), "kosm.ColorChoice has no tag 'shade'; its tags are color, hue");
 }
 
 test "methods take the handle first; one taking a pointer changes the script's value" {
