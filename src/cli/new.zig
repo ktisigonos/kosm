@@ -1,7 +1,8 @@
-//! `kosm new kosmos|app|adapter|frontend|package <name> [--language <frontend>]`: scaffolds a
-//! directory package with a commented `root.zig` and the `build.zig` and `build.zig.zon` every
-//! directory package has, or a single script from the scaffold the named frontend gives. A
-//! package goes in a folder of its own in the working directory, to become a repository.
+//! `kosm new kosmos|app|adapter|frontend|modifier|style|family|package <name> [--language
+//! <frontend>]`: scaffolds a directory package with a commented `root.zig` and the `build.zig`
+//! and `build.zig.zon` every directory package has, or a single script from the scaffold the
+//! named frontend gives. A package goes in a folder of its own in the working directory, to
+//! become a repository.
 
 const std = @import("std");
 const interface = @import("kosm_interface");
@@ -18,6 +19,12 @@ pub const Kind = enum {
     app,
     adapter,
     frontend,
+    /// A modifier of one's own, in `colors/`.
+    modifier,
+    /// A palette style of one's own, in `colors/`.
+    style,
+    /// A variation family of one's own, in `colors/`.
+    family,
     /// A package of its own, outside the config, holding an app.
     package,
 
@@ -27,6 +34,7 @@ pub const Kind = enum {
             .app => "apps",
             .adapter => "adapters",
             .frontend => "frontends",
+            .modifier, .style, .family => "colors",
             .package => unreachable, // `new` writes a package outside the config's folders.
         };
     }
@@ -37,6 +45,9 @@ pub const Kind = enum {
             .app, .package => @embedFile("scaffolds/app.zig"),
             .adapter => @embedFile("scaffolds/adapter.zig"),
             .frontend => @embedFile("scaffolds/frontend.zig"),
+            .modifier => @embedFile("scaffolds/modifier.zig"),
+            .style => @embedFile("scaffolds/style.zig"),
+            .family => @embedFile("scaffolds/family.zig"),
         };
     }
 };
@@ -50,7 +61,7 @@ const reserved_names = [_][]const u8{ "std", "builtin", "root" };
 /// Creates `<kind directory>/<name>/` in the config, or `<kind directory>/<name><extension>`
 /// from the scaffold of frontend `language`, printing each file it writes; a package goes in
 /// `<working_directory>/<name>/`. A name that is no Zig identifier or already names a local
-/// kosmos, app, adapter or frontend or an installed package is refused, and nothing is written.
+/// kosmos, app, adapter, frontend or color script or an installed package is refused, and nothing is written.
 pub fn new(context: Context, kind: Kind, name: []const u8, language: ?[]const u8, working_directory: []const u8) Error!void {
     try checkName(context, name);
     if (kind == .package) return newPackage(context, name, language, working_directory);
@@ -300,9 +311,12 @@ test "every scaffold builds in an initialized config, Zig or through the scaffol
     try new(context, .app, "my_bar", null, unused_working_directory);
     try new(context, .adapter, "my_lang", null, unused_working_directory);
     try new(context, .frontend, "keys", null, unused_working_directory);
+    try new(context, .modifier, "warm", null, unused_working_directory);
+    try new(context, .style, "soft", null, unused_working_directory);
+    try new(context, .family, "glow", null, unused_working_directory);
 
     // Each package builds on its own, which proves its manifest.
-    for ([_][]const u8{ "kosmoi/frost", "apps/my_bar", "adapters/my_lang", "frontends/keys", "../packages/kosm_shelf" }) |directory| {
+    for ([_][]const u8{ "kosmoi/frost", "apps/my_bar", "adapters/my_lang", "frontends/keys", "colors/warm", "colors/soft", "colors/glow", "../packages/kosm_shelf" }) |directory| {
         var package_context = context;
         package_context.config = try std.Io.Dir.path.resolveAlloc(arena, &.{ context.config, directory });
         const built = try package_context.runZig(&.{ "build", "test" });
@@ -316,6 +330,7 @@ test "every scaffold builds in an initialized config, Zig or through the scaffol
     const check = try applyDiff(context, "check");
     try testing.expect(std.mem.find(u8, check, "+foreground = #") != null);
     try testing.expect(std.mem.find(u8, check, "+size = 3\n") != null);
+    try testing.expect(std.mem.find(u8, check, "+changed = true\n") != null);
 
     // The runner of scripts holds every Zig kosmos, and the starting one needs the real packages.
     try test_config.tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
@@ -346,23 +361,38 @@ test "every scaffold builds in an initialized config, Zig or through the scaffol
     try testing.expect(!test_config.exists("home/.config"));
 }
 
-/// Uses the scaffolded app, and writes a file through the scaffolded adapter.
+/// Uses the scaffolded app, color scripts and adapter, writing a file through the adapter.
 const check_kosmos =
     \\const kosm = @import("kosm");
     \\const my_bar = @import("my_bar");
+    \\const warm = @import("warm");
+    \\const soft = @import("soft");
+    \\const glow = @import("glow");
     \\
     \\const Lang = struct {
     \\    accent: kosm.Color,
+    \\    /// Whether the modifier, the family and the style each changed the color given.
+    \\    changed: bool,
     \\    pub fn apply(self: Lang, output: *kosm.Output) !void {
-    \\        try output.generate(.{ .file = "~/check.my_lang" }, .{ .accent = self.accent, .size = 3 });
+    \\        try output.generate(.{ .file = "~/check.my_lang" }, .{ .accent = self.accent, .changed = self.changed, .size = 3 });
     \\    }
     \\};
     \\
     \\pub const Check = struct { bar: my_bar.App, lang: Lang };
     \\
     \\pub fn kosmos() Check {
-    \\    const theme = kosm.Theme.from(.{ .palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff") }, .mode = .dark });
-    \\    return .{ .bar = my_bar.from(theme), .lang = .{ .accent = theme.palette.cyan } };
+    \\    const theme = kosm.Theme.from(.{ .palette = .{ .black = kosm.hex("000000"), .white = kosm.hex("ffffff"), .cyan = kosm.hex("00a0b0") }, .mode = .dark });
+    \\    const cyan = theme.palette.cyan;
+    \\    const black = theme.palette.black;
+    \\    const warmed = warm.modifier(.{}).apply(cyan);
+    \\    const glowing = glow.from(.dark).strong.apply(black);
+    \\    const softened = soft.style(.{}).function.apply(cyan, black);
+    \\    const changed = differs(warmed, cyan) and differs(glowing, black) and differs(softened, cyan);
+    \\    return .{ .bar = my_bar.from(theme), .lang = .{ .accent = cyan, .changed = changed } };
+    \\}
+    \\
+    \\fn differs(color: kosm.Color, other: kosm.Color) bool {
+    \\    return !@import("std").mem.eql(u8, color.hex().slice(), other.hex().slice());
     \\}
     \\
 ;

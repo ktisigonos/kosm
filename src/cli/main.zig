@@ -28,7 +28,7 @@ const interface = @import("kosm_interface");
 
 const usage =
     \\usage: kosm init [--config dir]
-    \\       kosm new kosmos|app|adapter|frontend|package <name> [--language <frontend>] [--config dir]
+    \\       kosm new kosmos|app|adapter|frontend|modifier|style|family|package <name> [--language <frontend>] [--config dir]
     \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
     \\       kosm list [<kosmos> | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]
     \\       kosm colors <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]
@@ -64,7 +64,7 @@ pub fn main(init: std.process.Init) !u8 {
             error.MissingKosmos => try stderr.interface.print("error: kosm {s} needs a kosmos, e.g. kosm {s} frost\n", .{ arguments[1], arguments[1] }),
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
             error.MissingArgument, error.UnexpectedArgument => try stderr.interface.print("error: kosm {s} takes {s}\n", .{ arguments[1], expectedArguments(arguments[1]) }),
-            error.UnknownKind => try stderr.interface.writeAll("error: kosm new makes a kosmos, an app, an adapter, a frontend or a package, e.g. kosm new app my_bar\n"),
+            error.UnknownKind => try stderr.interface.writeAll("error: kosm new makes a kosmos, an app, an adapter, a frontend, a modifier, a palette style, a variation family or a package, e.g. kosm new app my_bar\n"),
             error.MissingLanguage => try stderr.interface.writeAll("error: --language needs a frontend's name, e.g. --language lua\n"),
             error.ConfigNotRead => try stderr.interface.print("error: kosm {s} reads no config project, so it takes no --config\n", .{arguments[1]}),
             error.OutOfMemory => return error.OutOfMemory,

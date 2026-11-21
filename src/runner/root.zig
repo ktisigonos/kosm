@@ -171,7 +171,7 @@ fn writeScaffold(comptime target: ScriptTarget, arguments: []const []const u8, s
                     return;
                 }
             }
-            return fail(diagnostics, "{s} is not a kind kosm new scaffolds: kosmos, app, adapter or frontend", .{kind});
+            return fail(diagnostics, "{s} is not a kind kosm new scaffolds: kosmos, app, adapter, frontend, modifier, style or family", .{kind});
         }
     }
     return fail(diagnostics, "no frontend of this config is named '{s}'; kosm list --frontends lists them", .{language});

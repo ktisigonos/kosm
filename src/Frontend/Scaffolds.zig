@@ -1,5 +1,5 @@
 //! What `kosm new --language <frontend>` writes for each kind: the whole text of one script,
-//! with `name_placeholder` standing wherever the new kosmos', app's, adapter's or frontend's
+//! with `name_placeholder` standing wherever the new script's
 //! name goes. Null for a kind the frontend cannot write.
 
 /// Stands for the name given to `kosm new`, which replaces every occurrence of it.
@@ -13,3 +13,9 @@ app: ?[]const u8 = null,
 adapter: ?[]const u8 = null,
 /// A frontend written through the frontend, written as `frontends/<name><extension>`.
 frontend: ?[]const u8 = null,
+/// A modifier written through the frontend, written as `colors/<name><extension>`.
+modifier: ?[]const u8 = null,
+/// A palette style written through the frontend, written as `colors/<name><extension>`.
+style: ?[]const u8 = null,
+/// A variation family written through the frontend, written as `colors/<name><extension>`.
+family: ?[]const u8 = null,

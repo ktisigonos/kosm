@@ -20,7 +20,7 @@ const Candidate = struct {
 
 const commands = [_]Candidate{
     .{ .text = "init", .description = "create what a config project is missing" },
-    .{ .text = "new", .description = "scaffold a kosmos, app, adapter, frontend or package" },
+    .{ .text = "new", .description = "scaffold a kosmos, app, adapter, frontend, color script or package" },
     .{ .text = "apply", .description = "apply a kosmos" },
     .{ .text = "list", .description = "list kosmoi and packages" },
     .{ .text = "colors", .description = "show the colors a kosmos wears" },
@@ -46,6 +46,9 @@ const kinds = [_]Candidate{
     .{ .text = "app", .description = "support for one program" },
     .{ .text = "adapter", .description = "support for one file format" },
     .{ .text = "frontend", .description = "support for writing in one language" },
+    .{ .text = "modifier", .description = "a color transform of one's own" },
+    .{ .text = "style", .description = "a palette style of one's own" },
+    .{ .text = "family", .description = "a variation family of one's own" },
     .{ .text = "package", .description = "an app in a repository of its own" },
 };
 const shells = [_]Candidate{
@@ -310,7 +313,7 @@ test "the first word completes to the commands, and new, completions and source 
     try testing.expect(std.mem.find(u8, first, "\napply\tapply a kosmos\n") != null);
     try testing.expect(std.mem.find(u8, first, "\ncolors\t") != null);
     try testing.expectEqualStrings(first, try testComplete(arena.allocator(), config, &.{}));
-    try testing.expectEqualStrings("kosmos\ta rice\napp\tsupport for one program\nadapter\tsupport for one file format\nfrontend\tsupport for writing in one language\npackage\tan app in a repository of its own\n", try testComplete(arena.allocator(), config, &.{ "new", "" }));
+    try testing.expectEqualStrings("kosmos\ta rice\napp\tsupport for one program\nadapter\tsupport for one file format\nfrontend\tsupport for writing in one language\nmodifier\ta color transform of one's own\nstyle\ta palette style of one's own\nfamily\ta variation family of one's own\npackage\tan app in a repository of its own\n", try testComplete(arena.allocator(), config, &.{ "new", "" }));
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "new", "app", "" }));
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "new", "--language", "lua", "app", "my_bar", "" }));
     try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "new", "app", "-" }), "--language\t");

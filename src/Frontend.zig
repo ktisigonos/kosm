@@ -75,7 +75,8 @@ counts_from: u1 = 0,
 /// What `kosm new --language <name>` writes for each kind, in the first of `extensions`.
 scaffolds: Scaffolds = .{},
 
-/// The scripts `kosm new` starts a kosmos, app, adapter or frontend from.
+/// The scripts `kosm new` starts a kosmos, app, adapter, frontend, modifier, palette style or
+/// variation family from.
 pub const Scaffolds = @import("Frontend/Scaffolds.zig");
 
 /// What a script kosmos says: what it builds on, and the values it sets.
