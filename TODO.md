@@ -25,9 +25,11 @@ Steps 21j4-21j6: the other parts of kosm written through a frontend, Lua first, 
   - Do: color modifiers, image palette styles and variation families can be written in Lua and used from any kosmos or app, Zig or Lua.
   - Done when: one of each, written in Lua, changes a kosmos' colors under `--diff`.
 
-- **21j5. Lua packages** `PLAN FIRST`
-  - Do: `kosm add` of a repository holding `root.lua` and a `build.zig.zon` installs a package of anything 21j1-21j4 allow, written in Lua; Lua packages depend on Zig packages and Zig packages on Lua ones. `kosm new package` scaffolds the manifest `zig fetch` needs.
-  - Done when: a scratch Lua package in its own repository is added to a scratch copy of the config and used from a Lua kosmos and a Zig kosmos.
+- **21j5b. Lua kosmoi, looks and bases in packages** `PLAN FIRST` (later)
+  - Do: a Lua package's root may give a kosmos, look or base, which Lua and Zig kosmoi build on like a Zig package's; the runner of scripts needs to find script kosmoi inside packages.
+  - Do: a Lua package reached only through another package works without the config listing it: the runner of scripts knows its folder (`~~<name>/`) and hands its app type to scripts.
+  - Do: the Lua app scaffold's header names `kosm new package` when it is a package's root, not `kosm new app`.
+  - Done when: a scratch Lua package giving a look is worn by a Lua kosmos and a Zig kosmos under `--diff`, and a Zig package holding a Lua package's app applies with only the Zig package in the config.
 
 - **21j6. Apps and adapters in a language whose frontend is a script** `PLAN FIRST` (later)
   - Do: a frontend written through a frontend also writes apps and adapters in its own language (`declare`, `declare_adapter`, `call`), which needs the build to generate the frontend's module before the modules of the apps and adapters written through it.

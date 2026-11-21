@@ -135,7 +135,7 @@ fn writeFrontendCompletions(init: std.process.Init, comptime target: ScriptTarge
     var sources: Sources = .{ .arena = arena, .io = init.io, .modules = modules.items };
     const completion = try describeScriptTypes(arena, target, &sources);
     // A frontend written through a frontend writes its completion through the host.
-    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = arena, .io = init.io, .config = target.config, .library = .{} } };
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = arena, .io = init.io, .config = target.config, .folders = target.folders, .library = .{} } };
     hosted.start();
     defer hosted.stop();
     inline for (comptime discovery.frontends(target.adapter_sources)) |declared| {
@@ -167,7 +167,7 @@ fn writeScaffold(comptime target: ScriptTarget, arguments: []const []const u8, s
                     const scaffold = @field(frontend.scaffolds, field_name) orelse
                         return fail(diagnostics, "the {s} frontend gives no {s} scaffold", .{ language, kind });
                     if (frontend.extensions.len == 0) return fail(diagnostics, "the {s} frontend claims no extension, so its scripts cannot be named", .{language});
-                    try stdout.print("{s}\n{s}", .{ frontend.extensions[0], scaffold });
+                    try stdout.print("{s}\n{s}\n{s}", .{ frontend.extensions[0], declared.package, scaffold });
                     return;
                 }
             }
@@ -180,7 +180,7 @@ fn writeScaffold(comptime target: ScriptTarget, arguments: []const []const u8, s
 /// Prints every script kosmos and each variant it gives, `name<TAB>file` per line.
 fn writeScriptKosmoi(init: std.process.Init, comptime target: ScriptTarget, streams: Streams, diagnostics: *kosm.Diagnostics) !void {
     var runtime = try scriptRuntime(init, target, &.{}, streams.stderr, diagnostics);
-    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = runtime.arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) } };
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = runtime.arena, .io = init.io, .config = target.config, .folders = target.folders, .library = ScriptLibrary(target).library(&runtime) } };
     hosted.start();
     defer hosted.stop();
     for (try script.listAll(KosmosBuilder(target).scriptContext(&runtime, diagnostics))) |kosmos| {
@@ -351,7 +351,7 @@ fn withType(comptime found: []const type, comptime T: type) []const type {
 fn writeScriptCompletions(init: std.process.Init, comptime target: ScriptTarget, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const stdout = streams.stdout;
     var runtime = try scriptRuntime(init, target, &.{}, streams.stderr, diagnostics);
-    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = runtime.arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) } };
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = runtime.arena, .io = init.io, .config = target.config, .folders = target.folders, .library = ScriptLibrary(target).library(&runtime) } };
     hosted.start();
     defer hosted.stop();
     // A Zig kosmos sent here (one in a script kosmos' folder) completes as its own runner would.
@@ -497,7 +497,7 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var runtime = try scriptRuntime(init, target, raw_arguments, streams.stderr, diagnostics);
     runtime.kosmoi = KosmosBuilder(target).of(&runtime);
-    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = arena, .io = init.io, .config = target.config, .library = ScriptLibrary(target).library(&runtime) } };
+    var hosted: ScriptHosting(target) = .{ .state = .{ .arena = arena, .io = init.io, .config = target.config, .folders = target.folders, .library = ScriptLibrary(target).library(&runtime) } };
     hosted.start();
     defer hosted.stop();
     try checkKnown(target, &runtime, diagnostics.kosmos, diagnostics);

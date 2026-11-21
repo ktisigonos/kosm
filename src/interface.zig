@@ -39,7 +39,8 @@ pub const list_frontends_flag = "--list-frontends";
 
 /// Given to the runner of scripts in place of a kosmos name, before a frontend's name and a
 /// kind (`--scaffold lua app`), it prints the extension the frontend's scripts get on the first
-/// line, then the frontend's scaffold for that kind, and applies nothing.
+/// line, the package giving the frontend on the second, then the frontend's scaffold for that
+/// kind, and applies nothing.
 pub const scaffold_flag = "--scaffold";
 
 /// Given to the lister before a frontend's name and the module giving it (`--frontend lua

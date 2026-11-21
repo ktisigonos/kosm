@@ -15,7 +15,7 @@ pub const Error = Context.Failed || std.mem.Allocator.Error || std.Io.Writer.Err
 pub const Mode = enum { write, report };
 
 /// The one-line build every directory package has, written once.
-const build_file =
+pub const build_file =
     \\const std = @import("std");
     \\
     \\pub fn build(b: *std.Build) void {
@@ -74,6 +74,28 @@ pub fn refresh(context: Context, directory: []const u8, mode: Mode) Error!void {
     const package: Reached = .{ .directory = directory, .contents = try listContents(context, directory) };
     try planPackage(context, package, &.{package}, &changes);
     for (changes.items) |change| try save(context, mode, change);
+}
+
+/// The manifest of a new package `name` in absolute folder `folder`, outside the config: kosm
+/// and `dependencies` pinned as the config pins them (a `.path` made relative to `folder`),
+/// listing `paths`. A dependency the config lacks is an error naming it.
+pub fn standaloneManifest(context: Context, name: []const u8, folder: []const u8, dependencies: []const []const u8, paths: [][]const u8) Error![]const u8 {
+    const config_manifest = try read(context, manifest_name) orelse return context.fail("{s} has no {s}; run kosm init first", .{ context.config, manifest_name });
+    const installed = manifest.dependencies(context.arena, config_manifest) catch |err|
+        return invalidManifest(context, err, manifest_name);
+    var pinned: std.ArrayList(manifest.Dependency) = .empty;
+    for (dependencies) |wanted| {
+        var dependency = for (installed) |candidate| {
+            if (std.mem.eql(u8, candidate.name, wanted)) break candidate;
+        } else return context.fail("{s} has no '{s}' dependency, which the package needs; kosm add it first", .{ manifest_name, wanted });
+        if (dependency.path) |path| {
+            const to = try std.Io.Dir.path.resolveAlloc(context.arena, &.{ context.config, path });
+            dependency.path = try std.Io.Dir.path.relativeAlloc(context.arena, context.config, null, folder, to);
+        }
+        try pinned.append(context.arena, dependency);
+    }
+    const base = try newManifest(context, name, config_manifest);
+    return render(context.arena, base, pinned.items, paths) catch |err| invalidManifest(context, err, manifest_name);
 }
 
 /// A local kosmos, app or adapter: a single file (`kosmoi/frost.zig`) or a directory package
