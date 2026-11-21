@@ -21,8 +21,11 @@ Steps 21j4-21j6: the other parts of kosm written through a frontend, Lua first, 
 - Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
 - They keep every rule of their kind: Lua adapters know no app.
 
-- **21j4. Modifiers, palette styles and variations written in Lua** `PLAN FIRST` (later, once a need shows)
-  - Do: color modifiers, image palette styles and variation families can be written in Lua and used from any kosmos or app, Zig or Lua.
+- **21j4. Modifiers, palette styles and variations written in Lua**
+  - Do: color modifiers, image palette styles and variation families can be written in Lua and used from any kosmos or app, Zig or Lua. Agreed: all three live in `colors/`, each script saying what it is by what it returns.
+  - Done: modifiers (`kosm.Modifier.function`, `colors/<name>.lua` declaring `Modifier` and `apply(self, color)`, its module's `modifier(fields)`).
+  - Do: a palette style is a function replacing the built-in style: given each hue and the background, it returns the final color, and kosm's readability helper is exposed for it to call. `Image.Options.style` takes one.
+  - Do: a variation family is a declared struct of modifiers with defaults per mode (`colors/glow.lua` giving `Family` and `from(mode)`); a user's base holds it beside the theme, and its apps read it from there.
   - Done when: one of each, written in Lua, changes a kosmos' colors under `--diff`.
 
 - **21j5b. Lua kosmoi, looks and bases in packages** `PLAN FIRST` (later)

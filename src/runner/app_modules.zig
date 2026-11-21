@@ -1,5 +1,5 @@
-//! The Zig modules of apps written through a frontend (and, through `adapter_modules` and
-//! `frontend_modules`, of adapters and frontends): kosm reads what each script declares
+//! The Zig modules of apps written through a frontend (and, through `adapter_modules`,
+//! `frontend_modules` and `modifier_modules`, of adapters, frontends and modifiers): kosm reads what each script declares
 //! while it builds the config, and writes a module giving `App`, `from` and `App.apply` like a
 //! Zig app's, its functions running the script's own. A module is written only when its contents
 //! change, so a script edit that leaves its declaration alone compiles nothing.
@@ -52,12 +52,14 @@ pub fn source(arena: std.mem.Allocator, script: Script, declaration: Declaration
     return text.written();
 }
 
-fn lessThan(_: void, left: []const u8, right: []const u8) bool {
+/// Orders module names for imports.
+pub fn lessThan(_: void, left: []const u8, right: []const u8) bool {
     return std.mem.order(u8, left, right) == .lt;
 }
 
 /// Adds the module each Zig type in `field_type` starts with, once; `kosm` is always imported.
-fn collectImports(arena: std.mem.Allocator, script: Script, field: Declaration.Field, field_type: Declaration.Type, modules: []const []const u8, imports: *std.ArrayList([]const u8), diagnostics: *kosm.Diagnostics) Error!void {
+/// `modules` names every module of the config.
+pub fn collectImports(arena: std.mem.Allocator, script: Script, field: Declaration.Field, field_type: Declaration.Type, modules: []const []const u8, imports: *std.ArrayList([]const u8), diagnostics: *kosm.Diagnostics) Error!void {
     switch (field_type) {
         .optional => |child| {
             if (child.* == .optional) return fail(diagnostics, script, field.line, "{s}: an optional of an optional; one optional is enough", .{field.name});
@@ -94,7 +96,8 @@ fn isIdentifier(text: []const u8) bool {
     return true;
 }
 
-const WriteError = std.Io.Writer.Error || error{InvalidDeclaration};
+/// Writing a module, which a declaration kosm cannot write fails.
+pub const WriteError = std.Io.Writer.Error || error{InvalidDeclaration};
 
 fn writeModule(writer: *std.Io.Writer, script: Script, declaration: Declaration, imports: []const []const u8, diagnostics: *kosm.Diagnostics) WriteError!void {
     try writer.print("//! The app {s} declares, written by kosm from it: edit the script, never this file.\n\n", .{script.path});
@@ -143,7 +146,7 @@ fn writeModule(writer: *std.Io.Writer, script: Script, declaration: Declaration,
 }
 
 /// `doc` as `///` lines, each indented by `indent`.
-fn writeDoc(writer: *std.Io.Writer, indent: []const u8, doc: []const u8) std.Io.Writer.Error!void {
+pub fn writeDoc(writer: *std.Io.Writer, indent: []const u8, doc: []const u8) std.Io.Writer.Error!void {
     var lines = std.mem.splitScalar(u8, std.mem.trimEnd(u8, doc, "\n"), '\n');
     while (lines.next()) |line| {
         const trimmed = std.mem.trimEnd(u8, line, " \t\r");
@@ -151,7 +154,8 @@ fn writeDoc(writer: *std.Io.Writer, indent: []const u8, doc: []const u8) std.Io.
     }
 }
 
-fn writeType(writer: *std.Io.Writer, field_type: Declaration.Type) std.Io.Writer.Error!void {
+/// The Zig type of `field_type`.
+pub fn writeType(writer: *std.Io.Writer, field_type: Declaration.Type) std.Io.Writer.Error!void {
     switch (field_type) {
         .boolean => try writer.writeAll("bool"),
         .integer => try writer.writeAll("i64"),
@@ -169,7 +173,8 @@ fn writeType(writer: *std.Io.Writer, field_type: Declaration.Type) std.Io.Writer
     }
 }
 
-fn writeDefault(writer: *std.Io.Writer, script: Script, field: Declaration.Field, diagnostics: *kosm.Diagnostics) WriteError!void {
+/// The default of `field`, which a boolean, integer, float or text needs.
+pub fn writeDefault(writer: *std.Io.Writer, script: Script, field: Declaration.Field, diagnostics: *kosm.Diagnostics) WriteError!void {
     const given = field.default orelse switch (field.type) {
         .optional => return writer.writeAll("null"),
         .list => return writer.writeAll("&.{}"),
@@ -217,7 +222,7 @@ fn exampleDefault(field_type: Declaration.Type) []const u8 {
 
 /// One compile-time check per Zig type a field names, so a type that does not exist fails
 /// naming the script's line instead of this file's.
-fn writeTypeChecks(writer: *std.Io.Writer, script: Script, declaration: Declaration) std.Io.Writer.Error!void {
+pub fn writeTypeChecks(writer: *std.Io.Writer, script: Script, declaration: Declaration) std.Io.Writer.Error!void {
     var wrote_any = false;
     for (declaration.fields) |field| {
         const name = zigName(field.type) orelse continue;
@@ -248,7 +253,8 @@ fn zigName(field_type: Declaration.Type) ?[]const u8 {
     };
 }
 
-fn fail(diagnostics: *kosm.Diagnostics, script: Script, line: usize, comptime format: []const u8, arguments: anytype) error{InvalidDeclaration} {
+/// Sets `diagnostics` to `message` at the script's `line` (0: the script) and fails.
+pub fn fail(diagnostics: *kosm.Diagnostics, script: Script, line: usize, comptime format: []const u8, arguments: anytype) error{InvalidDeclaration} {
     var buffer: [512]u8 = undefined;
     const message = std.fmt.bufPrint(&buffer, format, arguments) catch buffer[0..];
     if (line == 0) diagnostics.set("", "", "{s}: {s}", .{ script.path, message }) else diagnostics.set("", "", "{s}:{d}: {s}", .{ script.path, line, message });
@@ -344,6 +350,14 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
         const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
         return @import("frontend_modules.zig").source(arena, script, declaration, diagnostics);
     }
+    if (declared == .modifier) {
+        const declare = found.declare_modifier orelse {
+            diagnostics.set("", "", "{s}: the {s} frontend writes no modifiers", .{ path, found.name });
+            return error.InvalidDeclaration;
+        };
+        const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
+        return @import("modifier_modules.zig").source(arena, script, declaration, modules, diagnostics);
+    }
     const declare = found.declare orelse {
         diagnostics.set("", "", "{s}: the {s} frontend writes no apps", .{ path, found.name });
         return error.InvalidDeclaration;
@@ -358,6 +372,18 @@ fn declaredBy(frontend: kosm.Frontend, context: *kosm.Frontend.Context, path: []
     if (std.mem.startsWith(u8, path, adapters_folder)) return .adapter;
     if (std.mem.startsWith(u8, path, frontends_folder)) return .frontend;
     if (std.mem.startsWith(u8, path, apps_folder)) return .app;
+    if (std.mem.startsWith(u8, path, colors_folder)) {
+        const declares = frontend.declares orelse {
+            diagnostics.set("", "", "{s}: the {s} frontend cannot tell what a script in colors/ gives, so it writes none", .{ path, frontend.name });
+            return error.InvalidDeclaration;
+        };
+        const declared = declares(context, text) catch |err| return declareFailed(err, context.*, path, diagnostics);
+        if (declared != .modifier) {
+            diagnostics.set("", "", "{s} gives {s}; colors/ holds modifiers, and {s} belong in {s}/", .{ path, givenAs(declared), plural(declared), plural(declared) });
+            return error.InvalidDeclaration;
+        }
+        return declared;
+    }
     const declares = frontend.declares orelse {
         diagnostics.set("", "", "{s}: the {s} frontend cannot tell what a package's root script gives, so it cannot be one", .{ path, frontend.name });
         return error.InvalidDeclaration;
@@ -371,6 +397,28 @@ const adapters_folder = "adapters/";
 const frontends_folder = "frontends/";
 /// The config's folder of apps.
 const apps_folder = "apps/";
+/// The config's folder of modifiers, whose scripts say what they give.
+const colors_folder = "colors/";
+
+/// What a script gives, as messages name it: "an app".
+fn givenAs(declared: kosm.Frontend.Declared) []const u8 {
+    return switch (declared) {
+        .app => "an app",
+        .adapter => "an adapter",
+        .frontend => "a frontend",
+        .modifier => "a modifier",
+    };
+}
+
+/// The config's folder of what a script gives: "apps".
+fn plural(declared: kosm.Frontend.Declared) []const u8 {
+    return switch (declared) {
+        .app => "apps",
+        .adapter => "adapters",
+        .frontend => "frontends",
+        .modifier => "colors",
+    };
+}
 
 fn declareFailed(err: kosm.Frontend.Error, context: kosm.Frontend.Context, path: []const u8, diagnostics: *kosm.Diagnostics) Error {
     switch (err) {
@@ -527,6 +575,8 @@ test "a package's root script is what its frontend says; a config's is what its 
     try testing.expectEqual(.adapter, try declaredBy(with, &context, "~~kosm_scratch/root.fake", "", &diagnostics));
     try testing.expectEqual(.app, try declaredBy(with, &context, "apps/cava/root.fake", "", &diagnostics));
     try testing.expectEqual(.frontend, try declaredBy(with, &context, "frontends/ini.fake", "", &diagnostics));
+    try testing.expectError(error.InvalidDeclaration, declaredBy(with, &context, "colors/sepia.fake", "", &diagnostics));
+    try testing.expectEqualStrings("colors/sepia.fake gives an adapter; colors/ holds modifiers, and adapters belong in adapters/", diagnostics.message());
     with.declares = null;
     try testing.expectError(error.InvalidDeclaration, declaredBy(with, &context, "~~kosm_scratch/root.fake", "", &diagnostics));
     try testing.expectEqualStrings("~~kosm_scratch/root.fake: the fake frontend cannot tell what a package's root script gives, so it cannot be one", diagnostics.message());

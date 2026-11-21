@@ -6,6 +6,7 @@ const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
 const Places = @import("Places.zig");
+const ScriptTarget = @import("ScriptTarget.zig");
 
 const Call = kosm.Frontend.Call;
 const Handle = kosm.Frontend.Handle;
@@ -81,10 +82,11 @@ pub fn Hosting(comptime frontends: []const discovery.DeclaredFrontend, comptime 
 
 /// The types the host hands scripts: the theme, the output and reloader, colors (for adapters),
 /// and every app in `sources` written through a frontend.
-pub fn handledTypes(comptime sources: []const discovery.AppSource) []const type {
+pub fn handledTypes(comptime sources: []const ScriptTarget.KosmosSource) []const type {
     comptime var found: []const type = &.{ kosm.Theme, kosm.Output, kosm.Reloader, kosm.Color };
     inline for (sources) |source| {
         if (comptime isScriptApp(source.module)) found = found ++ .{source.module.App};
+        if (comptime isScriptModifier(source.module)) found = found ++ .{source.module.Modifier};
     }
     const final = found[0..found.len].*;
     return &final;
@@ -95,6 +97,23 @@ pub fn isScriptApp(comptime Module: type) bool {
     if (@typeInfo(Module) != .@"struct" or !@hasDecl(Module, "App")) return false;
     const App = Module.App;
     return @TypeOf(App) == type and @typeInfo(App) == .@"struct" and @hasDecl(App, "script") and @TypeOf(App.script) == ScriptApp;
+}
+
+/// Whether `Module` is the generated module of a modifier written through a frontend.
+pub fn isScriptModifier(comptime Module: type) bool {
+    if (@typeInfo(Module) != .@"struct" or !@hasDecl(Module, "Modifier")) return false;
+    const Modifier = Module.Modifier;
+    return @TypeOf(Modifier) == type and @typeInfo(Modifier) == .@"struct" and @hasDecl(Modifier, "script") and @TypeOf(Modifier.script) == kosm.Frontend.ScriptModifier;
+}
+
+/// Whether any module of `sources` is the generated module of a modifier written through a
+/// frontend, which only the runner of scripts can run. A modifier is a value, so a tree's type
+/// cannot tell; every module the kosmos reaches is among the sources.
+pub fn holdsScriptModifiers(comptime sources: []const @import("Target.zig").AdapterSource) bool {
+    inline for (sources) |source| {
+        if (comptime isScriptModifier(source.module)) return true;
+    }
+    return false;
 }
 
 /// Whether any module of `sources` is the generated module of an adapter written through a
@@ -172,4 +191,18 @@ test "a tree holds script apps when any app inside it, at any depth or optional,
     try testing.expect(!isScriptApp(struct {
         pub const App = TestZigApp;
     }));
+}
+
+test "sources hold script modifiers when any module is a modifier's generated module" {
+    const script_modifier = struct {
+        pub const Modifier = struct {
+            amount: f64 = 1,
+            pub const script: kosm.Frontend.ScriptModifier = .{ .frontend = "test", .path = "colors/sepia.lua" };
+        };
+    };
+    const zig_modifier = struct {
+        pub const Modifier = struct { amount: f64 = 1 };
+    };
+    try testing.expect(holdsScriptModifiers(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "sepia", .module = script_modifier } }));
+    try testing.expect(!holdsScriptModifiers(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "gray", .module = zig_modifier } }));
 }

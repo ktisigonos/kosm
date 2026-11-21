@@ -26,8 +26,8 @@ pub const build_file =
 const build_name = "build.zig";
 const manifest_name = "build.zig.zon";
 const kosm_name = "kosm";
-/// The directories holding local kosmoi, apps, adapters and frontends, as the config build reads them.
-pub const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters", "frontends" };
+/// The directories holding local kosmoi, apps, adapters, frontends and modifiers, as the config build reads them.
+pub const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters", "frontends", "colors" };
 /// Kosmos files and manifests are small; this only guards against reading something huge.
 const max_file_size = 16 * 1024 * 1024;
 

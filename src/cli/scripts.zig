@@ -21,11 +21,11 @@ const stamp_path = "zig-out/scripts.built";
 const kosmoi_directory = "kosmoi";
 /// The config's own files and folders the runner is built from.
 const config_files = [_][]const u8{ "build.zig", "build.zig.zon" };
-const config_folders = [_][]const u8{ "kosmoi", "apps", "adapters", "frontends" };
-/// The config's folders whose every file counts: an app's, adapter's or frontend's script may
-/// change what it declares, which only a build sees. A build finding the declaration unchanged
-/// compiles nothing.
-const script_app_folders = [_][]const u8{ "apps", "adapters", "frontends" };
+const config_folders = [_][]const u8{ "kosmoi", "apps", "adapters", "frontends", "colors" };
+/// The config's folders whose every file counts: an app's, adapter's, frontend's or modifier's
+/// script may change what it declares, which only a build sees. A build finding the declaration
+/// unchanged compiles nothing.
+const script_app_folders = [_][]const u8{ "apps", "adapters", "frontends", "colors" };
 /// Kosm's own files and folders in its sources.
 const source_files = [_][]const u8{ "build.zig", "build.zig.zon" };
 const source_folders = [_][]const u8{ "src", "build" };

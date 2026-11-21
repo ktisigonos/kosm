@@ -1,5 +1,5 @@
 //! A transform applied to any color: OKLCH deltas, deltas in another color space, a mix,
-//! a contrast pick, alpha, or a chain of these.
+//! code of its own, a contrast pick, alpha, or a chain of these.
 
 const Modifier = @This();
 
@@ -24,7 +24,10 @@ cmyk: ?Cmyk = null,
 alpha: ?f64 = null,
 /// Mixes toward a color after every delta. Null: no mix.
 mix: ?Mix = null,
-/// Replaces the color with a readable one on top of it, after the mix. Null: no contrast pick.
+/// Code of its own run after the mix, written in Zig or through a frontend: a modifier
+/// module's `modifier(...)`, or `Function.of`. Null: none.
+function: ?Function = null,
+/// Replaces the color with a readable one on top of it, after the function. Null: no contrast pick.
 contrast: ?Contrast = null,
 /// Steps run after this one, filled by `then`. Not meant to be set by hand.
 chain: Chain = .{},
@@ -39,6 +42,8 @@ pub const Rgb = @import("Modifier/Rgb.zig");
 pub const Cmyk = @import("Modifier/Cmyk.zig");
 /// Mixing toward a color in OKLCH.
 pub const Mix = @import("Modifier/Mix.zig");
+/// Code of a modifier's own, with the fields it was given.
+pub const Function = @import("Modifier/Function.zig");
 /// Picks whichever of two colors reads better on top of the color, by WCAG 2 contrast ratio.
 pub const Contrast = @import("Modifier/Contrast.zig");
 /// One link of a composed modifier: the same fields as `Modifier`, minus the chain.
@@ -86,6 +91,7 @@ fn ownStep(modifier: Modifier) Step {
         .cmyk = modifier.cmyk,
         .alpha = modifier.alpha,
         .mix = modifier.mix,
+        .function = modifier.function,
         .contrast = modifier.contrast,
     };
 }
@@ -209,6 +215,30 @@ test "space parts are kept through then" {
     const composed = (Modifier{ .hsv = .{ .value = 0.1 } }).then(.{ .cmyk = .{ .key = 0.5 } });
     try testing.expect(composed.chain.steps[0].cmyk != null);
     try expectHex("#333333ff", composed.apply(try Color.parseHex("999999")));
+}
+
+const Halve = struct {
+    pub fn apply(_: Halve, color: Color) Color {
+        var halved = color;
+        halved.lightness /= 2;
+        return halved;
+    }
+};
+
+test "a function runs after the deltas and the mix, before the contrast pick and the alpha" {
+    const white: Color = .{ .lightness = 1, .chroma = 0, .hue = 0 };
+    const mixed: Modifier = .{ .lightness = 0.2, .mix = .{ .toward = white, .amount = 0.5 }, .function = .of(Halve, .{}), .alpha = 0.5 };
+    const result = mixed.apply(test_blue);
+    try testing.expectApproxEqAbs(0.425, result.lightness, 1e-12);
+    try testing.expectEqual(0.5, result.alpha);
+    const on_halved: Modifier = .{ .lightness = 0.6, .function = .of(Halve, .{}), .contrast = .{} };
+    try testing.expectEqual(1.0, on_halved.apply(test_blue).lightness);
+}
+
+test "then keeps each step's function" {
+    const halve: Modifier = .{ .function = .of(Halve, .{}) };
+    const composed = halve.then(.{ .lightness = 0.1 }).then(halve);
+    try testing.expectApproxEqAbs(0.175, composed.apply(test_blue).lightness, 1e-12);
 }
 
 test "then copies, so later changes to an input do not leak in" {

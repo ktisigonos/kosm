@@ -106,7 +106,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                         try functions.append(arena, function);
                         if (comptime takesSelf(Declared, Space)) try methods.append(arena, function);
                     }
-                } else if (comptime isData(Declared, 0)) {
+                } else if (comptime isData(Declared, 0) and !isRunByKosm(Space, decl_name)) {
                     const declaration = try builder.sources.declarationPath(module, decl_path);
                     const expression = if (declaration) |found| found.value else null;
                     if (try builder.typeOf(Declared, full, expression, 0)) |value_type| {
@@ -143,7 +143,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                     if (comptime !isKosmos(Space, decl_name) and !isRunByKosm(Space, decl_name) and isBindable(Declared)) {
                         entries = entries ++ .{Namespace.Entry{ .name = decl_name, .kind = .{ .function = bind(decl, decl_name, full) } }};
                     }
-                } else if (comptime isData(Declared, 0)) {
+                } else if (comptime isData(Declared, 0) and !isRunByKosm(Space, decl_name)) {
                     entries = entries ++ .{Namespace.Entry{ .name = decl_name, .kind = .{ .constant = constant(Declared, decl, decl_name, full) } }};
                 }
             }
@@ -541,9 +541,10 @@ pub fn isBindable(comptime F: type) bool {
     return true;
 }
 
-/// Whether `name` is a declaration of app `T` that only kosm uses: its `apply` and `reload`,
-/// and the `script` of an app written through a frontend.
+/// Whether `name` is a declaration of `T` that only kosm uses: an app's `apply` and `reload`,
+/// and the `script` of an app or modifier written through a frontend.
 fn isRunByKosm(comptime T: type, comptime name: []const u8) bool {
+    if (std.mem.eql(u8, name, "script") and @TypeOf(@field(T, name)) == kosm.Frontend.ScriptModifier) return true;
     if (!kosm.app.is(T)) return false;
     if (std.mem.eql(u8, name, "script")) return @TypeOf(@field(T, name)) == kosm.Frontend.ScriptApp;
     return std.mem.eql(u8, name, "apply") or std.mem.eql(u8, name, "reload");
@@ -706,6 +707,17 @@ const test_package = struct {
 
     pub const default: App = .{ .size = 3, .layouts = &.{.{ .layout = "us" }} };
 
+    /// Shaped like the module kosm generates for a modifier written through a frontend.
+    pub const Tint = struct {
+        amount: f64 = 1,
+
+        pub const script: kosm.Frontend.ScriptModifier = .{ .frontend = "test", .path = "colors/tint.lua" };
+
+        pub fn apply(self: Tint, color: kosm.Color) kosm.Color {
+            return script.apply(Tint, self, color);
+        }
+    };
+
     pub fn withAllocator(allocator: std.mem.Allocator) void {
         _ = allocator;
     }
@@ -810,6 +822,8 @@ test "functions, values and types a script can use are bound; the rest are left 
     try testing.expectEqualStrings("test_package.App", app.name);
     try testing.expect(app.find("grown") != null);
     try testing.expect(app.find("apply") == null);
+    const tint = package.find("Tint").?.kind.namespace;
+    try testing.expect(tint.find("script") == null);
     const app_type = TestLibrary.typeOf(test_package.App);
     try testing.expectEqualStrings("test_package.App", app_type.name);
     try testing.expect(app_type.method("grow") != null);

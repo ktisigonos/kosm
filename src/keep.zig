@@ -31,6 +31,11 @@ pub fn keepPrint(comptime format: []const u8, arguments: anytype) []const u8 {
     return arena_state.allocator().print(format, arguments) catch @panic("kosm.keepPrint: out of memory");
 }
 
+/// For kosm itself: the allocator `keep` copies into, for other values kept for the whole run.
+pub fn allocator() std.mem.Allocator {
+    return arena_state.allocator();
+}
+
 fn keptSquares(count: usize) []const u8 {
     const squares = keepList(u8, count);
     for (squares, 0..) |*square, index| square.* = @intCast(index * index);

@@ -115,6 +115,7 @@ test {
     std.testing.refAllDecls(Theme.Diff);
     std.testing.refAllDecls(Modifier);
     std.testing.refAllDecls(Modifier.Step);
+    std.testing.refAllDecls(Modifier.Function);
     std.testing.refAllDecls(Variations);
     std.testing.refAllDecls(Keyboard);
     std.testing.refAllDecls(@import("curve.zig"));
@@ -147,6 +148,7 @@ test {
     std.testing.refAllDecls(Frontend);
     std.testing.refAllDecls(Frontend.Handle);
     std.testing.refAllDecls(Frontend.ScriptApp);
+    std.testing.refAllDecls(Frontend.ScriptModifier);
     std.testing.refAllDecls(Frontend.ScriptFrontend);
     std.testing.refAllDecls(kosmos_file);
 }

@@ -62,6 +62,11 @@ fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void
         if (context.diagnostics.message().len == 0) context.diagnostics.set(path, "", "apply failed: {s}", .{@errorName(err)});
         return error.ApplyFailed;
     };
+    // A modifier cannot fail, so a script's failure in one the app applied is only recorded.
+    if (kosm.failure.message()) |message| {
+        context.diagnostics.set(path, "", "{s}", .{message});
+        return error.ApplyFailed;
+    }
 }
 
 /// Calls `reload` on every app in `tree` that has one, in field order. A failure is a warning
@@ -182,6 +187,25 @@ test "an app's own error is reported with its path" {
     try testing.expectError(error.ApplyFailed, planTree(.{ .bar = .{ .waybar = FailingApp{} } }, fixture.context("/home/test")));
     try testing.expectEqualStrings("bar.waybar", fixture.diagnostics.app);
     try testing.expectEqualStrings("apply failed: GlowMissing", fixture.diagnostics.message());
+}
+
+const RecordingApp = struct {
+    pub fn apply(self: RecordingApp, output: *kosm.Output) !void {
+        _ = self;
+        _ = output;
+        kosm.failure.record("colors/sepia.lua:6: attempt to index a nil value", .{});
+    }
+};
+
+test "a failure a modifier recorded while an app applied fails that app with the script's message" {
+    defer kosm.failure.clear();
+    kosm.failure.clear();
+    var fixture: Fixture = undefined;
+    fixture.init();
+    defer fixture.deinit();
+    try testing.expectError(error.ApplyFailed, planTree(.{ .terminal = .{ .kitty = RecordingApp{} } }, fixture.context("/home/test")));
+    try testing.expectEqualStrings("terminal.kitty", fixture.diagnostics.app);
+    try testing.expectEqualStrings("colors/sepia.lua:6: attempt to index a nil value", fixture.diagnostics.message());
 }
 
 const ReloadingApp = struct {
