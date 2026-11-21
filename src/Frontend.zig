@@ -45,6 +45,11 @@ declare_adapter: ?*const fn (context: *Context, source: []const u8) Error!Adapte
 /// write the Zig module the frontend is used through. `context.library` is empty there. Null
 /// for a frontend writing no frontends.
 declare_frontend: ?*const fn (context: *Context, source: []const u8) Error!FrontendDeclaration = null,
+/// Says what the script `source` gives (an app, an adapter or a frontend) from what it returns,
+/// without calling any of its functions; kosm calls it for a package's root script, which no
+/// folder names the kind of. Fail through `Context.fail` when it gives none or more than one.
+/// Null for a frontend whose scripts cannot be packages' roots.
+declares: ?*const fn (context: *Context, source: []const u8) Error!Declared = null,
 /// Calls function `function` of the app's or adapter's script at `context.path`, whose text is
 /// `source`, with `arguments`, and returns what it returns: a table as a loose table, a Zig
 /// value as its handle. The script runs once, on the first call naming it, in the frontend's one
@@ -69,6 +74,9 @@ pub const Declaration = @import("Frontend/Declaration.zig");
 
 /// What an adapter's script declares, for `declare_adapter`.
 pub const AdapterDeclaration = @import("Frontend/AdapterDeclaration.zig");
+
+/// What a script gives, for `declares`.
+pub const Declared = enum { app, adapter, frontend };
 
 /// What a frontend's script declares, for `declare_frontend`.
 pub const FrontendDeclaration = @import("Frontend/FrontendDeclaration.zig");

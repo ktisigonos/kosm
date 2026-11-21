@@ -327,7 +327,8 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
     };
     const script: Script = .{ .name = name, .path = path, .frontend = found.name };
     var context: kosm.Frontend.Context = .{ .arena = arena, .path = path };
-    if (std.mem.startsWith(u8, path, adapters_folder)) {
+    const declared = try declaredBy(found, &context, path, text, diagnostics);
+    if (declared == .adapter) {
         const declare = found.declare_adapter orelse {
             diagnostics.set("", "", "{s}: the {s} frontend writes no adapters", .{ path, found.name });
             return error.InvalidDeclaration;
@@ -335,7 +336,7 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
         const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
         return @import("adapter_modules.zig").source(arena, script, declaration, found.counts_from, diagnostics);
     }
-    if (std.mem.startsWith(u8, path, frontends_folder)) {
+    if (declared == .frontend) {
         const declare = found.declare_frontend orelse {
             diagnostics.set("", "", "{s}: the {s} frontend writes no frontends", .{ path, found.name });
             return error.InvalidDeclaration;
@@ -351,10 +352,25 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
     return source(arena, script, declaration, modules, diagnostics);
 }
 
+/// What script `path` gives: in the config, what its folder holds; a package's root script
+/// says it itself, through its frontend.
+fn declaredBy(frontend: kosm.Frontend, context: *kosm.Frontend.Context, path: []const u8, text: []const u8, diagnostics: *kosm.Diagnostics) Error!kosm.Frontend.Declared {
+    if (std.mem.startsWith(u8, path, adapters_folder)) return .adapter;
+    if (std.mem.startsWith(u8, path, frontends_folder)) return .frontend;
+    if (std.mem.startsWith(u8, path, apps_folder)) return .app;
+    const declares = frontend.declares orelse {
+        diagnostics.set("", "", "{s}: the {s} frontend cannot tell what a package's root script gives, so it cannot be one", .{ path, frontend.name });
+        return error.InvalidDeclaration;
+    };
+    return declares(context, text) catch |err| declareFailed(err, context.*, path, diagnostics);
+}
+
 /// The config's folder of adapters, whose scripts declare adapters rather than apps.
 const adapters_folder = "adapters/";
 /// The config's folder of frontends, whose scripts declare frontends.
 const frontends_folder = "frontends/";
+/// The config's folder of apps.
+const apps_folder = "apps/";
 
 fn declareFailed(err: kosm.Frontend.Error, context: kosm.Frontend.Context, path: []const u8, diagnostics: *kosm.Diagnostics) Error {
     switch (err) {
@@ -492,4 +508,26 @@ test "a module is written only when its contents change" {
     try writeIfChanged(testing.io, arena.allocator(), path, "two", &diagnostics);
     try testing.expect((try tmp.dir.statFile(testing.io, "cava.zig", .{})).mtime.nanoseconds != 0);
     try testing.expectEqualStrings("two", try tmp.dir.readFileAlloc(testing.io, "cava.zig", arena.allocator(), .limited(16)));
+}
+
+test "a package's root script is what its frontend says; a config's is what its folder holds" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const Fake = struct {
+        fn declaresAdapter(_: *kosm.Frontend.Context, _: []const u8) kosm.Frontend.Error!kosm.Frontend.Declared {
+            return .adapter;
+        }
+        fn load(_: *kosm.Frontend.Context, _: []const u8) kosm.Frontend.Error!kosm.Frontend.Script {
+            return error.InvalidScript;
+        }
+    };
+    var with: kosm.Frontend = .{ .name = "fake", .extensions = &.{".fake"}, .load = Fake.load, .declares = Fake.declaresAdapter };
+    var context: kosm.Frontend.Context = .{ .arena = arena.allocator(), .path = "" };
+    var diagnostics: kosm.Diagnostics = .{};
+    try testing.expectEqual(.adapter, try declaredBy(with, &context, "~~kosm_scratch/root.fake", "", &diagnostics));
+    try testing.expectEqual(.app, try declaredBy(with, &context, "apps/cava/root.fake", "", &diagnostics));
+    try testing.expectEqual(.frontend, try declaredBy(with, &context, "frontends/ini.fake", "", &diagnostics));
+    with.declares = null;
+    try testing.expectError(error.InvalidDeclaration, declaredBy(with, &context, "~~kosm_scratch/root.fake", "", &diagnostics));
+    try testing.expectEqualStrings("~~kosm_scratch/root.fake: the fake frontend cannot tell what a package's root script gives, so it cannot be one", diagnostics.message());
 }

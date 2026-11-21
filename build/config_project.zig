@@ -16,6 +16,7 @@
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
 const unify = @import("unify.zig").unify;
+const app_generator = @import("app_generator.zig");
 
 /// The directories holding local kosmoi, apps, adapters and frontends, in the config's root.
 const local_directories = [_][]const u8{ "kosmoi", "apps", "adapters", "frontends" };
@@ -165,33 +166,13 @@ fn dependOnGenerated(compile: *std.Build.Step.Compile, entries: []const Entry) v
 /// them waits for it.
 /// The run is cached on the scripts, and rewrites only the modules whose contents change.
 fn addAppGenerator(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kosm_dependency: *std.Build.Dependency, entries: []Entry) void {
-    var source: std.Io.Writer.Allocating = .init(b.allocator);
-    const writer = &source.writer;
-    writer.writeAll(
-        \\const std = @import("std");
-        \\const runner = @import("kosm_runner");
-        \\
-        \\pub fn main(init: std.process.Init) !u8 {
-        \\    return runner.generateApps(init, &.{
-        \\
-    ) catch @panic("OOM");
+    var frontends: std.ArrayList(app_generator.FrontendModule) = .empty;
     for (entries) |entry| {
         if (!givesFrontends(entry)) continue;
         const package = if (entry.kind == .frontend) entry.name[0 .. entry.name.len - "_frontend".len] else entry.name;
-        writer.print("        .{{ .package = \"{f}\", .module = @import(\"{f}\") }},\n", .{ std.zig.fmtString(package), std.zig.fmtString(entry.name) }) catch @panic("OOM");
+        frontends.append(b.allocator, .{ .package = package, .name = entry.name, .module = entry.module }) catch @panic("OOM");
     }
-    writer.writeAll(
-        \\    });
-        \\}
-        \\
-    ) catch @panic("OOM");
-    const files = b.addWriteFiles();
-    const root_module = b.createModule(.{ .root_source_file = files.add("main.zig", source.written()), .target = target, .optimize = optimize });
-    root_module.addImport("kosm_runner", kosm_dependency.module("kosm_runner"));
-    for (entries) |entry| {
-        if (givesFrontends(entry)) root_module.addImport(entry.name, entry.module);
-    }
-    const generator = b.addExecutable(.{ .name = "kosm-apps", .root_module = root_module });
+    const generator = app_generator.addGenerator(b, target, optimize, kosm_dependency.module("kosm_runner"), frontends.items);
 
     const run = b.addRunArtifact(generator);
     run.addArg(b.root.joinString(b.allocator, generated_folder) catch @panic("OOM"));
@@ -325,15 +306,9 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
 /// The file name of the script in the folder `name` of `dir` giving its kosmos or app: `root`
 /// with an extension other than Zig's and its manifests'; null for none.
 fn scriptRootFile(b: *std.Build, dir: std.Io.Dir, name: []const u8) !?[]const u8 {
-    const io = b.graph.io;
-    var folder = try dir.openDir(io, name, .{ .iterate = true });
-    defer folder.close(io);
-    var iterator = folder.iterate();
-    while (try iterator.next(io)) |file| {
-        if (file.kind != .file and file.kind != .sym_link) continue;
-        if (isScriptFile(file.name) and std.mem.eql(u8, scriptStem(file.name), script_root)) return b.dupe(file.name);
-    }
-    return null;
+    var folder = try dir.openDir(b.graph.io, name, .{ .iterate = true });
+    defer folder.close(b.graph.io);
+    return app_generator.scriptRootIn(b, folder);
 }
 
 /// Whether the generator looks for frontends in `entry`: a package's frontend module, or a Zig
@@ -351,20 +326,9 @@ fn generatedRoot(b: *std.Build, name: []const u8) []const u8 {
     return b.fmt("{s}/{s}.zig", .{ generated_folder, name });
 }
 
-/// The file name a script giving its folder's kosmos has before its extension.
-const script_root = "root";
-
-/// Whether `file_name` is a script: not hidden, with an extension other than Zig's and its
-/// manifests'.
-fn isScriptFile(file_name: []const u8) bool {
-    if (std.mem.startsWith(u8, file_name, ".") or std.mem.endsWith(u8, file_name, ".zig") or std.mem.endsWith(u8, file_name, ".zon")) return false;
-    return std.mem.findScalar(u8, file_name, '.') != null;
-}
-
-/// A script's file name before its first dot: "nord" of "nord.lua".
-fn scriptStem(file_name: []const u8) []const u8 {
-    return file_name[0 .. std.mem.findScalar(u8, file_name, '.') orelse file_name.len];
-}
+const script_root = app_generator.script_root;
+const isScriptFile = app_generator.isScriptFile;
+const scriptStem = app_generator.scriptStem;
 
 fn localLessThan(_: void, left: Local, right: Local) bool {
     return std.mem.lessThan(u8, left.name, right.name);
@@ -618,13 +582,16 @@ fn moduleFolder(b: *std.Build, entry: Entry) ?[]const u8 {
         const config_root = b.root.joinString(b.allocator, "") catch @panic("OOM");
         return std.Io.Dir.path.resolveAlloc(b.allocator, &.{ config_root, std.Io.Dir.path.dirname(script) orelse "." }) catch @panic("OOM");
     };
+    // A package's folder is its own root, where its manifest and files sit, wherever its
+    // module's root file is (a package written in a script has its module generated).
+    const config_root = b.root.joinString(b.allocator, "") catch @panic("OOM");
+    // A `.path` dependency's root is relative to the config's.
+    if (entry.kind == .package) return std.Io.Dir.path.resolveAlloc(b.allocator, &.{ config_root, entry.module.owner.root.joinString(b.allocator, "") catch @panic("OOM") }) catch @panic("OOM");
     const root = entry.module.root_source_file orelse {
         fail(b, "{s}: the module has no root file, so its folder is unknown", .{entry.origin});
         return null;
     };
-    // A package's folder is its own root, where its manifest and files sit, wherever its
-    // module's root file is; a local module's is the folder holding its root file.
-    const sub_path = if (entry.kind == .package) "" else switch (root) {
+    const sub_path = switch (root) {
         .src_path => |source| source.sub_path,
         .dependency => |dependency| dependency.sub_path,
         else => "",
@@ -637,9 +604,7 @@ fn moduleFolder(b: *std.Build, entry: Entry) ?[]const u8 {
             return null;
         },
     } catch @panic("OOM");
-    const folder = if (entry.kind == .package) file else std.Io.Dir.path.dirname(file) orelse file;
-    // A `.path` dependency's root is relative to the config's.
-    const config_root = b.root.joinString(b.allocator, "") catch @panic("OOM");
+    const folder = std.Io.Dir.path.dirname(file) orelse file;
     return std.Io.Dir.path.resolveAlloc(b.allocator, &.{ config_root, folder }) catch @panic("OOM");
 }
 

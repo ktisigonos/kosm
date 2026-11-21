@@ -5,6 +5,7 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
+const Places = @import("Places.zig");
 
 const Call = kosm.Frontend.Call;
 const Handle = kosm.Frontend.Handle;
@@ -24,13 +25,17 @@ pub fn Hosting(comptime frontends: []const discovery.DeclaredFrontend, comptime 
             io: std.Io,
             /// The config project, which scripts' paths are relative to.
             config: []const u8,
+            /// What `~~<name>/` stands for in a script's path: a package's root script is
+            /// `~~<package>/root.lua`.
+            folders: []const Places.Folder = &.{},
             library: kosm.Frontend.Library,
             /// Each script's text by its path, read once.
             sources: std.StringHashMapUnmanaged([]const u8) = .empty,
 
             fn source(state: *State, path: []const u8) ![]const u8 {
                 if (state.sources.get(path)) |known| return known;
-                const full = try std.Io.Dir.path.join(state.arena, &.{ state.config, path });
+                const places: Places = .{ .home = state.config, .config = state.config, .kosmos = state.config, .folders = state.folders };
+                const full = try places.resolve(state.arena, path);
                 const text = try std.Io.Dir.cwd().readFileAlloc(state.io, full, state.arena, .limited(max_script_size));
                 try state.sources.put(state.arena, path, text);
                 return text;
@@ -50,6 +55,7 @@ pub fn Hosting(comptime frontends: []const discovery.DeclaredFrontend, comptime 
             const call_function = frontend.call orelse return call.fail("{s}: the {s} frontend runs no apps or adapters", .{ app.path, frontend.name });
             const text = state.source(app.path) catch |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
+                error.UnknownPlace => return call.fail("{s}: the package holding it is not in the config's build.zig.zon, so kosm cannot find its script; kosm add it", .{app.path}),
                 else => return call.fail("cannot read {s}: {s}", .{ app.path, @errorName(err) }),
             };
             var context: kosm.Frontend.Context = .{ .arena = call.arena, .path = app.path, .library = state.library };
