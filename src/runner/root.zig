@@ -164,14 +164,16 @@ fn writeScaffold(comptime target: ScriptTarget, arguments: []const []const u8, s
         if (std.mem.eql(u8, frontend.name, language)) {
             inline for (@typeInfo(kosm.Frontend.Scaffolds).@"struct".field_names) |field_name| {
                 if (std.mem.eql(u8, field_name, kind)) {
-                    const scaffold = @field(frontend.scaffolds, field_name) orelse
+                    // A package's root holds an app, so a frontend without a scaffold of its own for one gives its app's.
+                    const given: ?[]const u8 = if (comptime std.mem.eql(u8, field_name, "package")) frontend.scaffolds.package orelse frontend.scaffolds.app else @field(frontend.scaffolds, field_name);
+                    const scaffold = given orelse
                         return fail(diagnostics, "the {s} frontend gives no {s} scaffold", .{ language, kind });
                     if (frontend.extensions.len == 0) return fail(diagnostics, "the {s} frontend claims no extension, so its scripts cannot be named", .{language});
                     try stdout.print("{s}\n{s}\n{s}", .{ frontend.extensions[0], declared.package, scaffold });
                     return;
                 }
             }
-            return fail(diagnostics, "{s} is not a kind kosm new scaffolds: kosmos, app, adapter, frontend, modifier, style or family", .{kind});
+            return fail(diagnostics, "{s} is not a kind kosm new scaffolds: kosmos, app, package, adapter, frontend, modifier, style or family", .{kind});
         }
     }
     return fail(diagnostics, "no frontend of this config is named '{s}'; kosm list --frontends lists them", .{language});
@@ -286,7 +288,7 @@ fn ScriptLibrary(comptime target: ScriptTarget) type {
 
 /// The host apps written through a frontend run through.
 fn ScriptHost(comptime target: ScriptTarget) type {
-    return hosting.Hosting(comptime discovery.frontends(target.adapter_sources), ScriptLibrary(target), comptime hosting.handledTypes(target.kosmoi));
+    return hosting.Hosting(comptime discovery.frontends(target.adapter_sources), ScriptLibrary(target), comptime hosting.handledTypes(target.kosmoi, target.reached));
 }
 
 /// The host scripts' functions run through, from `start` until `stop`; it must not move
@@ -628,6 +630,7 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
                 .frontends = comptime discovery.frontends(target.adapter_sources),
                 .modules = comptime moduleNames(target.kosmoi),
                 .kosmoi = comptime kosmosNames(target.kosmoi),
+                .packages = comptime packageKosmoi(target.kosmoi),
                 .library = ScriptLibrary(target).library(runtime),
                 .calls_folder = &runtime.scripts_folder,
                 .diagnostics = diagnostics,
@@ -741,6 +744,20 @@ fn kosmosNames(comptime sources: []const ScriptTarget.KosmosSource) []const scri
     comptime var names: []const script.KosmosName = &.{};
     inline for (comptime kosmos_call.zigKosmoi(sources)) |entry| names = names ++ .{script.KosmosName{ .name = entry.name, .origin = entry.origin }};
     const final = names[0..names.len].*;
+    return &final;
+}
+
+/// Every module of `sources` that is the generated module of a package whose root script gives
+/// its kosmos.
+fn packageKosmoi(comptime sources: []const ScriptTarget.KosmosSource) []const script.PackageKosmos {
+    comptime var found: []const script.PackageKosmos = &.{};
+    inline for (sources) |source| {
+        if (comptime hosting.isScriptKosmos(source.module)) {
+            const path = source.module.script.path;
+            found = found ++ .{script.PackageKosmos{ .name = source.name, .path = path, .file = source.folder ++ "/" ++ comptime std.Io.Dir.path.basename(path) }};
+        }
+    }
+    const final = found[0..found.len].*;
     return &final;
 }
 

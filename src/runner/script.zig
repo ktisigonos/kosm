@@ -1,5 +1,6 @@
-//! Finds a script kosmos in the config's `kosmoi/`, reads it through the frontend claiming its
-//! extension, and follows what it builds on through other scripts down to a Zig kosmos or to none.
+//! Finds a script kosmos in the config's `kosmoi/` or at a package's root, reads it through the
+//! frontend claiming its extension, and follows what it builds on through other scripts down to a
+//! Zig kosmos or to none.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -27,6 +28,8 @@ pub const Context = struct {
     modules: []const []const u8,
     /// Every Zig kosmos, which no script in a kosmos' folder may share its name with.
     kosmoi: []const KosmosName = &.{},
+    /// Every package whose root script gives its kosmos, named after the package.
+    packages: []const PackageKosmos = &.{},
     /// What a script may call.
     library: kosm.Frontend.Library = .{},
     /// Set to each script's folder while its frontend reads it, so that relative paths the
@@ -44,6 +47,16 @@ pub const Context = struct {
 pub const KosmosName = struct {
     name: []const u8,
     origin: []const u8,
+};
+
+/// A package whose root script gives its kosmos.
+pub const PackageKosmos = struct {
+    /// The package's name, which its kosmos is applied as: "kosm_frost".
+    name: []const u8,
+    /// As messages show it: "~~kosm_frost/root.lua".
+    path: []const u8,
+    /// The script's absolute path.
+    file: []const u8,
 };
 
 /// One script read by its frontend.
@@ -85,9 +98,9 @@ pub const Location = struct {
 /// The file name a script giving its folder's kosmos has before its extension.
 const root_name = "root";
 
-/// The script kosmos `name` (with any variant) names: `kosmoi/<name>.<extension>` or
-/// `kosmoi/<name>/root.<extension>`, or for `kosmos.variant` also
-/// `kosmoi/<kosmos>/<variant>.<extension>`. Null when there is none, or when `name` is a Zig
+/// The script kosmos `name` (with any variant) names: `kosmoi/<name>.<extension>`,
+/// `kosmoi/<name>/root.<extension>` or the root script of package `name`, or for
+/// `kosmos.variant` also `kosmoi/<kosmos>/<variant>.<extension>`. Null when there is none, or when `name` is a Zig
 /// kosmos, which wins over the variants of a script it shares a folder with. Two scripts, or a
 /// script and a Zig kosmos, giving the same name fail naming both.
 pub fn locate(context: Context, name: []const u8) Error!?Location {
@@ -98,7 +111,10 @@ pub fn locate(context: Context, name: []const u8) Error!?Location {
     var root = try locatedIn(context, folder, root_name, first, first.len);
     if (root) |*found| found.is_root = true;
     if (top != null and root != null) return fail(context, "'{s}' names both {s} and {s}; rename one", .{ first, top.?.path, root.?.path });
-    const owner = top orelse root;
+    const package = packageKosmos(context, first);
+    if (package) |found| if (top orelse root) |local|
+        return fail(context, "'{s}' names both {s} and the kosmos of package '{s}' ({s}); rename one", .{ first, local.path, first, found.path });
+    const owner = top orelse root orelse package;
     const variant = segments.next() orelse return owner;
     const nested_name = name[0 .. first.len + 1 + variant.len];
     const nested = if (std.mem.eql(u8, variant, root_name)) null else try locatedIn(context, folder, variant, nested_name, nested_name.len);
@@ -130,6 +146,15 @@ fn locatedIn(context: Context, folder: []const u8, name: []const u8, shown: []co
         .name_length = name_length,
         .extension = file_name[name.len..],
     };
+}
+
+/// The root script of package `name` giving its kosmos, or null when there is none.
+fn packageKosmos(context: Context, name: []const u8) ?Location {
+    for (context.packages) |package| {
+        if (!std.mem.eql(u8, package.name, name)) continue;
+        return .{ .path = package.path, .name_length = name.len, .extension = std.Io.Dir.path.extension(package.path), .is_root = true };
+    }
+    return null;
 }
 
 /// Where the Zig kosmos `name` is declared, or null when there is none.
@@ -286,15 +311,23 @@ fn load(context: Context, name: []const u8, location: Location, variant: []const
     return .{ .name = name, .path = shown, .folder = try scriptFolder(context, shown), .script = script };
 }
 
-/// The absolute folder holding the config's script `shown`.
+/// The absolute folder holding script `shown`.
 fn scriptFolder(context: Context, shown: []const u8) std.mem.Allocator.Error![]const u8 {
-    return std.Io.Dir.path.dirname(try std.Io.Dir.path.join(context.arena, &.{ context.config, shown })).?;
+    return std.Io.Dir.path.dirname(try fullPath(context, shown)).?;
 }
 
-/// The text of the config's script `shown`, which lives for the whole run. Relative paths the
-/// script gives its calls start from its folder from now on.
+/// The absolute path of script `shown`: a package's root script, or one of the config's.
+fn fullPath(context: Context, shown: []const u8) std.mem.Allocator.Error![]const u8 {
+    for (context.packages) |package| {
+        if (std.mem.eql(u8, package.path, shown)) return package.file;
+    }
+    return std.Io.Dir.path.join(context.arena, &.{ context.config, shown });
+}
+
+/// The text of script `shown`, which lives for the whole run. Relative paths the script gives
+/// its calls start from its folder from now on.
 fn readScript(context: Context, shown: []const u8) Error![]const u8 {
-    const full_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, shown });
+    const full_path = try fullPath(context, shown);
     if (context.calls_folder) |calls_folder| calls_folder.* = try scriptFolder(context, shown);
     return std.Io.Dir.cwd().readFileAlloc(context.io, full_path, context.arena, .limited(size_limit)) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -431,11 +464,12 @@ fn assigned(result: kosm.assignment.Error!void) Error!void {
     };
 }
 
-/// Every script kosmos in the config, as `kosm apply` spells it, followed by each variant it
-/// gives (`minimal`, `minimal.light`), each with its file as origin, in no particular order of
-/// files. Listing variants runs no script.
+/// Every script kosmos in the config and at packages' roots, as `kosm apply` spells it, followed
+/// by each variant it gives (`minimal`, `minimal.light`), each with its file as origin, in no
+/// particular order of files. Listing variants runs no script.
 pub fn listAll(context: Context) Error![]const KosmosName {
     var found: std.ArrayList(KosmosName) = .empty;
+    for (context.packages) |package| try appendScript(context, &found, package.name, package.path);
     var top = try openKosmoiFolder(context, directory) orelse return found.items;
     defer top.close(context.io);
     var iterator = top.iterate();
@@ -625,6 +659,39 @@ test "a script found by its name is read through the frontend claiming its exten
     try testing.expectEqualStrings("kosmoi/mine.kosmos:3", chain.scripts[0].script.overrides.?.value.table[0].value.value.table[0].value.origin.?);
     try testing.expectEqual(null, try locate(fixture.context(), "frost"));
     try testing.expectEqual(null, try locate(fixture.context(), "hidden"));
+}
+
+test "a package's root script gives the kosmos named after the package, read from its folder" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{
+        .{ "mine.kosmos", "base kosm_glacier.light\nset kitty.size=4\n" },
+        .{ "kosm_ice.kosmos", "" },
+    });
+    defer fixture.deinit();
+    try fixture.tmp.dir.createDirPath(testing.io, "packages/kosm_glacier");
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "packages/kosm_glacier/root.kosmos", .data = "variants\ngives light\nparam wallpaper=walls/ice.png\n" });
+    const folder = try std.Io.Dir.path.join(fixture.arena.allocator(), &.{ fixture.config, "packages/kosm_glacier" });
+    var context = fixture.context();
+    context.modules = &.{ "frost", "kosm_glacier", "kosm_ice" };
+    context.packages = &.{
+        .{ .name = "kosm_glacier", .path = "~~kosm_glacier/root.kosmos", .file = try std.Io.Dir.path.join(fixture.arena.allocator(), &.{ folder, "root.kosmos" }) },
+    };
+
+    // A script builds on a package's kosmos, here one of its variants, which builds on frost.
+    const chain = try resolve(context, "mine");
+    try testing.expectEqual(2, chain.scripts.len);
+    try testing.expectEqualStrings("kosm_glacier.light", chain.scripts[0].name);
+    try testing.expectEqualStrings("~~kosm_glacier/root.kosmos", chain.scripts[0].path);
+    try testing.expectEqualStrings(folder, chain.scripts[0].folder);
+    try testing.expectEqualStrings("light", chain.base.?);
+    const listed = try listAll(context);
+    try testing.expectEqualStrings("kosm_glacier", listed[0].name);
+    try testing.expectEqualStrings("kosm_glacier.light", listed[1].name);
+    try testing.expectEqualStrings("~~kosm_glacier/root.kosmos", listed[1].origin);
+    // A script of the config sharing a package kosmos' name fails naming both.
+    context.packages = &.{.{ .name = "kosm_ice", .path = "~~kosm_ice/root.kosmos", .file = "/nowhere/root.kosmos" }};
+    try testing.expectError(error.Reported, locate(context, "kosm_ice"));
+    try testing.expectEqualStrings("'kosm_ice' names both kosmoi/kosm_ice.kosmos and the kosmos of package 'kosm_ice' (~~kosm_ice/root.kosmos); rename one", fixture.diagnostics.message());
 }
 
 test "a script in a kosmos' folder is that kosmos' variant, read from its own folder" {

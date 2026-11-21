@@ -6,6 +6,7 @@
 const std = @import("std");
 const Context = @import("Context.zig");
 const interface = @import("kosm_interface");
+const manifest = @import("manifest.zig");
 
 pub const Error = Context.RunError;
 
@@ -36,12 +37,16 @@ const skipped_folders = [_][]const u8{ "zig-out", "zig-pkg", ".zig-cache" };
 /// runner refuses) when `kosmoi/` holds a file named after its part before the first dot,
 /// "personal.nord" also when the kosmos folder `kosmoi/personal/` holds one named `nord`, and
 /// every name starting with "frost" when `kosmoi/frost/` holds a `root` script, whose folder may
-/// hold Zig variants too, which that runner tells apart. Scripts have any extension but Zig's
-/// and its manifests'.
+/// hold Zig variants too, which that runner tells apart, and every name starting with "kosm_frost"
+/// when that package of the config has a root script, which may give a kosmos. Scripts have any
+/// extension but Zig's and its manifests'.
 pub fn isScript(context: Context, name: []const u8) Error!bool {
     var segments = std.mem.splitScalar(u8, name, '.');
     const first = segments.first();
     if (try holdsScript(context, kosmoi_directory, first)) return true;
+    for (try scriptPackages(context)) |package| {
+        if (std.mem.eql(u8, package, first)) return true;
+    }
     const folder = try std.Io.Dir.path.join(context.arena, &.{ kosmoi_directory, first });
     if (try holdsScript(context, folder, script_root)) return true;
     const variant = segments.next() orelse return false;
@@ -63,6 +68,52 @@ fn holdsScript(context: Context, folder: []const u8, name: []const u8) Error!boo
         if (std.mem.startsWith(u8, entry.name, ".") or isZig(entry.name)) continue;
         const dot = std.mem.findScalar(u8, entry.name, '.') orelse continue;
         if (name.len == 0 or std.mem.eql(u8, entry.name[0..dot], name)) return true;
+    }
+    return false;
+}
+
+/// The packages in the config's `build.zig.zon` whose fetched folder (or `.path`) holds a root
+/// script and no `root.zig`. Whether a script gives a kosmos, an app or anything else only its
+/// frontend tells, so the runner of scripts sorts them out. A package not fetched yet is not
+/// listed.
+fn scriptPackages(context: Context) Error![]const []const u8 {
+    const manifest_path = try std.Io.Dir.path.join(context.arena, &.{ context.config, "build.zig.zon" });
+    const source = std.Io.Dir.cwd().readFileAllocOptions(context.io, manifest_path, context.arena, .limited(manifest_limit), .of(u8), 0) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        // Building the config says what is wrong with a folder that is no config project.
+        error.FileNotFound => return &.{},
+        else => return context.fail("cannot read {s}: {s}", .{ manifest_path, @errorName(err) }),
+    };
+    const dependencies = manifest.dependencies(context.arena, source) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidManifest => return context.fail("{s} is not a valid manifest; zig build says why", .{manifest_path}),
+    };
+    var found: std.ArrayList([]const u8) = .empty;
+    for (dependencies) |dependency| {
+        const folder = if (dependency.path) |path|
+            try std.Io.Dir.path.resolveAlloc(context.arena, &.{ context.config, path })
+        else if (dependency.hash) |hash|
+            try std.Io.Dir.path.join(context.arena, &.{ context.config, "zig-pkg", hash })
+        else
+            continue;
+        if (try isScriptRoot(context, folder)) try found.append(context.arena, dependency.name);
+    }
+    return found.items;
+}
+
+/// A manifest is a few hundred bytes; this only guards against reading something huge.
+const manifest_limit = 1024 * 1024;
+
+/// Whether `folder` holds a root script and no `root.zig`; a missing folder holds none.
+fn isScriptRoot(context: Context, folder: []const u8) Error!bool {
+    var dir = std.Io.Dir.cwd().openDir(context.io, folder, .{ .iterate = true }) catch return false;
+    defer dir.close(context.io);
+    if (dir.access(context.io, "root.zig", .{})) |_| return false else |_| {}
+    var iterator = dir.iterate();
+    while (iterator.next(context.io) catch |err| return context.fail("cannot read {s}: {s}", .{ folder, @errorName(err) })) |entry| {
+        if (entry.kind != .file and entry.kind != .sym_link) continue;
+        if (isZig(entry.name) or !std.mem.startsWith(u8, entry.name, script_root ++ ".")) continue;
+        return true;
     }
     return false;
 }
@@ -112,9 +163,11 @@ pub fn baseOf(context: Context, name: []const u8) Error!?[]const u8 {
     return null;
 }
 
-/// Whether `kosmoi/` or a kosmos folder in it holds any script kosmos.
+/// Whether `kosmoi/` or a kosmos folder in it holds any script kosmos, or a package of the
+/// config has a root script, which may give one.
 pub fn any(context: Context) Error!bool {
     if (try holdsScript(context, kosmoi_directory, "")) return true;
+    if ((try scriptPackages(context)).len != 0) return true;
     const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, kosmoi_directory });
     var dir = std.Io.Dir.cwd().openDir(context.io, path, .{ .iterate = true }) catch return false;
     defer dir.close(context.io);
@@ -654,6 +707,39 @@ fn testProject(arena: std.mem.Allocator, dir: std.Io.Dir, stdout: *std.Io.Writer
     try dir.createDirPath(testing.io, "project/apps");
     try dir.createDirPath(testing.io, "project/adapters");
     return context;
+}
+
+test "a package whose root is a script may give a kosmos, a Zig one and one not fetched never" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var output: std.Io.Writer.Allocating = .init(arena);
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "build.zig.zon", .data =
+        \\.{ .name = .config, .dependencies = .{
+        \\    .kosm_glacier = .{ .path = "glacier" },
+        \\    .kosm_kitty = .{ .path = "kitty" },
+        \\    .kosm_frost = .{ .url = "x", .hash = "frost-hash" },
+        \\    .kosm_hail = .{ .url = "x", .hash = "hail-hash" },
+        \\} }
+        \\
+    });
+    try tmp.dir.createDirPath(testing.io, "glacier");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "glacier/root.lua", .data = "" });
+    try tmp.dir.createDirPath(testing.io, "kitty");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kitty/root.zig", .data = "" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kitty/root.lua", .data = "" });
+    try tmp.dir.createDirPath(testing.io, "zig-pkg/frost-hash");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "zig-pkg/frost-hash/root.lua", .data = "" });
+    const context: Context = .{ .io = testing.io, .arena = arena, .config = try tmp.dir.realPathFileAlloc(testing.io, ".", arena), .stdout = &output.writer, .stderr = &output.writer };
+
+    try testing.expect(try isScript(context, "kosm_glacier"));
+    try testing.expect(try isScript(context, "kosm_glacier.light"));
+    try testing.expect(try isScript(context, "kosm_frost"));
+    try testing.expect(!try isScript(context, "kosm_kitty"));
+    try testing.expect(!try isScript(context, "kosm_hail"));
+    try testing.expect(try any(context));
 }
 
 test "script kosmoi apply on a Zig kosmos, on each other and on none, and a script edit builds nothing" {

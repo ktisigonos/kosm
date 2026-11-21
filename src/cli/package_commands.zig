@@ -23,8 +23,8 @@ const manifest_name = "build.zig.zon";
 const inspector_path = "zig-out/bin/inspect";
 
 /// `kosm add <url>[#ref]`: fetches the package, refuses it when packages.zon already has its name
-/// or when it provides no app, adapter, kosmos or base, and records the url and ref in
-/// packages.zon. Then builds the script runner, when there are scripts, for their completion.
+/// or when it provides nothing kosm uses (an app, adapter, kosmos, base, modifier, palette style
+/// or variation family), and records the url and ref in packages.zon. Then builds the script runner, when there are scripts, for their completion.
 /// A package installed without kosm add (say, kept only as another package's
 /// dependency) is fetched from `url` and recorded, so kosm update follows it from then on.
 pub fn add(context: Context, argument: []const u8) Error!void {
@@ -130,7 +130,7 @@ fn save(context: Context, package: Packages.Package) Error!void {
 }
 
 /// Builds the packages against the config in one build and prints what each provides; fails
-/// when one does not compile there or provides no app, adapter, kosmos or base.
+/// when one does not compile there or provides nothing kosm uses.
 fn check(context: Context, names: []const []const u8) Error!void {
     var arguments: std.ArrayList([]const u8) = .empty;
     try arguments.append(context.arena, "build");
@@ -408,7 +408,7 @@ test "add of a package that provides nothing leaves every file as it was" {
     const before = (try fixture.read("build.zig.zon")).?;
 
     try testing.expectError(error.Failed, add(fixture.context(), url));
-    try testing.expect(std.mem.find(u8, fixture.stderr.written(), "package 'test_empty' provides no app, adapter, kosmos or base") != null);
+    try testing.expect(std.mem.find(u8, fixture.stderr.written(), "package 'test_empty' provides no app, adapter, kosmos, base, modifier, palette style or variation family") != null);
     try testing.expectEqualStrings(before, (try fixture.read("build.zig.zon")).?);
     try testing.expectEqual(null, try fixture.read(Packages.file_name));
 }

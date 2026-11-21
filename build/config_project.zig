@@ -70,6 +70,7 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
         if (std.mem.eql(u8, entry.name, "kosm")) break b.dependency("kosm", .{ .target = target, .optimize = optimize });
     } else return fail(b, "build.zig.zon has no 'kosm' dependency", .{});
     if (!unifyPackages(b, names.modules.items)) return;
+    if (!addReachedScriptPackages(b, &names)) return;
 
     for (local_directories, locals) |directory, found| {
         for (found) |local| {
@@ -82,9 +83,9 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     }
     // Every local module sees every package and every other local module by name.
     for (names.modules.items) |entry| {
-        if (entry.kind == .package or entry.kind == .frontend) continue;
+        if (entry.kind == .package or entry.kind == .frontend or entry.kind == .reached) continue;
         for (names.modules.items) |other| {
-            if (other.kind == .frontend) continue;
+            if (other.kind == .frontend or other.kind == .reached) continue;
             if (other.module != entry.module) entry.module.addImport(other.name, other.module);
         }
     }
@@ -124,7 +125,7 @@ fn addPrebuilt(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
 fn addEditorCheck(b: *std.Build, entries: []const Entry) void {
     const check = b.step("check", "Compile every local kosmos, app and adapter; editors read their imports from it");
     for (entries) |entry| {
-        if (entry.kind == .package) continue;
+        if (entry.kind == .package or entry.kind == .reached) continue;
         const object = b.addObject(.{ .name = entry.name, .root_module = entry.module });
         dependOnGenerated(object, entries);
         check.dependOn(&object.step);
@@ -133,6 +134,9 @@ fn addEditorCheck(b: *std.Build, entries: []const Entry) void {
 
 const Kind = enum {
     package,
+    /// A package the config does not list, reached through one it does, whose root is a script:
+    /// the runner of scripts needs its folder to read the script.
+    reached,
     /// A package's frontend module (`kosm_lua_frontend`), present only in script runner builds.
     frontend,
     kosmos,
@@ -181,7 +185,7 @@ fn addAppGenerator(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     run.addArg(b.root.joinString(b.allocator, generated_folder) catch @panic("OOM"));
     var modules: std.ArrayList(u8) = .empty;
     for (entries) |entry| {
-        if (entry.kind == .frontend) continue;
+        if (entry.kind == .frontend or entry.kind == .reached) continue;
         if (modules.items.len != 0) modules.append(b.allocator, ',') catch @panic("OOM");
         modules.appendSlice(b.allocator, entry.name) catch @panic("OOM");
     }
@@ -220,7 +224,47 @@ const Names = struct {
         names.modules.append(names.b.allocator, entry) catch @panic("OOM");
         return true;
     }
+
+    /// The entry named `name`, or null.
+    fn find(names: *const Names, name: []const u8) ?Entry {
+        for (names.modules.items) |existing| {
+            if (std.mem.eql(u8, existing.name, name)) return existing;
+        }
+        return null;
+    }
 };
+
+/// Adds every package whose root is a script that the config's packages reach without the config
+/// listing it, so the runner of scripts finds its script and hands scripts its types. Fails the
+/// build and returns false when one shares a name with the config's modules.
+fn addReachedScriptPackages(b: *std.Build, names: *Names) bool {
+    var visited: std.AutoHashMapUnmanaged(*std.Build.Module, void) = .empty;
+    var pending: std.ArrayList(*std.Build.Module) = .empty;
+    for (names.modules.items) |entry| {
+        if (entry.kind == .package) pending.append(b.allocator, entry.module) catch @panic("OOM");
+    }
+    while (pending.pop()) |module| {
+        if ((visited.getOrPut(b.allocator, module) catch @panic("OOM")).found_existing) continue;
+        for (module.import_table.keys(), module.import_table.values()) |name, imported| {
+            pending.append(b.allocator, imported) catch @panic("OOM");
+            if (names.find(name) != null or !isScriptPackage(b, name, imported)) continue;
+            if (!names.add(.{ .name = name, .module = imported, .origin = b.fmt("package '{s}'", .{name}), .kind = .reached })) return false;
+        }
+    }
+    return true;
+}
+
+/// Whether `module` is the module of package `name` whose root is a script: the one its own
+/// build exposes under that name, from a folder holding a root script and no `root.zig`.
+fn isScriptPackage(b: *std.Build, name: []const u8, module: *std.Build.Module) bool {
+    const owner = module.owner;
+    if (owner.modules.get(name) != module) return false;
+    const io = b.graph.io;
+    var dir = std.Io.Dir.cwd().openDir(io, owner.root.joinString(b.allocator, "") catch @panic("OOM"), .{ .iterate = true }) catch return false;
+    defer dir.close(io);
+    if (dir.access(io, "root.zig", .{})) |_| return false else |_| {}
+    return (app_generator.scriptRootIn(b, dir) catch return false) != null;
+}
 
 /// Makes every package use the config's copy of each package the config lists. Packages pinning
 /// different copies of a package it does not list fail the build, returning false.
@@ -461,6 +505,14 @@ fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     }
     writer.writeAll(
         \\        },
+        \\        .reached = &.{
+        \\
+    ) catch @panic("OOM");
+    for (entries) |entry| {
+        if (entry.kind == .reached) writer.print("            @import(\"{f}\"),\n", .{std.zig.fmtString(entry.name)}) catch @panic("OOM");
+    }
+    writer.writeAll(
+        \\        },
         \\    });
         \\}
         \\
@@ -589,7 +641,7 @@ fn moduleFolder(b: *std.Build, entry: Entry) ?[]const u8 {
     // module's root file is (a package written in a script has its module generated).
     const config_root = b.root.joinString(b.allocator, "") catch @panic("OOM");
     // A `.path` dependency's root is relative to the config's.
-    if (entry.kind == .package) return std.Io.Dir.path.resolveAlloc(b.allocator, &.{ config_root, entry.module.owner.root.joinString(b.allocator, "") catch @panic("OOM") }) catch @panic("OOM");
+    if (entry.kind == .package or entry.kind == .reached) return std.Io.Dir.path.resolveAlloc(b.allocator, &.{ config_root, entry.module.owner.root.joinString(b.allocator, "") catch @panic("OOM") }) catch @panic("OOM");
     const root = entry.module.root_source_file orelse {
         fail(b, "{s}: the module has no root file, so its folder is unknown", .{entry.origin});
         return null;
@@ -709,7 +761,7 @@ fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
 /// Every local kosmos, app and adapter, and every installed package but kosm itself: each may
 /// declare kosmoi wherever it lives. A frontend module declares only its frontend.
 fn canHoldKosmoi(entry: Entry) bool {
-    return entry.kind != .frontend and !std.mem.eql(u8, entry.name, "kosm");
+    return entry.kind != .frontend and entry.kind != .reached and !std.mem.eql(u8, entry.name, "kosm");
 }
 
 /// Whether the runner collects the adapters `entry` declares: every installed package but kosm,

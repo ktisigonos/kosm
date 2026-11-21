@@ -89,7 +89,7 @@ fn newPackage(context: Context, name: []const u8, language: ?[]const u8, working
     if (std.Io.Dir.cwd().access(context.io, folder, .{})) |_| {
         return context.fail("{s} exists already; kosm new package makes a new folder", .{folder});
     } else |_| {}
-    const scaffold: Scaffold = if (language) |frontend| try scriptScaffold(context, .app, frontend) else .{ .extension = ".zig", .package = null, .text = Kind.package.scaffold() };
+    const scaffold: Scaffold = if (language) |frontend| try scriptScaffold(context, .package, frontend) else .{ .extension = ".zig", .package = null, .text = Kind.package.scaffold() };
     const root = try context.arena.print("root{s}", .{scaffold.extension});
     var paths = [_][]const u8{ "build.zig", "build.zig.zon", root };
     const dependencies: []const []const u8 = if (scaffold.package) |package| &.{ "kosm", package } else &.{"kosm"};

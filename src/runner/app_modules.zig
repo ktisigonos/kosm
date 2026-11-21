@@ -369,12 +369,27 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
         const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
         return color_modules.source(arena, kind, script, declaration, modules, diagnostics);
     }
+    if (declared == .kosmos) return kosmosSource(arena, script);
     const declare = found.declare orelse {
         diagnostics.set("", "", "{s}: the {s} frontend writes no apps", .{ path, found.name });
         return error.InvalidDeclaration;
     };
     const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
     return source(arena, script, declaration, modules, diagnostics);
+}
+
+/// The module of a package whose root script gives a kosmos: it declares only where the script
+/// is, which the runner of scripts reads when it runs, so editing the script compiles nothing.
+pub fn kosmosSource(arena: std.mem.Allocator, script: Script) std.mem.Allocator.Error![]const u8 {
+    return arena.print(
+        \\//! The kosmos {s} gives, applied as `kosm apply {s}`; written by kosm: edit the script, never this file.
+        \\
+        \\const kosm = @import("kosm");
+        \\
+        \\/// Where the package's kosmos is; the runner of scripts reads it when it runs.
+        \\pub const script: kosm.Frontend.ScriptKosmos = .{{ .frontend = "{f}", .path = "{f}" }};
+        \\
+    , .{ script.path, script.name, std.zig.fmtString(script.frontend), std.zig.fmtString(script.path) });
 }
 
 /// What script `path` gives: in the config, what its folder holds; a package's root script
@@ -421,6 +436,7 @@ fn givenAs(declared: kosm.Frontend.Declared) []const u8 {
         .modifier => "a modifier",
         .style => "a palette style",
         .family => "a variation family",
+        .kosmos => "a kosmos",
     };
 }
 
@@ -431,6 +447,7 @@ fn plural(declared: kosm.Frontend.Declared) []const u8 {
         .adapter => "adapters",
         .frontend => "frontends",
         .modifier, .style, .family => "colors",
+        .kosmos => "kosmoi",
     };
 }
 
@@ -594,4 +611,24 @@ test "a package's root script is what its frontend says; a config's is what its 
     with.declares = null;
     try testing.expectError(error.InvalidDeclaration, declaredBy(with, &context, "~~kosm_scratch/root.fake", "", &diagnostics));
     try testing.expectEqualStrings("~~kosm_scratch/root.fake: the fake frontend cannot tell what a package's root script gives, so it cannot be one", diagnostics.message());
+}
+
+test "a package's root script giving a kosmos becomes a module naming the script, and colors/ refuses one" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const Fake = struct {
+        fn declaresKosmos(_: *kosm.Frontend.Context, _: []const u8) kosm.Frontend.Error!kosm.Frontend.Declared {
+            return .kosmos;
+        }
+        fn load(_: *kosm.Frontend.Context, _: []const u8) kosm.Frontend.Error!kosm.Frontend.Script {
+            return error.InvalidScript;
+        }
+    };
+    const frontends: []const discovery.DeclaredFrontend = &.{.{ .package = "kosm_fake", .frontend = .{ .name = "fake", .extensions = &.{".fake"}, .load = Fake.load, .declares = Fake.declaresKosmos } }};
+    var diagnostics: kosm.Diagnostics = .{};
+    const module = try generate(arena.allocator(), frontends, "kosm_glacier", "~~kosm_glacier/root.fake", "", &.{}, &diagnostics);
+    try testing.expect(std.mem.find(u8, module, "pub const script: kosm.Frontend.ScriptKosmos = .{ .frontend = \"fake\", .path = \"~~kosm_glacier/root.fake\" };\n") != null);
+    try testing.expect(std.mem.startsWith(u8, module, "//! The kosmos ~~kosm_glacier/root.fake gives, applied as `kosm apply kosm_glacier`;"));
+    try testing.expectError(error.InvalidDeclaration, generate(arena.allocator(), frontends, "glow", "colors/glow.fake", "", &.{}, &diagnostics));
+    try testing.expectEqualStrings("colors/glow.fake gives a kosmos; colors/ holds modifiers, palette styles and variation families, and kosmoi belong in kosmoi/", diagnostics.message());
 }

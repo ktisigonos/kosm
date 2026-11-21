@@ -81,13 +81,16 @@ pub fn Hosting(comptime frontends: []const discovery.DeclaredFrontend, comptime 
 }
 
 /// The types the host hands scripts: the theme, the output and reloader, colors (for adapters),
-/// and every app in `sources` written through a frontend.
-pub fn handledTypes(comptime sources: []const ScriptTarget.KosmosSource) []const type {
+/// and every app, modifier and palette style written through a frontend in `sources` or among
+/// the modules `reached` only through packages.
+pub fn handledTypes(comptime sources: []const ScriptTarget.KosmosSource, comptime reached: []const type) []const type {
     comptime var found: []const type = &.{ kosm.Theme, kosm.Output, kosm.Reloader, kosm.Color };
-    inline for (sources) |source| {
-        if (comptime isScriptApp(source.module)) found = found ++ .{source.module.App};
-        if (comptime isScriptColor(source.module, "Modifier", kosm.Frontend.ScriptModifier)) found = found ++ .{source.module.Modifier};
-        if (comptime isScriptColor(source.module, "Style", kosm.Frontend.ScriptStyle)) found = found ++ .{source.module.Style};
+    comptime var modules: []const type = reached;
+    inline for (sources) |source| modules = modules ++ .{source.module};
+    inline for (modules) |Module| {
+        if (comptime isScriptApp(Module)) found = found ++ .{Module.App};
+        if (comptime isScriptColor(Module, "Modifier", kosm.Frontend.ScriptModifier)) found = found ++ .{Module.Modifier};
+        if (comptime isScriptColor(Module, "Style", kosm.Frontend.ScriptStyle)) found = found ++ .{Module.Style};
     }
     const final = found[0..found.len].*;
     return &final;
@@ -100,9 +103,14 @@ pub fn isScriptApp(comptime Module: type) bool {
     return @TypeOf(App) == type and @typeInfo(App) == .@"struct" and @hasDecl(App, "script") and @TypeOf(App.script) == ScriptApp;
 }
 
+/// Whether `Module` is the generated module of a package whose root script gives its kosmos.
+pub fn isScriptKosmos(comptime Module: type) bool {
+    return @typeInfo(Module) == .@"struct" and @hasDecl(Module, "script") and @TypeOf(Module.script) == kosm.Frontend.ScriptKosmos;
+}
+
 /// Whether `Module` is the generated module of a modifier, palette style or variation family
 /// written through a frontend: its type `name` has a `script` of type `Script`.
-fn isScriptColor(comptime Module: type, comptime name: []const u8, comptime Script: type) bool {
+pub fn isScriptColor(comptime Module: type, comptime name: []const u8, comptime Script: type) bool {
     if (@typeInfo(Module) != .@"struct" or !@hasDecl(Module, name)) return false;
     const Fields = @field(Module, name);
     return @TypeOf(Fields) == type and @typeInfo(Fields) == .@"struct" and @hasDecl(Fields, "script") and @TypeOf(Fields.script) == Script;

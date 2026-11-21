@@ -17,6 +17,9 @@ kosmoi: []const KosmosSource,
 apps: []const discovery.AppSource,
 /// Every module that may export adapters and frontends.
 adapter_sources: []const Target.AdapterSource,
+/// The module of every package whose root is a script that the config reaches only through
+/// another package: scripts hold its types, and nothing else of it is chosen or listed.
+reached: []const type = &.{},
 
 /// A module declaring Zig kosmoi.
 pub const KosmosSource = struct {

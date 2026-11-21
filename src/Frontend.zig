@@ -57,10 +57,10 @@ declare_adapter: ?*const fn (context: *Context, source: []const u8) Error!Adapte
 /// for a frontend writing no frontends.
 declare_frontend: ?*const fn (context: *Context, source: []const u8) Error!FrontendDeclaration = null,
 /// Says what the script `source` gives (an app, an adapter, a frontend, a modifier, a palette
-/// style or a variation family) from what it returns,
-/// without calling any of its functions; kosm calls it for a package's root script, which no
-/// folder names the kind of. Fail through `Context.fail` when it gives none or more than one.
-/// Null for a frontend whose scripts cannot be packages' roots.
+/// style, a variation family or a kosmos) from what it returns, without calling any of its
+/// functions; kosm calls it for a package's root script, which no folder names the kind of.
+/// Fail through `Context.fail` when it gives more than one. Null for a frontend whose scripts
+/// cannot be packages' roots.
 declares: ?*const fn (context: *Context, source: []const u8) Error!Declared = null,
 /// Calls function `function` of the script of an app, adapter, modifier, palette style or
 /// variation family at `context.path`, whose text is `source`, with `arguments`, and returns what it returns: a
@@ -90,7 +90,7 @@ pub const Declaration = @import("Frontend/Declaration.zig");
 pub const AdapterDeclaration = @import("Frontend/AdapterDeclaration.zig");
 
 /// What a script gives, for `declares`.
-pub const Declared = enum { app, adapter, frontend, modifier, style, family };
+pub const Declared = enum { app, adapter, frontend, modifier, style, family, kosmos };
 
 /// What a frontend's script declares, for `declare_frontend`.
 pub const FrontendDeclaration = @import("Frontend/FrontendDeclaration.zig");
@@ -109,6 +109,10 @@ pub const ScriptStyle = @import("Frontend/ScriptStyle.zig");
 
 /// A variation family written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptFamily = @import("Frontend/ScriptFamily.zig");
+
+/// A package's kosmos written through a frontend, which the Zig module kosm generates for the
+/// package names.
+pub const ScriptKosmos = @import("Frontend/ScriptKosmos.zig");
 
 /// An adapter written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptAdapter = @import("Frontend/ScriptAdapter.zig");

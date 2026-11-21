@@ -1,9 +1,10 @@
-//! What an installed package provides: its apps, adapters, kosmoi and bases, found by
-//! reflection. `kosm add` and `kosm update` refuse a package that provides none of them.
+//! What an installed package provides: its apps, adapters, kosmoi, bases, modifiers, palette
+//! styles and variation families, found by reflection. `kosm add` and `kosm update` refuse a package that provides none of them.
 
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
+const hosting = @import("hosting.zig");
 const interface = @import("kosm_interface");
 
 /// Prints what each package provides to stdout and returns 0, or prints why one is not a kosm
@@ -23,7 +24,7 @@ pub fn inspect(init: std.process.Init, comptime packages: anytype) !u8 {
         const name: []const u8 = package[0];
         const report = comptime provided(name, package[1]);
         if (report.isEmpty()) {
-            try stderr.interface.print("error: package '{s}' provides no app, adapter, kosmos or base, so it is not a kosm package\n", .{name});
+            try stderr.interface.print("error: package '{s}' provides no app, adapter, kosmos, base, modifier, palette style or variation family, so it is not a kosm package\n", .{name});
             all_provide = false;
         } else try report.write(name, &stdout.interface);
     }
@@ -42,9 +43,15 @@ pub const Provided = struct {
     kosmoi: []const []const u8,
     /// Functions a kosmos builds on, returning a struct of apps: "kosm_base.from".
     bases: []const []const u8,
+    /// Modifiers, palette styles and variation families written through a frontend, as
+    /// `@import` paths of what gives them: "kosm_tint.modifier", "kosm_glow.Family".
+    colors: []const Color = &.{},
+
+    /// A modifier, palette style or variation family, and what its kind is shown as.
+    pub const Color = struct { kind: []const u8, name: []const u8 };
 
     fn isEmpty(self: Provided) bool {
-        return self.apps.len == 0 and self.adapters.len == 0 and self.kosmoi.len == 0 and self.bases.len == 0;
+        return self.apps.len == 0 and self.adapters.len == 0 and self.kosmoi.len == 0 and self.bases.len == 0 and self.colors.len == 0;
     }
 
     /// One line per kind: `name provides:` then `  app kosm_kitty.App` and so on.
@@ -53,12 +60,14 @@ pub const Provided = struct {
         try self.writeItems("  ", writer);
     }
 
-    /// One line per app, adapter, kosmos and base, each after `indent`: `  app      kosm_kitty.App`.
+    /// One line per app, adapter, kosmos, base and color script, each after `indent`:
+    /// `  app      kosm_kitty.App`.
     pub fn writeItems(self: Provided, indent: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         for (self.apps) |app| try writer.print("{s}app      {s}\n", .{ indent, app });
         for (self.adapters) |adapter| try writer.print("{s}adapter  {s}\n", .{ indent, adapter });
         for (self.kosmoi) |kosmos| try writer.print("{s}kosmos   {s}\n", .{ indent, kosmos });
         for (self.bases) |base| try writer.print("{s}base     {s}\n", .{ indent, base });
+        for (self.colors) |color| try writer.print("{s}{s:<9}{s}\n", .{ indent, color.kind, color.name });
     }
 };
 
@@ -78,13 +87,20 @@ pub fn provided(comptime name: []const u8, comptime Package: type) Provided {
     inline for (comptime discovery.declaredKosmoi(Package)) |declared| {
         kosmoi = kosmoi ++ .{if (declared.name.len == 0) name else name ++ "." ++ declared.name};
     }
+    // Its script's variants only its frontend lists, when kosm runs.
+    if (hosting.isScriptKosmos(Package)) kosmoi = kosmoi ++ .{name};
+    comptime var colors: []const Provided.Color = &.{};
+    if (hosting.isScriptColor(Package, "Modifier", kosm.Frontend.ScriptModifier)) colors = colors ++ .{Provided.Color{ .kind = "modifier", .name = name ++ ".modifier" }};
+    if (hosting.isScriptColor(Package, "Style", kosm.Frontend.ScriptStyle)) colors = colors ++ .{Provided.Color{ .kind = "style", .name = name ++ ".style" }};
+    if (hosting.isScriptColor(Package, "Family", kosm.Frontend.ScriptFamily)) colors = colors ++ .{Provided.Color{ .kind = "family", .name = name ++ ".Family" }};
     comptime var adapters: []const []const u8 = &.{};
     inline for (comptime discovery.declaredAdapters(Package)) |adapter| adapters = adapters ++ .{adapter.name};
     const final_apps = apps[0..apps.len].*;
     const final_adapters = adapters[0..adapters.len].*;
     const final_kosmoi = kosmoi[0..kosmoi.len].*;
     const final_bases = bases[0..bases.len].*;
-    return .{ .apps = &final_apps, .adapters = &final_adapters, .kosmoi = &final_kosmoi, .bases = &final_bases };
+    const final_colors = colors[0..colors.len].*;
+    return .{ .apps = &final_apps, .adapters = &final_adapters, .kosmoi = &final_kosmoi, .bases = &final_bases, .colors = &final_colors };
 }
 
 /// Whether `Package.name` is a base: a function, not a kosmos, whose result is a struct holding
@@ -161,6 +177,29 @@ test "a function returning a struct of apps that takes inputs is a base, not a k
     try testing.expectEqualStrings(
         \\kosm_probe_base provides:
         \\  base     kosm_probe_base.from
+        \\
+    , writer.buffered());
+}
+
+test "a package whose root script gives a kosmos or a modifier provides it" {
+    const ScriptKosmosPackage = struct {
+        pub const script: kosm.Frontend.ScriptKosmos = .{ .frontend = "lua", .path = "~~kosm_glacier/root.lua" };
+    };
+    const ModifierPackage = struct {
+        pub const Modifier = struct {
+            amount: f64 = 0.5,
+            pub const script: kosm.Frontend.ScriptModifier = .{ .frontend = "lua", .path = "~~kosm_tint/root.lua" };
+        };
+    };
+    var buffer: [128]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try (comptime provided("kosm_glacier", ScriptKosmosPackage)).write("kosm_glacier", &writer);
+    try (comptime provided("kosm_tint", ModifierPackage)).write("kosm_tint", &writer);
+    try testing.expectEqualStrings(
+        \\kosm_glacier provides:
+        \\  kosmos   kosm_glacier
+        \\kosm_tint provides:
+        \\  modifier kosm_tint.modifier
         \\
     , writer.buffered());
 }

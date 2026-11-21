@@ -9,6 +9,9 @@ pub const name_placeholder = "scaffold_name";
 kosmos: ?[]const u8 = null,
 /// An app written through the frontend, written as `apps/<name><extension>`.
 app: ?[]const u8 = null,
+/// The root of a package of its own holding an app, written as `<name>/root<extension>`; null
+/// writes `app` there instead.
+package: ?[]const u8 = null,
 /// An adapter written through the frontend, written as `adapters/<name><extension>`.
 adapter: ?[]const u8 = null,
 /// A frontend written through the frontend, written as `frontends/<name><extension>`.
