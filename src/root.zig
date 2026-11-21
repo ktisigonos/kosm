@@ -151,6 +151,7 @@ test {
     std.testing.refAllDecls(Frontend.ScriptApp);
     std.testing.refAllDecls(Frontend.ScriptModifier);
     std.testing.refAllDecls(Frontend.ScriptStyle);
+    std.testing.refAllDecls(Frontend.ScriptFamily);
     std.testing.refAllDecls(Frontend.ScriptFrontend);
     std.testing.refAllDecls(kosmos_file);
 }

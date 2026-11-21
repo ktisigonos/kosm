@@ -43,6 +43,9 @@ declare_modifier: ?*const fn (context: *Context, source: []const u8) Error!Decla
 /// Reads what a palette style's script declares, as `declare_modifier` reads a modifier's. Null
 /// for a frontend writing no palette styles.
 declare_style: ?*const fn (context: *Context, source: []const u8) Error!Declaration = null,
+/// Reads what a variation family's script declares (its modifiers and `from`), as
+/// `declare_modifier` reads a modifier's. Null for a frontend writing no variation families.
+declare_family: ?*const fn (context: *Context, source: []const u8) Error!Declaration = null,
 /// Reads what an adapter's script declares (its name, extensions, comment syntax, default format
 /// and the capabilities it gives as functions) without calling any of its functions; kosm calls
 /// it while building the config, to write the Zig module the adapter is used through.
@@ -53,14 +56,14 @@ declare_adapter: ?*const fn (context: *Context, source: []const u8) Error!Adapte
 /// write the Zig module the frontend is used through. `context.library` is empty there. Null
 /// for a frontend writing no frontends.
 declare_frontend: ?*const fn (context: *Context, source: []const u8) Error!FrontendDeclaration = null,
-/// Says what the script `source` gives (an app, an adapter, a frontend, a modifier or a palette
-/// style) from what it returns,
+/// Says what the script `source` gives (an app, an adapter, a frontend, a modifier, a palette
+/// style or a variation family) from what it returns,
 /// without calling any of its functions; kosm calls it for a package's root script, which no
 /// folder names the kind of. Fail through `Context.fail` when it gives none or more than one.
 /// Null for a frontend whose scripts cannot be packages' roots.
 declares: ?*const fn (context: *Context, source: []const u8) Error!Declared = null,
-/// Calls function `function` of the script of an app, adapter, modifier or palette style at
-/// `context.path`, whose text is `source`, with `arguments`, and returns what it returns: a
+/// Calls function `function` of the script of an app, adapter, modifier, palette style or
+/// variation family at `context.path`, whose text is `source`, with `arguments`, and returns what it returns: a
 /// table as a loose table, a Zig value as its handle. The script runs once, on the first call naming it, in the frontend's one
 /// interpreter, so its later calls share its values. Fail through `Context.fail`, the message
 /// starting with the script's place. Null for a frontend writing none of them.
@@ -78,15 +81,15 @@ pub const Scaffolds = @import("Frontend/Scaffolds.zig");
 /// What a script kosmos says: what it builds on, and the values it sets.
 pub const Script = @import("Frontend/Script.zig");
 
-/// What an app's, modifier's or palette style's script declares, for `declare`,
-/// `declare_modifier` and `declare_style`.
+/// What the script of an app, modifier, palette style or variation family declares, for
+/// `declare`, `declare_modifier`, `declare_style` and `declare_family`.
 pub const Declaration = @import("Frontend/Declaration.zig");
 
 /// What an adapter's script declares, for `declare_adapter`.
 pub const AdapterDeclaration = @import("Frontend/AdapterDeclaration.zig");
 
 /// What a script gives, for `declares`.
-pub const Declared = enum { app, adapter, frontend, modifier, style };
+pub const Declared = enum { app, adapter, frontend, modifier, style, family };
 
 /// What a frontend's script declares, for `declare_frontend`.
 pub const FrontendDeclaration = @import("Frontend/FrontendDeclaration.zig");
@@ -102,6 +105,9 @@ pub const ScriptModifier = @import("Frontend/ScriptModifier.zig");
 
 /// A palette style written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptStyle = @import("Frontend/ScriptStyle.zig");
+
+/// A variation family written through a frontend, which the Zig module kosm generates for it runs.
+pub const ScriptFamily = @import("Frontend/ScriptFamily.zig");
 
 /// An adapter written through a frontend, which the Zig module kosm generates for it runs.
 pub const ScriptAdapter = @import("Frontend/ScriptAdapter.zig");

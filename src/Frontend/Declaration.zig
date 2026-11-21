@@ -1,18 +1,19 @@
-//! What a script declares, as a frontend reads it without calling any of its functions: an
-//! app's, modifier's or palette style's fields, with their types, defaults and doc comments, and the functions
-//! it gives. Kosm writes the Zig module the app, modifier or style is used through from it.
+//! What a script declares, as a frontend reads it without calling any of its functions: the
+//! fields of an app, modifier, palette style or variation family, with their types, defaults
+//! and doc comments, and the functions it gives. Kosm writes the Zig module it is used through
+//! from it.
 
 const Declaration = @This();
 
 /// The fields, in the order the script writes them.
 fields: []const Field,
 /// The names of the functions the script gives: an app's "from", "apply", and "reload" when it
-/// reloads its program; a modifier's or style's "apply".
+/// reloads its program; a modifier's or style's "apply"; a family's "from".
 functions: []const []const u8,
-/// The doc comment of the app, modifier or style, without the comment markers; null when it has none.
+/// The doc comment of what it declares, without the comment markers; null when it has none.
 doc: ?[]const u8 = null,
 
-/// One field of an app, modifier or style.
+/// One field of what it declares.
 pub const Field = @import("Declaration/Field.zig");
 
 /// What a field holds.

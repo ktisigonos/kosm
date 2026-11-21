@@ -1,4 +1,4 @@
-//! The script of an app, adapter, modifier or palette style written through a frontend, which the host runs functions of.
+//! The script of an app, adapter, modifier, palette style or variation family written through a frontend, which the host runs functions of.
 
 /// The frontend reading the script, by `Frontend.name`: "lua".
 frontend: []const u8,

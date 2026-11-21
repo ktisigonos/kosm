@@ -1,4 +1,4 @@
-//! One field of an app, modifier or palette style a script declares.
+//! One field a script declares: of an app, modifier, palette style or variation family.
 
 const Declaration = @import("../Declaration.zig");
 const Loose = @import("../../Loose.zig");

@@ -17,15 +17,9 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-Steps 21j4-21j6: the other parts of kosm written through a frontend, Lua first, the way apps, adapters and frontends already are. Kosm stays language agnostic: what one language can write, every frontend can. Decided with the human:
+Steps 21j5b-21j6: the other parts of kosm written through a frontend, Lua first, the way apps, adapters and frontends already are. Kosm stays language agnostic: what one language can write, every frontend can. Decided with the human:
 - Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
 - They keep every rule of their kind: Lua adapters know no app.
-
-- **21j4. Modifiers, palette styles and variations written in Lua**
-  - Do: color modifiers, image palette styles and variation families can be written in Lua and used from any kosmos or app, Zig or Lua. Agreed: all three live in `colors/`, each script saying what it is by what it returns.
-  - Done: modifiers (`kosm.Modifier.function`, `colors/<name>.lua` declaring `Modifier` and `apply(self, color)`, its module's `modifier(fields)`) and palette styles (`kosm.Image.Style.function`, `Style` and `apply(self, hue, background)`, `style(fields)`, `kosm.Image.readable`).
-  - Do: a variation family is a declared struct of modifiers with defaults per mode (`colors/glow.lua` giving `Family` and `from(mode)`); a user's base holds it beside the theme, and its apps read it from there.
-  - Done when: one of each, written in Lua, changes a kosmos' colors under `--diff`.
 
 - **21j5b. Lua kosmoi, looks and bases in packages** `PLAN FIRST` (later)
   - Do: a Lua package's root may give a kosmos, look or base, which Lua and Zig kosmoi build on like a Zig package's; the runner of scripts needs to find script kosmoi inside packages.

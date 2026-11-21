@@ -100,20 +100,21 @@ pub fn isScriptApp(comptime Module: type) bool {
     return @TypeOf(App) == type and @typeInfo(App) == .@"struct" and @hasDecl(App, "script") and @TypeOf(App.script) == ScriptApp;
 }
 
-/// Whether `Module` is the generated module of a modifier or palette style written through a
-/// frontend: its type `name` has a `script` of type `Script`.
+/// Whether `Module` is the generated module of a modifier, palette style or variation family
+/// written through a frontend: its type `name` has a `script` of type `Script`.
 fn isScriptColor(comptime Module: type, comptime name: []const u8, comptime Script: type) bool {
     if (@typeInfo(Module) != .@"struct" or !@hasDecl(Module, name)) return false;
     const Fields = @field(Module, name);
     return @TypeOf(Fields) == type and @typeInfo(Fields) == .@"struct" and @hasDecl(Fields, "script") and @TypeOf(Fields.script) == Script;
 }
 
-/// Whether any module of `sources` is the generated module of a modifier or palette style
-/// written through a frontend, which only the runner of scripts can run. Either is a value, so
-/// a tree's type cannot tell; every module the kosmos reaches is among the sources.
+/// Whether any module of `sources` is the generated module of a modifier, palette style or
+/// variation family written through a frontend, which only the runner of scripts can run. Each
+/// is a value, so a tree's type cannot tell; every module the kosmos reaches is among the sources.
 pub fn holdsScriptColors(comptime sources: []const @import("Target.zig").AdapterSource) bool {
     inline for (sources) |source| {
-        if (comptime isScriptColor(source.module, "Modifier", kosm.Frontend.ScriptModifier) or isScriptColor(source.module, "Style", kosm.Frontend.ScriptStyle)) return true;
+        if (comptime isScriptColor(source.module, "Modifier", kosm.Frontend.ScriptModifier) or isScriptColor(source.module, "Style", kosm.Frontend.ScriptStyle) or
+            isScriptColor(source.module, "Family", kosm.Frontend.ScriptFamily)) return true;
     }
     return false;
 }
@@ -212,5 +213,11 @@ test "sources hold script colors when any module is a modifier's or style's gene
     };
     try testing.expect(holdsScriptColors(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "sepia", .module = script_modifier } }));
     try testing.expect(holdsScriptColors(&.{.{ .package = "pastel", .module = script_style }}));
+    const script_family = struct {
+        pub const Family = struct {
+            pub const script: kosm.Frontend.ScriptFamily = .{ .frontend = "test", .path = "colors/glow.lua" };
+        };
+    };
+    try testing.expect(holdsScriptColors(&.{.{ .package = "glow", .module = script_family }}));
     try testing.expect(!holdsScriptColors(&.{ .{ .package = "kitty", .module = struct {} }, .{ .package = "gray", .module = zig_modifier } }));
 }

@@ -1,7 +1,8 @@
 //! The Zig module of a modifier or palette style written through a frontend, generated from
 //! what its script declares: a type holding its fields (`Modifier`, `Style`), whose `apply` runs
 //! the script's own, and a function giving it as kosm's own value (`modifier(fields)` a
-//! `kosm.Modifier`, `style(fields)` a `kosm.Image.Style`).
+//! `kosm.Modifier`, `style(fields)` a `kosm.Image.Style`). A variation family's module gives
+//! its struct of modifiers, `Family`, and `from(mode)` running the script's own.
 
 const std = @import("std");
 const kosm = @import("kosm");
@@ -130,6 +131,59 @@ fn writeModule(writer: *std.Io.Writer, kind: Kind, script: app_modules.Script, d
     , .{ .doc = kind.wrapper_doc, .wrapper = kind.wrapper, .type_name = kind.type_name, .gives = kind.gives });
 }
 
+/// The source of the module for the variation family `script`, which declares `declaration`,
+/// as `source` writes a modifier's.
+pub fn familySource(arena: std.mem.Allocator, script: app_modules.Script, declaration: Declaration, modules: []const []const u8, diagnostics: *kosm.Diagnostics) Error![]const u8 {
+    if (!declaration.gives("from")) return app_modules.fail(diagnostics, script, 0, "it gives no from(mode); a variation family's script returns a table with Family and from", .{});
+    var imports: std.ArrayList([]const u8) = .empty;
+    for (declaration.fields) |field| {
+        if (std.mem.eql(u8, field.name, "script")) return app_modules.fail(diagnostics, script, field.line, "a field may not be named 'script', which the family's Zig module declares; rename it", .{});
+        try app_modules.collectImports(arena, script, field, field.type, modules, &imports, diagnostics);
+    }
+    std.mem.sort([]const u8, imports.items, {}, app_modules.lessThan);
+
+    var text: std.Io.Writer.Allocating = .init(arena);
+    writeFamily(&text.writer, script, declaration, imports.items, diagnostics) catch |err| switch (err) {
+        error.WriteFailed => return error.OutOfMemory,
+        error.InvalidDeclaration => return error.InvalidDeclaration,
+    };
+    return text.written();
+}
+
+fn writeFamily(writer: *std.Io.Writer, script: app_modules.Script, declaration: Declaration, imports: []const []const u8, diagnostics: *kosm.Diagnostics) app_modules.WriteError!void {
+    try writer.print("//! The variation family {s} declares, written by kosm from it: edit the script, never this file.\n\n", .{script.path});
+    try writer.writeAll("const kosm = @import(\"kosm\");\n");
+    for (imports) |module| try writer.print("const {f} = @import(\"{f}\");\n", .{ std.zig.fmtId(module), std.zig.fmtString(module) });
+    try writer.writeAll("\n");
+    if (declaration.doc) |doc| try app_modules.writeDoc(writer, "", doc);
+    try writer.writeAll("pub const Family = struct {\n");
+    for (declaration.fields) |field| {
+        if (field.doc) |doc| try app_modules.writeDoc(writer, "    ", doc);
+        try writer.print("    {f}: ", .{std.zig.fmtId(field.name)});
+        try app_modules.writeType(writer, field.type);
+        try writer.writeAll(" = ");
+        try app_modules.writeDefault(writer, script, field, diagnostics);
+        try writer.writeAll(",\n");
+    }
+    if (declaration.fields.len != 0) try writer.writeAll("\n");
+    try writer.print(
+        \\    /// Where the family's script is; it runs the family's from.
+        \\    pub const script: kosm.Frontend.ScriptFamily = .{{ .frontend = "{f}", .path = "{f}" }};
+        \\
+    , .{ std.zig.fmtString(script.frontend), std.zig.fmtString(script.path) });
+    try app_modules.writeTypeChecks(writer, script, declaration);
+    try writer.writeAll(
+        \\};
+        \\
+        \\/// The family's modifiers for `mode`, from the script's `from(mode)`; a base holds it beside
+        \\/// the theme.
+        \\pub fn from(mode: kosm.Theme.Mode) Family {
+        \\    return Family.script.from(Family, mode);
+        \\}
+        \\
+    );
+}
+
 const testing = std.testing;
 
 const test_script: app_modules.Script = .{ .name = "sepia", .path = "colors/sepia.lua", .frontend = "lua" };
@@ -220,4 +274,45 @@ test "a palette style's module takes the hue and the background and gives a kosm
         \\}
         \\
     , written);
+}
+
+test "a variation family's module holds its modifiers and runs the script's from(mode)" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const glow: app_modules.Script = .{ .name = "glow", .path = "colors/glow.lua", .frontend = "lua" };
+    const declaration: Declaration = .{
+        .doc = "Glows for highlighted elements.",
+        .functions = &.{"from"},
+        .fields = &.{.{ .name = "soft", .doc = "A soft glow.", .type = .{ .zig = "kosm.Modifier" }, .line = 5 }},
+    };
+    var diagnostics: kosm.Diagnostics = .{};
+    const written = try familySource(arena.allocator(), glow, declaration, &.{"kosm"}, &diagnostics);
+    try testing.expectEqualStrings(
+        \\//! The variation family colors/glow.lua declares, written by kosm from it: edit the script, never this file.
+        \\
+        \\const kosm = @import("kosm");
+        \\
+        \\/// Glows for highlighted elements.
+        \\pub const Family = struct {
+        \\    /// A soft glow.
+        \\    soft: kosm.Modifier = .{},
+        \\
+        \\    /// Where the family's script is; it runs the family's from.
+        \\    pub const script: kosm.Frontend.ScriptFamily = .{ .frontend = "lua", .path = "colors/glow.lua" };
+        \\
+        \\    comptime {
+        \\        if (!@hasDecl(kosm, "Modifier")) @compileError("colors/glow.lua:5: soft: kosm has no Modifier");
+        \\        if (@TypeOf(kosm.Modifier) != type) @compileError("colors/glow.lua:5: soft: kosm.Modifier is not a type");
+        \\    }
+        \\};
+        \\
+        \\/// The family's modifiers for `mode`, from the script's `from(mode)`; a base holds it beside
+        \\/// the theme.
+        \\pub fn from(mode: kosm.Theme.Mode) Family {
+        \\    return Family.script.from(Family, mode);
+        \\}
+        \\
+    , written);
+    try testing.expectError(error.InvalidDeclaration, familySource(arena.allocator(), glow, .{ .functions = &.{}, .fields = &.{} }, &.{"kosm"}, &diagnostics));
+    try testing.expectEqualStrings("colors/glow.lua: it gives no from(mode); a variation family's script returns a table with Family and from", diagnostics.message());
 }
