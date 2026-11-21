@@ -64,6 +64,12 @@ pub fn apply(modifier: Modifier, color: Color) Color {
     return result;
 }
 
+/// `then` under a name every language can call it by: Lua reserves `then`, which it reaches only
+/// as `modifier["then"](modifier, next)`.
+pub fn andThen(modifier: Modifier, next: Modifier) Modifier {
+    return modifier.then(next);
+}
+
 /// A modifier applying this one, then `next`. The result is a copy: changing
 /// either input later does not change it. At most `max_steps` steps in total.
 pub fn then(modifier: Modifier, next: Modifier) Modifier {

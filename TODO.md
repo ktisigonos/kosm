@@ -21,10 +21,16 @@ Steps 21j5b-21j6: the other parts of kosm written through a frontend, Lua first,
 - Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
 - They keep every rule of their kind: Lua adapters know no app.
 
+- **21j4b. Hitches found writing colors/ in Lua**
+  - Do: setting one field of a color from Lua (`tint.lightness = 0.5` on a `kosm.Color`) fails with "kosm.Color: expected a color..., got a table"; it sets that field like any struct's.
+  - Do: `kosm new modifier|style|family <name>` scaffolds a `colors/` script, in Zig or a frontend's language, as `kosm new app` does.
+  - Done when: a Lua kosmos sets a color's lightness under `--diff`, and each new scaffold builds and changes a kosmos' colors under `--diff`.
+
 - **21j5b. Lua kosmoi, looks and bases in packages** `PLAN FIRST` (later)
   - Do: a Lua package's root may give a kosmos, look or base, which Lua and Zig kosmoi build on like a Zig package's; the runner of scripts needs to find script kosmoi inside packages.
   - Do: a Lua package reached only through another package works without the config listing it: the runner of scripts knows its folder (`~~<name>/`) and hands its app type to scripts.
   - Do: the Lua app scaffold's header names `kosm new package` when it is a package's root, not `kosm new app`.
+  - Do: a package's root script giving a modifier, palette style or variation family works like one in `colors/` (untested so far).
   - Done when: a scratch Lua package giving a look is worn by a Lua kosmos and a Zig kosmos under `--diff`, and a Zig package holding a Lua package's app applies with only the Zig package in the config.
 
 - **21j6. Apps and adapters in a language whose frontend is a script** `PLAN FIRST` (later)
