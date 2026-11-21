@@ -94,8 +94,13 @@ const Scaffold = struct { extension: []const u8, package: ?[]const u8, text: []c
 
 /// The scaffold the runner of scripts gives for `kind` in frontend `language`.
 fn scriptScaffold(context: Context, kind: Kind, language: []const u8) Error!Scaffold {
-    if (!try scripts.prepare(context))
-        return context.fail("the script runner does not build, so the {s} frontend cannot give a scaffold", .{language});
+    if (try scripts.isStale(context)) {
+        // Building it takes a while, so the user knows what is running.
+        try context.stdout.writeAll("building the script runner\n");
+        try context.stdout.flush();
+        if (!try scripts.build(context))
+            return context.fail("the script runner does not build, so the {s} frontend cannot give a scaffold", .{language});
+    }
     const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, scripts.runner_path });
     const result = try context.run(&.{ runner, interface.scaffold_flag, language, @tagName(kind) });
     if (!result.term.success()) {
@@ -316,7 +321,7 @@ test "every scaffold builds in an initialized config, Zig or through the scaffol
     try test_config.tmp.dir.deleteFile(testing.io, "project/kosmoi/kyanos.zig");
     stdout_before = test_config.stdout.written().len;
     try new(context, .kosmos, "snow", "keys", unused_working_directory);
-    try testing.expectEqualStrings("created kosmoi/snow.keys\n", test_config.stdout.written()[stdout_before..]);
+    try testing.expectEqualStrings("building the script runner\ncreated kosmoi/snow.keys\n", test_config.stdout.written()[stdout_before..]);
     const snow = try test_config.tmp.dir.readFileAlloc(testing.io, "project/kosmoi/snow.keys", arena, .limited(1024 * 1024));
     try testing.expectStringStartsWith(snow, "# The snow kosmos, made by `kosm new kosmos snow --language keys`.\n");
     try test_config.write("project/kosmoi/snow.keys", try std.mem.replaceOwned(u8, arena, try std.mem.replaceOwned(u8, arena, snow, "base kyanos\n", "base frost.light\n"), "# kitty.fonts.font_size = 12", "kitty.fonts.font_size = 15"));

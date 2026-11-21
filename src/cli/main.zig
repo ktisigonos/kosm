@@ -186,7 +186,8 @@ fn runNew(init: std.process.Init, builds: Builds, command: New, stderr: *std.Io.
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
-    const context = builds.context(init, config, &stdout.interface, stderr);
+    var context = builds.context(init, config, &stdout.interface, stderr);
+    context.show_build_output = true;
     const working_directory = try std.process.currentPathAlloc(init.io, init.arena.allocator());
     new_command.new(context, command.kind, command.name, command.language, working_directory) catch |err| switch (err) {
         error.Failed => return 1,

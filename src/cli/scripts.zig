@@ -188,7 +188,7 @@ const editor_file_limit = 1024 * 1024;
 
 /// Whether the runner is missing, or any Zig file it is built from is newer than its stamp. What
 /// cannot be read counts as changed: a needless build is safe, a stale runner is not.
-fn isStale(context: Context) Error!bool {
+pub fn isStale(context: Context) Error!bool {
     const runner = try std.Io.Dir.path.join(context.arena, &.{ context.config, runner_path });
     std.Io.Dir.cwd().access(context.io, runner, .{}) catch return true;
     const stamp_file = try std.Io.Dir.path.join(context.arena, &.{ context.config, stamp_path });
