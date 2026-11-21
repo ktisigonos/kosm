@@ -21,13 +21,6 @@ Steps 21j5b-21j6: the other parts of kosm written through a frontend, Lua first,
 - Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
 - They keep every rule of their kind: Lua adapters know no app.
 
-- **21j5b1. Lua kosmoi in packages**
-  - Do: a package's root script may give a kosmos: the same table a `kosmoi/<name>.lua` returns, which its frontend's `declares` tells apart. It is applied as `kosm apply <package>[.<variant>]` and built on as `base = "<package>"` in a script and `.{ .name = "<package>" }` in a Zig kosmos, like a Zig package's `kosmos()`; the runner of scripts finds it through the package's folder, and its name is unique among every kosmos.
-  - Do: a Lua package reached only through another package works without the config listing it: the config's build walks each package's dependencies, so the runner of scripts knows its folder (`~~<name>/`) and hands its app type to scripts.
-  - Do: frontends may give a scaffold for a package's root; the Lua one's header names `kosm new package`, not `kosm new app`.
-  - Do: a package's root script giving a modifier, palette style or variation family works like one in `colors/` (untested so far).
-  - Done when: a scratch Lua package giving a kosmos is built on by a Lua kosmos and a Zig kosmos under `--diff`, a Zig package holding a Lua package's app applies with only the Zig package in the config, and a package root giving a modifier is used by a kosmos.
-
 - **21j5b2. Lua looks and bases in packages** `PLAN FIRST`
   - Do: a package's root script declares typed exports as an app declares its fields: a value as `look = kosm.value(kosm_base.Look, function() ... end)`, a base as `Base = { ... }` with `from(look)`. The build generates a Zig module giving `look()`, `Base`, `from(look)` and `kosmos()`, each calling into the script, a failure recorded as an app's `from`'s is. A script's look is a function in Zig (`kosm_frost.look()`); Zig looks stay constants, as both work.
   - Do: a function field of an exported value (a look's `tweak`) gets a Zig function generated for its place, calling the Lua function the script last returned there.
