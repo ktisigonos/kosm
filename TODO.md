@@ -11,20 +11,11 @@ Steps 1-12b (core, writers, CLI, packages, adapters, built-in apps, Kyanos/Kryst
 Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the human:
 - A **frontend** lets users write kosmoi in a language other than Zig, like an adapter lets kosm write a format. It is an ordinary package, written like a third-party one; kosm core knows no frontend language, only the interface every frontend implements. Lua comes first; TOML, JSON or C# may follow later, each optional, so a large runtime (.NET) is acceptable.
 - One package per language, `kosm_<language>`, holds everything kosm does with that language: its adapter and its frontend, each a Zig module of its own. `kosm_lua` (today the Lua adapter) gains the Lua frontend. Apps depending on a package only for its adapter (`kosm_hyprland`, `kosm_nvim` on `kosm_lua`) must not fetch the frontend's interpreter: make it a lazy dependency, and verify that this holds before relying on it.
-- Every language is equal: any kosmos, look or base, in any language, builds on any other, the same workflow in a different syntax. Lua may be more limited, and gets idioms where they read better in Lua. Zig is the natural pick for low-level code, but in the end apps, adapters and the rest of kosm can be written through any frontend too (step 21j).
+- Every language is equal: any kosmos, look or base, in any language, builds on any other, the same workflow in a different syntax. Lua may be more limited, and gets idioms where they read better in Lua. Zig is the natural pick for low-level code, but apps, adapters and the rest of kosm can be written through any frontend whose own code is Zig too.
 - No compiling on a Lua edit: the script is read when kosm runs, so only adding, updating or editing Zig code (packages, Zig kosmoi) rebuilds. Per-package binaries are not done: Zig has no stable ABI, and a rebuild on `add`/`update`/Zig edits is fast enough.
 - Kosmoi keep doing no IO themselves: kosm loads the script, like an image named in `Params`, so missing files, `~/`, caching and errors work as for every other input.
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
-
-Steps 21j5b-21j6: the other parts of kosm written through a frontend, Lua first, the way apps, adapters and frontends already are. Kosm stays language agnostic: what one language can write, every frontend can. Decided with the human:
-- Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
-- They keep every rule of their kind: Lua adapters know no app.
-
-- **21j6. Apps and adapters in a language whose frontend is a script** `PLAN FIRST` (later)
-  - Do: a frontend written through a frontend also writes apps and adapters in its own language (`declare`, `declare_adapter`, `call`), which needs the build to generate the frontend's module before the modules of the apps and adapters written through it.
-  - Do: a frontend written through a frontend gives scaffolds for `kosm new --language` as plain data too (its declaration has none yet, so `kosm new` says it gives no scaffold).
-  - Done when: a scratch app in such a language, through a frontend written in Lua, applies with `--diff`.
 
 Step 22c: a command-line improvement the human asked for.
 
