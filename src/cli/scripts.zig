@@ -16,7 +16,7 @@ pub const runner_path = "zig-out/bin/scripts";
 /// config's root where it is missing.
 const editor_directory = "zig-out/editor";
 /// Written when a build of the runner starts and kept once it succeeded; Zig code (or an app's
-/// script) newer than it means the runner is stale.
+/// or a kosmos' root script) newer than it means the runner is stale.
 const stamp_path = "zig-out/scripts.built";
 /// Where script kosmoi live, in the config's root.
 const kosmoi_directory = "kosmoi";
@@ -116,6 +116,12 @@ fn isScriptRoot(context: Context, folder: []const u8) Error!bool {
         return true;
     }
     return false;
+}
+
+/// Whether `file_name` is a script: not hidden, with an extension other than Zig's and its
+/// manifests'.
+fn isScriptName(file_name: []const u8) bool {
+    return !std.mem.startsWith(u8, file_name, ".") and !isZig(file_name) and std.mem.findScalar(u8, file_name, '.') != null;
 }
 
 /// Whether `file_name` is Zig source or a Zig manifest, never a script.
@@ -247,6 +253,7 @@ pub fn isStale(context: Context) Error!bool {
     const stamp_file = try std.Io.Dir.path.join(context.arena, &.{ context.config, stamp_path });
     const stamp = std.Io.Dir.cwd().statFile(context.io, stamp_file, .{}) catch return true;
     if (try anyNewer(context, context.config, &config_files, &config_folders, &script_app_folders, stamp.mtime)) return true;
+    if (try anyKosmosRootNewer(context, stamp.mtime)) return true;
     const sources = context.sources orelse return false;
     return anyNewer(context, sources.directory, &source_files, &source_folders, &.{}, stamp.mtime);
 }
@@ -278,6 +285,41 @@ fn anyNewer(context: Context, root: []const u8, files: []const []const u8, folde
                 },
                 else => {},
             }
+        }
+    }
+    return false;
+}
+
+/// Whether a script in `kosmoi/` or a kosmos folder's root script was changed after `since`: it
+/// may change the values it exports, which only a build sees. Other scripts in a kosmos folder
+/// are variants, read only when kosm runs.
+fn anyKosmosRootNewer(context: Context, since: std.Io.Timestamp) Error!bool {
+    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, kosmoi_directory });
+    var dir = std.Io.Dir.cwd().openDir(context.io, path, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return true,
+    };
+    defer dir.close(context.io);
+    var iterator = dir.iterate();
+    while (iterator.next(context.io) catch return true) |entry| {
+        if (std.mem.startsWith(u8, entry.name, ".")) continue;
+        switch (entry.kind) {
+            .file, .sym_link => if (isScriptName(entry.name)) {
+                const stat = dir.statFile(context.io, entry.name, .{}) catch return true;
+                if (stat.mtime.compare(.gt, since)) return true;
+            },
+            .directory => {
+                var folder = dir.openDir(context.io, entry.name, .{ .iterate = true }) catch return true;
+                defer folder.close(context.io);
+                var files = folder.iterate();
+                while (files.next(context.io) catch return true) |file| {
+                    if (file.kind != .file and file.kind != .sym_link) continue;
+                    if (!isScriptName(file.name) or !std.mem.startsWith(u8, file.name, script_root ++ ".")) continue;
+                    const stat = folder.statFile(context.io, file.name, .{}) catch return true;
+                    if (stat.mtime.compare(.gt, since)) return true;
+                }
+            },
+            else => {},
         }
     }
     return false;
@@ -742,7 +784,7 @@ test "a package whose root is a script may give a kosmos, a Zig one and one not 
     try testing.expect(try any(context));
 }
 
-test "script kosmoi apply on a Zig kosmos, on each other and on none, and a script edit builds nothing" {
+test "script kosmoi apply on a Zig kosmos, on each other and on none, and a variant's edit builds nothing" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -819,7 +861,14 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try testing.expect(try context.runBuild(&.{ "build", "-Dkosmos=snow" }));
     try testing.expect(!try buildsOnKosmoi(context, kosmos_runner));
 
+    // A variant in a kosmos' folder is read only when kosm runs; a kosmos' own script may change
+    // what it exports, which a build sees, compiling nothing when it did not.
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/snow/nord.kosmos", .data = "base snow\nset kitty.fonts.font_size=22\n" });
+    try testing.expect(!try isStale(context));
+    try testing.expect(std.mem.find(u8, try testDiff(context, "snow.nord"), "+font_size 22\n") != null);
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/on.kosmos", .data = "base frost\nparam size=13\n" });
+    try testing.expect(try isStale(context));
+    try testing.expect(try build(context));
     try testing.expect(!try isStale(context));
     try testing.expect(std.mem.find(u8, try testDiff(context, "on"), "+font_size 13\n") != null);
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/frost.zig", .data = test_frost });
@@ -869,7 +918,8 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a scri
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/frost.kosmos", .data = "" });
     stderr.clearRetainingCapacity();
     try testing.expect(!try build(context));
-    try testing.expect(std.mem.find(u8, stderr.written(), "'frost' names both the script kosmoi/frost.kosmos and kosmoi/frost.zig") != null);
+    const clash = stderr.written();
+    try testing.expect(std.mem.find(u8, clash, "'frost' names both ") != null and std.mem.find(u8, clash, "kosmoi/frost.kosmos") != null and std.mem.find(u8, clash, "kosmoi/frost.zig") != null);
 }
 
 /// An app written through the test frontend: its size and the peak its `from` gives.

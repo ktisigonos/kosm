@@ -326,15 +326,19 @@ fn badArgument(diagnostics: *kosm.Diagnostics, argument: []const u8) error{Inval
 /// The module of script `path`, read by the frontend claiming its extension.
 pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredFrontend, name: []const u8, path: []const u8, text: []const u8, modules: []const []const u8, diagnostics: *kosm.Diagnostics) Error![]const u8 {
     const extension = std.Io.Dir.path.extension(path);
+    const is_kosmos = std.mem.startsWith(u8, path, kosmoi_folder);
     const found = for (frontends) |candidate| {
         if (candidate.frontend.claims(extension)) break candidate.frontend;
     } else {
+        // Only a kosmos exporting values needs its frontend here; a frontend written through a
+        // frontend reads the others when kosm runs.
+        if (is_kosmos) return kosmosSource(arena, .{ .name = name, .path = path, .frontend = "" });
         diagnostics.set("", "", "{s}: no frontend claims '{s}' files; an app or adapter is Zig, or a script a frontend of the config reads", .{ path, extension });
         return error.InvalidDeclaration;
     };
     const script: Script = .{ .name = name, .path = path, .frontend = found.name };
     var context: kosm.Frontend.Context = .{ .arena = arena, .path = path };
-    const declared = try declaredBy(found, &context, path, text, diagnostics);
+    const declared = if (is_kosmos) try declaredByKosmos(found, &context, path, text, diagnostics) else try declaredBy(found, &context, path, text, diagnostics);
     if (declared == .adapter) {
         const declare = found.declare_adapter orelse {
             diagnostics.set("", "", "{s}: the {s} frontend writes no adapters", .{ path, found.name });
@@ -425,6 +429,25 @@ fn declaredBy(frontend: kosm.Frontend, context: *kosm.Frontend.Context, path: []
     return declares(context, text) catch |err| declareFailed(err, context.*, path, diagnostics);
 }
 
+/// What kosmos script `path` gives: values for building on, or a kosmos the runner of scripts
+/// reads when it runs. A script its frontend cannot tell apart, or that fails while kosm reads its
+/// declaration (calling Zig code at its top, which runs only then), is a kosmos, so the runner
+/// reports what is wrong with it; a script in `kosmoi/` giving an app or the like fails.
+fn declaredByKosmos(frontend: kosm.Frontend, context: *kosm.Frontend.Context, path: []const u8, text: []const u8, diagnostics: *kosm.Diagnostics) Error!kosm.Frontend.Declared {
+    const declares = frontend.declares orelse return .kosmos;
+    const declared = declares(context, text) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return .kosmos,
+    };
+    if (declared != .kosmos and declared != .exports) {
+        diagnostics.set("", "", "{s} gives {s}; kosmoi/ holds kosmoi and values for building on, and {s} belong in {s}/", .{ path, givenAs(declared), plural(declared), plural(declared) });
+        return error.InvalidDeclaration;
+    }
+    return declared;
+}
+
+/// The config's folder of kosmoi, whose scripts give kosmoi or export values for building on.
+const kosmoi_folder = "kosmoi/";
 /// The config's folder of adapters, whose scripts declare adapters rather than apps.
 const adapters_folder = "adapters/";
 /// The config's folder of frontends, whose scripts declare frontends.
@@ -620,6 +643,31 @@ test "a package's root script is what its frontend says; a config's is what its 
     with.declares = null;
     try testing.expectError(error.InvalidDeclaration, declaredBy(with, &context, "~~kosm_scratch/root.fake", "", &diagnostics));
     try testing.expectEqualStrings("~~kosm_scratch/root.fake: the fake frontend cannot tell what a package's root script gives, so it cannot be one", diagnostics.message());
+}
+
+test "a kosmos script in kosmoi/ becomes a module: its exports, or the script alone, and an app there fails" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const Fake = struct {
+        fn declares(_: *kosm.Frontend.Context, text: []const u8) kosm.Frontend.Error!kosm.Frontend.Declared {
+            if (std.mem.eql(u8, text, "app")) return .app;
+            if (std.mem.eql(u8, text, "broken")) return error.InvalidScript;
+            return .kosmos;
+        }
+        fn load(_: *kosm.Frontend.Context, _: []const u8) kosm.Frontend.Error!kosm.Frontend.Script {
+            return error.InvalidScript;
+        }
+    };
+    const frontends: []const discovery.DeclaredFrontend = &.{.{ .package = "kosm_fake", .frontend = .{ .name = "fake", .extensions = &.{".fake"}, .load = Fake.load, .declares = Fake.declares } }};
+    var diagnostics: kosm.Diagnostics = .{};
+    const plain = try generate(arena.allocator(), frontends, "snow", "kosmoi/snow/root.fake", "", &.{}, &diagnostics);
+    try testing.expect(std.mem.find(u8, plain, ".path = \"kosmoi/snow/root.fake\" };\n") != null);
+    // A script failing while its declaration is read is left to the runner, which says why.
+    _ = try generate(arena.allocator(), frontends, "snow", "kosmoi/snow.fake", "broken", &.{}, &diagnostics);
+    // Only a frontend kosm generates modules with must read a kosmos that exports nothing.
+    _ = try generate(arena.allocator(), frontends, "snow", "kosmoi/snow.json", "", &.{}, &diagnostics);
+    try testing.expectError(error.InvalidDeclaration, generate(arena.allocator(), frontends, "cava", "kosmoi/cava.fake", "app", &.{}, &diagnostics));
+    try testing.expectEqualStrings("kosmoi/cava.fake gives an app; kosmoi/ holds kosmoi and values for building on, and apps belong in apps/", diagnostics.message());
 }
 
 test "a package's root script giving a kosmos becomes a module naming the script, and colors/ refuses one" {

@@ -673,6 +673,7 @@ fn KosmosBuilder(comptime target: ScriptTarget) type {
                 .modules = comptime moduleNames(target.kosmoi),
                 .kosmoi = comptime kosmosNames(target.kosmoi),
                 .packages = comptime packageKosmoi(target.kosmoi),
+                .exporting = comptime exportingScripts(target.kosmoi),
                 .library = ScriptLibrary(target).library(runtime),
                 .calls_folder = &runtime.scripts_folder,
                 .diagnostics = diagnostics,
@@ -790,11 +791,12 @@ fn kosmosNames(comptime sources: []const ScriptTarget.KosmosSource) []const scri
 }
 
 /// Every module of `sources` that is the generated module of a package whose root script gives
-/// its kosmos.
+/// its kosmos. A kosmos script in the config's `kosmoi/` has such a module too, but is found
+/// where it is.
 fn packageKosmoi(comptime sources: []const ScriptTarget.KosmosSource) []const script.PackageKosmos {
     comptime var found: []const script.PackageKosmos = &.{};
     inline for (sources) |source| {
-        if (comptime hosting.isScriptKosmos(source.module)) {
+        if (comptime hosting.isScriptKosmos(source.module) and !isConfigScript(source.module)) {
             const path = source.module.script.path;
             found = found ++ .{script.PackageKosmos{ .name = source.name, .path = path, .file = source.folder ++ "/" ++ comptime std.Io.Dir.path.basename(path) }};
         }
@@ -803,12 +805,33 @@ fn packageKosmoi(comptime sources: []const ScriptTarget.KosmosSource) []const sc
     return &final;
 }
 
-/// The import name of every module in `sources`.
+/// The import name of every module in `sources` but those of the config's kosmos scripts that
+/// give a kosmos, which is the script itself.
 fn moduleNames(comptime sources: []const ScriptTarget.KosmosSource) []const []const u8 {
     comptime var names: []const []const u8 = &.{};
-    inline for (sources) |source| names = names ++ .{source.name};
+    inline for (sources) |source| {
+        if (comptime !(hosting.isScriptKosmos(source.module) and isConfigScript(source.module))) names = names ++ .{source.name};
+    }
     const final = names[0..names.len].*;
     return &final;
+}
+
+/// The path of every kosmos script in the config's `kosmoi/` that exports values for building
+/// on: its module gives them, and its kosmos and variants are Zig kosmoi, so it is no script
+/// kosmos.
+fn exportingScripts(comptime sources: []const ScriptTarget.KosmosSource) []const []const u8 {
+    comptime var paths: []const []const u8 = &.{};
+    inline for (sources) |source| {
+        if (comptime hosting.isScriptExports(source.module) and isConfigScript(source.module)) paths = paths ++ .{source.module.script.path};
+    }
+    const final = paths[0..paths.len].*;
+    return &final;
+}
+
+/// Whether generated module `Module` comes from a script of the config rather than a
+/// package's root script, which is named through its package's folder (`~~kosm_frost/`).
+fn isConfigScript(comptime Module: type) bool {
+    return !std.mem.startsWith(u8, Module.script.path, "~~");
 }
 
 /// Plans every app in `tree`, then prints the warnings gathered, also when planning failed, so

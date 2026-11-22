@@ -12,7 +12,8 @@
 //! one, so editors see the config's imports. An app, adapter or modifier written through a frontend
 //! (`apps/<name>.<extension>`, `apps/<name>/root.<extension>`, and the same in `adapters/`,
 //! `frontends/` and `colors/`) is the module kosm generates from what its script declares, in
-//! `.zig-cache/kosm/modules/`.
+//! `.zig-cache/kosm/modules/`; so is a kosmos script in `kosmoi/`, whose module gives the values
+//! it exports, if any.
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -307,13 +308,14 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
 
     var found: std.ArrayList(Local) = .empty;
     var iterator = dir.iterate();
-    // Apps, adapters and frontends may be scripts; a kosmos script is read by the runner, not built.
-    const holds_scripts = !std.mem.eql(u8, directory, "kosmoi");
+    const is_kosmoi = std.mem.eql(u8, directory, "kosmoi");
     while (try iterator.next(io)) |entry| {
         if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".zig")) {
             const path = b.fmt("{s}/{s}", .{ directory, entry.name });
             try found.append(b.allocator, .{ .name = b.dupe(entry.name[0 .. entry.name.len - ".zig".len]), .root = path, .origin = path, .is_directory = false, .missing_root = false });
-        } else if (holds_scripts and (entry.kind == .file or entry.kind == .sym_link) and isScriptFile(entry.name)) {
+        } else if ((entry.kind == .file or entry.kind == .sym_link) and isScriptFile(entry.name)) {
+            // A kosmos script gets a module too: one exporting values gives them to Zig, any
+            // other one an empty module, as the runner of scripts reads it when it runs.
             const path = b.fmt("{s}/{s}", .{ directory, entry.name });
             const name = b.dupe(scriptStem(entry.name));
             try found.append(b.allocator, .{ .name = name, .root = generatedRoot(b, name), .origin = path, .is_directory = false, .missing_root = false, .script = path });
@@ -322,9 +324,9 @@ fn listLocal(b: *std.Build, directory: []const u8) ![]const Local {
             b.dependOnDirectoryContents(b.path(package_path));
             const has_root = if (dir.statFile(io, b.fmt("{s}/root.zig", .{entry.name}), .{})) |_| true else |_| false;
             const script_root_file = try scriptRootFile(b, dir, entry.name);
-            // A kosmos folder whose root is a script holds no Zig module unless it has a root.zig.
-            if (!has_root and std.mem.eql(u8, directory, "kosmoi") and script_root_file != null) continue;
-            if (holds_scripts and script_root_file != null) {
+            // A kosmos folder holding a root.zig and a root script is the Zig module, the script
+            // giving its kosmos.
+            if (script_root_file != null and !(is_kosmoi and has_root)) {
                 const name = b.dupe(entry.name);
                 try found.append(b.allocator, .{
                     .name = name,
@@ -612,14 +614,16 @@ fn scriptLessThan(_: void, left: ScriptFile, right: ScriptFile) bool {
 
 /// Fails the build and returns false when a script kosmos in `kosmoi/` shares its name with a
 /// module, which `kosm apply` could not tell apart. A folder's root script shares it with the
-/// folder's own module, whose variants the runner tells apart from the script's.
+/// folder's own module, whose variants the runner tells apart from the script's, and a script
+/// shares it with the module generated from it.
 fn checkScriptNames(b: *std.Build, entries: []const Entry) bool {
     const found = scriptFiles(b) orelse return false;
     for (found) |script| {
         for (entries) |entry| {
             const own_folder = entry.kind == .kosmos and std.mem.startsWith(u8, script.origin, entry.origin) and
                 std.mem.eql(u8, scriptStem(std.Io.Dir.path.basename(script.origin)), script_root);
-            if (std.mem.eql(u8, entry.name, script.name) and !own_folder) {
+            const own_module = if (entry.local) |local| if (local.script) |generated_from| std.mem.eql(u8, generated_from, script.origin) else false else false;
+            if (std.mem.eql(u8, entry.name, script.name) and !own_folder and !own_module) {
                 fail(b, "'{s}' names both the script {s} and {s}; kosmoi, apps, adapters and packages need unique names", .{ script.name, script.origin, entry.origin });
                 return false;
             }

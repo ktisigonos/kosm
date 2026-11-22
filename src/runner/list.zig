@@ -6,6 +6,7 @@ const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
 const kosmos_call = @import("kosmos_call.zig");
 const inspect = @import("inspect.zig");
+const hosting = @import("hosting.zig");
 const interface = @import("kosm_interface");
 const kosmos_names = @import("kosm_names");
 
@@ -388,9 +389,10 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
     comptime var packages: []const Package = &.{};
     comptime var locals: []const Package = &.{};
     inline for (sources) |source| {
-        // A root script gives the kosmos of a folder whose Zig module gives only variants.
+        // A root script gives the kosmos of a folder whose Zig module gives only variants; one
+        // exporting values gives them through its module, listed below.
         inline for (scripts) |script| {
-            if (comptime std.mem.eql(u8, script.name, source.name)) kosmoi = kosmoi ++ .{scriptRow(script)};
+            if (comptime std.mem.eql(u8, script.name, source.name) and !exportsFrom(source.module, script.origin)) kosmoi = kosmoi ++ .{scriptRow(script)};
         }
         inline for (comptime discovery.declaredKosmoi(source.module)) |declared| {
             const Function = @typeInfo(@TypeOf(@field(declared.Namespace, declared.function))).@"fn";
@@ -424,6 +426,11 @@ pub fn collect(comptime sources: []const Source, comptime scripts: []const Scrip
     const final_locals = locals[0..locals.len].*;
     const table: Table = .{ .kosmoi = &final_kosmoi, .packages = &final_packages, .locals = &final_locals };
     return table;
+}
+
+/// Whether `Module` is generated from the script `origin`, which exports values for building on.
+fn exportsFrom(comptime Module: type, comptime origin: []const u8) bool {
+    return hosting.isScriptExports(Module) and std.mem.eql(u8, Module.script.path, origin);
 }
 
 /// The kosmos whose folder holds `name`'s script ("personal" of "personal.nord"), or null for

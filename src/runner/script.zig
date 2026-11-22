@@ -30,6 +30,10 @@ pub const Context = struct {
     kosmoi: []const KosmosName = &.{},
     /// Every package whose root script gives its kosmos, named after the package.
     packages: []const PackageKosmos = &.{},
+    /// The config's scripts exporting values for building on, as messages show them
+    /// ("kosmoi/frost/root.lua"): each gives a module whose kosmoi are Zig kosmoi, so it is no
+    /// script kosmos.
+    exporting: []const []const u8 = &.{},
     /// What a script may call.
     library: kosm.Frontend.Library = .{},
     /// Set to each script's folder while its frontend reads it, so that relative paths the
@@ -212,10 +216,19 @@ fn findIn(context: Context, folder: []const u8, name: []const u8, shown: []const
     while (iterator.next(context.io) catch |err| return fail(context, "cannot read {s}/: {s}", .{ folder, @errorName(err) })) |entry| {
         if (entry.kind != .file and entry.kind != .sym_link) continue;
         if (!isScriptOf(entry.name, name)) continue;
+        if (isExporting(context, try context.arena.print("{s}/{s}", .{ folder, entry.name }))) continue;
         if (found) |earlier| return fail(context, "'{s}' names both {s}/{s} and {s}/{s}; rename one", .{ shown, folder, earlier, folder, entry.name });
         found = try context.arena.dupe(u8, entry.name);
     }
     return found;
+}
+
+/// Whether the config's script `path` ("kosmoi/frost/root.lua") exports values for building on.
+fn isExporting(context: Context, path: []const u8) bool {
+    for (context.exporting) |exporting| {
+        if (std.mem.eql(u8, exporting, path)) return true;
+    }
+    return false;
 }
 
 /// Whether `file_name` is a script kosmos named `name`: `name`, a dot, and any extension but
@@ -477,7 +490,8 @@ pub fn listAll(context: Context) Error![]const KosmosName {
         if (entry.kind == .directory and !std.mem.startsWith(u8, entry.name, ".")) {
             try listFolder(context, &found, try context.arena.dupe(u8, entry.name));
         } else if (try scriptStem(context, entry)) |stem| {
-            try appendScript(context, &found, stem, try context.arena.print("{s}/{s}", .{ directory, entry.name }));
+            const path = try context.arena.print("{s}/{s}", .{ directory, entry.name });
+            if (!isExporting(context, path)) try appendScript(context, &found, stem, path);
         }
     }
     return found.items;
@@ -492,7 +506,8 @@ fn listFolder(context: Context, found: *std.ArrayList(KosmosName), name: []const
     while (iterator.next(context.io) catch |err| return fail(context, "cannot read {s}/: {s}", .{ folder, @errorName(err) })) |entry| {
         const stem = try scriptStem(context, entry) orelse continue;
         const kosmos = if (std.mem.eql(u8, stem, root_name)) name else try context.arena.print("{s}.{s}", .{ name, stem });
-        try appendScript(context, found, kosmos, try context.arena.print("{s}/{s}", .{ folder, entry.name }));
+        const path = try context.arena.print("{s}/{s}", .{ folder, entry.name });
+        if (!isExporting(context, path)) try appendScript(context, found, kosmos, path);
     }
 }
 
@@ -780,6 +795,29 @@ test "a root script sharing a name with its folder's Zig kosmos, a variant or an
     try fixture.expectFailure("snow.cold", "'snow.cold.deep' names both a variant of kosmoi/snow/root.kosmos and a kosmos of kosmoi/snow/; rename one");
     try fixture.expectFailure("snow.cold.deep", "'snow.cold' names both a variant of kosmoi/snow/root.kosmos and a kosmos of kosmoi/snow/; rename one");
     try fixture.expectFailure("hail", "'hail' names both kosmoi/hail.kosmos and kosmoi/hail/root.kosmos; rename one");
+}
+
+test "a script exporting values is no script kosmos: its folder's other scripts are the module's variants" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{
+        .{ "frost/root.kosmos", "variants\ngives light\n" },
+        .{ "frost/nord.kosmos", "base frost.light\n" },
+        .{ "glow.kosmos", "" },
+    });
+    defer fixture.deinit();
+    var context = fixture.context();
+    context.exporting = &.{ "kosmoi/frost/root.kosmos", "kosmoi/glow.kosmos" };
+    context.kosmoi = &.{ .{ .name = "frost", .origin = "kosmoi/frost/" }, .{ .name = "frost.light", .origin = "kosmoi/frost/" } };
+
+    try testing.expectEqual(null, try locate(context, "frost"));
+    try testing.expectEqual(null, try locate(context, "frost.light"));
+    try testing.expectEqual(null, try locate(context, "glow"));
+    const variant = try resolve(context, "frost.nord");
+    try testing.expectEqualStrings("frost.light", variant.base.?);
+    try testing.expectEqualStrings("kosmoi/frost/nord.kosmos", variant.scripts[0].path);
+    const listed = try listAll(context);
+    try testing.expectEqual(1, listed.len);
+    try testing.expectEqualStrings("frost.nord", listed[0].name);
 }
 
 test "scripts building on scripts are read down to the Zig kosmos, the lowest first" {
