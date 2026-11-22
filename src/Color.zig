@@ -117,6 +117,13 @@ pub fn mix(color: Color, target: Color, amount: f64) Color {
     };
 }
 
+/// The same color at opacity `alpha`: 0 is transparent, 1 is opaque.
+pub fn withAlpha(color: Color, alpha: f64) Color {
+    var result = color;
+    result.alpha = alpha;
+    return result;
+}
+
 /// WCAG 2 relative luminance, 0..1, from the color clipped to sRGB. Ignores alpha.
 pub fn luminance(color: Color) f64 {
     const rgb = color.toRgb();
