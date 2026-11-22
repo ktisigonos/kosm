@@ -21,11 +21,6 @@ Steps 21j5b-21j6: the other parts of kosm written through a frontend, Lua first,
 - Each declares itself as apps do: a plain table, documented by `---` comments, from which kosm generates a Zig module only when the declaration changes. A run-time-only path avoiding that rebuild is not worth a second code path.
 - They keep every rule of their kind: Lua adapters know no app.
 
-- **21j5b2. Lua looks and bases in packages** `PLAN FIRST`
-  - Do: a package's root script declares typed exports as an app declares its fields: a value as `look = kosm.value(kosm_base.Look, function() ... end)`, a base as `Base = { ... }` with `from(look)`. The build generates a Zig module giving `look()`, `Base`, `from(look)` and `kosmos()`, each calling into the script, a failure recorded as an app's `from`'s is. A script's look is a function in Zig (`kosm_frost.look()`); Zig looks stay constants, as both work.
-  - Do: a function field of an exported value (a look's `tweak`) gets a Zig function generated for its place, calling the Lua function the script last returned there.
-  - Done when: a scratch Lua package giving a look is worn by a Lua kosmos and a Zig kosmos under `--diff`, and one giving a base is built on by both.
-
 - **21j6. Apps and adapters in a language whose frontend is a script** `PLAN FIRST` (later)
   - Do: a frontend written through a frontend also writes apps and adapters in its own language (`declare`, `declare_adapter`, `call`), which needs the build to generate the frontend's module before the modules of the apps and adapters written through it.
   - Do: a frontend written through a frontend gives scaffolds for `kosm new --language` as plain data too (its declaration has none yet, so `kosm new` says it gives no scaffold).

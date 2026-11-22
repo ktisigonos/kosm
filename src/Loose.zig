@@ -29,6 +29,9 @@ pub const Kind = union(enum) {
     null,
     /// A Zig value a script holds, copied into a field of the same type.
     handle: Handle,
+    /// A function a script gave inside a value its package exports, by the place it was given
+    /// at ("look.tweak"); the Zig function kosm makes for that place calls it.
+    function: []const u8,
 };
 
 const Handle = @import("Frontend/Handle.zig");

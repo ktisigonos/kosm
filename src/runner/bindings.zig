@@ -568,10 +568,10 @@ pub fn isBindable(comptime F: type) bool {
 }
 
 /// Whether `name` is a declaration of `T` that only kosm uses: an app's `apply` and `reload`,
-/// and the `script` of an app, modifier, palette style, variation family or package kosmos
-/// written through a frontend.
+/// and the `script` of an app, modifier, palette style, variation family, package kosmos or
+/// package's exports written through a frontend.
 fn isRunByKosm(comptime T: type, comptime name: []const u8) bool {
-    if (std.mem.eql(u8, name, "script") and (isColorScript(@TypeOf(@field(T, name))) or @TypeOf(@field(T, name)) == kosm.Frontend.ScriptKosmos)) return true;
+    if (std.mem.eql(u8, name, "script") and (isColorScript(@TypeOf(@field(T, name))) or @TypeOf(@field(T, name)) == kosm.Frontend.ScriptKosmos or @TypeOf(@field(T, name)) == kosm.Frontend.ScriptExports)) return true;
     if (!kosm.app.is(T)) return false;
     if (std.mem.eql(u8, name, "script")) return @TypeOf(@field(T, name)) == kosm.Frontend.ScriptApp;
     return std.mem.eql(u8, name, "apply") or std.mem.eql(u8, name, "reload");
@@ -711,6 +711,7 @@ fn describeGiven(arena: std.mem.Allocator, loose: Loose) std.mem.Allocator.Error
         .boolean => "a boolean",
         .null => "null",
         .handle => |handle| try arena.print("a {s}", .{handle.type.name}),
+        .function => "a function",
     };
 }
 

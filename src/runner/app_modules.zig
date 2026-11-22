@@ -370,6 +370,14 @@ pub fn generate(arena: std.mem.Allocator, frontends: []const discovery.DeclaredF
         return color_modules.source(arena, kind, script, declaration, modules, diagnostics);
     }
     if (declared == .kosmos) return kosmosSource(arena, script);
+    if (declared == .exports) {
+        const declare = found.declare_exports orelse {
+            diagnostics.set("", "", "{s}: the {s} frontend writes no exported values", .{ path, found.name });
+            return error.InvalidDeclaration;
+        };
+        const declaration = declare(&context, text) catch |err| return declareFailed(err, context, path, diagnostics);
+        return @import("export_modules.zig").source(arena, script, declaration, modules, diagnostics);
+    }
     const declare = found.declare orelse {
         diagnostics.set("", "", "{s}: the {s} frontend writes no apps", .{ path, found.name });
         return error.InvalidDeclaration;
@@ -437,6 +445,7 @@ fn givenAs(declared: kosm.Frontend.Declared) []const u8 {
         .style => "a palette style",
         .family => "a variation family",
         .kosmos => "a kosmos",
+        .exports => "values for building on",
     };
 }
 
@@ -447,7 +456,7 @@ fn plural(declared: kosm.Frontend.Declared) []const u8 {
         .adapter => "adapters",
         .frontend => "frontends",
         .modifier, .style, .family => "colors",
-        .kosmos => "kosmoi",
+        .kosmos, .exports => "kosmoi",
     };
 }
 

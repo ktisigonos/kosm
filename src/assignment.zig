@@ -316,7 +316,7 @@ const Walker = struct {
                 else => {},
             },
             .boolean => |boolean| if (T == bool) return boolean,
-            .table, .list, .null, .handle => {},
+            .table, .list, .null, .handle, .function => {},
         }
         return walker.expected(T, loose);
     }
@@ -353,7 +353,7 @@ const Walker = struct {
                 if (handle.as(Value)) |value| return copy.deep(Value, walker.arena, value.*);
                 return walker.expected(Value, loose);
             },
-            .text, .null => return walker.expected(Value, loose),
+            .text, .null, .function => return walker.expected(Value, loose),
         }
     }
 
@@ -479,6 +479,7 @@ fn describeGiven(buffer: []u8, loose: Loose) []const u8 {
         .boolean => |boolean| if (boolean) "true" else "false",
         .null => "null",
         .handle => |handle| std.fmt.bufPrint(buffer, "a {s}", .{handle.type.name}) catch "a Zig value",
+        .function => "a function",
     };
 }
 

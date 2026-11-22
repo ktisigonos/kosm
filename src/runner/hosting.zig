@@ -81,8 +81,9 @@ pub fn Hosting(comptime frontends: []const discovery.DeclaredFrontend, comptime 
 }
 
 /// The types the host hands scripts: the theme, the output and reloader, colors (for adapters),
-/// and every app, modifier and palette style written through a frontend in `sources` or among
-/// the modules `reached` only through packages.
+/// every app, modifier and palette style written through a frontend, and what packages' exports
+/// written through one hand their scripts, in `sources` or among the modules `reached` only
+/// through packages.
 pub fn handledTypes(comptime sources: []const ScriptTarget.KosmosSource, comptime reached: []const type) []const type {
     comptime var found: []const type = &.{ kosm.Theme, kosm.Output, kosm.Reloader, kosm.Color };
     comptime var modules: []const type = reached;
@@ -91,6 +92,7 @@ pub fn handledTypes(comptime sources: []const ScriptTarget.KosmosSource, comptim
         if (comptime isScriptApp(Module)) found = found ++ .{Module.App};
         if (comptime isScriptColor(Module, "Modifier", kosm.Frontend.ScriptModifier)) found = found ++ .{Module.Modifier};
         if (comptime isScriptColor(Module, "Style", kosm.Frontend.ScriptStyle)) found = found ++ .{Module.Style};
+        if (comptime isScriptExports(Module)) found = found ++ exportsHanded(Module);
     }
     const final = found[0..found.len].*;
     return &final;
@@ -106,6 +108,39 @@ pub fn isScriptApp(comptime Module: type) bool {
 /// Whether `Module` is the generated module of a package whose root script gives its kosmos.
 pub fn isScriptKosmos(comptime Module: type) bool {
     return @typeInfo(Module) == .@"struct" and @hasDecl(Module, "script") and @TypeOf(Module.script) == kosm.Frontend.ScriptKosmos;
+}
+
+/// Whether `Module` is the generated module of a package whose root script exports values for
+/// building on.
+pub fn isScriptExports(comptime Module: type) bool {
+    return @typeInfo(Module) == .@"struct" and @hasDecl(Module, "script") and @TypeOf(Module.script) == kosm.Frontend.ScriptExports;
+}
+
+/// Whether any module of `sources` is the generated module of a package exporting values
+/// through a frontend, which only the runner of scripts can run. A value is reached through a
+/// function call, so a tree's type cannot tell.
+pub fn holdsScriptExports(comptime sources: []const @import("Target.zig").AdapterSource) bool {
+    inline for (sources) |source| {
+        if (comptime isScriptExports(source.module)) return true;
+    }
+    return false;
+}
+
+/// The types the exports of `Module` hand their script: their parameters, and the parameters
+/// of the function fields of the values they give.
+fn exportsHanded(comptime Module: type) []const type {
+    @setEvalBranchQuota(discovery.branch_quota);
+    comptime var found: []const type = &.{};
+    inline for (@typeInfo(Module).@"struct".decl_names) |name| {
+        const function = switch (@typeInfo(@TypeOf(@field(Module, name)))) {
+            .@"fn" => |function| function,
+            else => continue,
+        };
+        inline for (function.param_types) |Parameter| found = found ++ .{kosm.Frontend.ScriptExports.HandedType(Parameter.?)};
+        found = found ++ kosm.Frontend.ScriptExports.handedTypes(function.return_type.?);
+    }
+    const final = found[0..found.len].*;
+    return &final;
 }
 
 /// Whether `Module` is the generated module of a modifier, palette style or variation family

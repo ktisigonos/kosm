@@ -336,6 +336,7 @@ fn describe(given: Loose) []const u8 {
         .boolean => "a boolean",
         .null => "nothing",
         .handle => "a Zig value",
+        .function => "a function",
     };
 }
 
