@@ -67,6 +67,13 @@ pub fn raw(text: []const u8) Raw {
     return .{ .text = text };
 }
 
+/// `parts` written back to back with no separator, each the way the adapter writes it, so
+/// scripts build what Zig writes as `.{ .joined = &.{...} }`:
+/// `kosm.joined({ kosm.raw("hl.plugin.x ~= nil and "), { enabled = true }, kosm.raw(" or nil") })`.
+pub fn joined(parts: []const Value) Value {
+    return .{ .joined = parts };
+}
+
 /// A color from hex text known at compile time: `rgb`, `rgba`, `rrggbb` or `rrggbbaa`,
 /// with an optional `#`. Bad text is a compile error; use `Color.parseHex` at runtime. The
 /// color is known at compile time too, so a list of them (`&.{ hex("000000") }`) is a constant
