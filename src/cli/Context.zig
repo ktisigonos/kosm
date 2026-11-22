@@ -17,6 +17,9 @@ sources: ?Sources = null,
 /// Whether `runBuild` lets `zig build` draw its progress and print its errors on the
 /// terminal; otherwise its output is collected, as tests need.
 show_build_output: bool = false,
+/// Set once `runBuild` has said what Zig's `fork ... matched` line means, so a command says it
+/// once however many builds it runs; null never says it.
+fork_explained: ?*bool = null,
 /// What a command did, and what packages provide.
 stdout: *std.Io.Writer,
 /// Errors, and the output of a failing `zig`.
@@ -59,12 +62,24 @@ pub fn runBuild(context: Context, arguments: []const []const u8) RunError!bool {
         if (!result.term.success()) try context.stderr.writeAll(result.stderr);
         return result.term.success();
     }
+    if (try context.forkArgument(arguments) != null) try context.explainFork();
     try context.stderr.flush();
     const argv = try context.zigArguments(arguments);
     var child = std.process.spawn(context.io, .{ .argv = argv, .cwd = .{ .path = context.config }, .environ_map = context.environ_map }) catch |err|
         return context.fail("cannot run {s}: {s}", .{ argv[0], @errorName(err) });
     const term = child.wait(context.io) catch |err| return context.fail("cannot wait for {s}: {s}", .{ argv[0], @errorName(err) });
     return term.success();
+}
+
+/// Zig logs `info: fork <dir> matched N kosm packages` on every build with `--fork`.
+fn explainFork(context: Context) std.Io.Writer.Error!void {
+    const explained = context.fork_explained orelse return;
+    if (explained.*) return;
+    explained.* = true;
+    try context.stderr.print("note: zig's \"fork\" lines below mean this config builds with {s}, not the kosm its build.zig.zon pins\n", .{switch (context.sources.?.origin) {
+        .override => "the kosm sources set by kosm source",
+        .installed => "the kosm sources installed beside this binary",
+    }});
 }
 
 /// Runs every argv in `argvs` at once in the config directory and collects each one's output,
