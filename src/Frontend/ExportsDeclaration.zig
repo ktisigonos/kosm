@@ -16,6 +16,21 @@ base: ?[]const Declaration.Field = null,
 base_doc: ?[]const u8 = null,
 /// The line the base is declared on, for messages; 0 when unknown.
 base_line: usize = 0,
+/// The other structs the script declares as it declares the base, in the order it writes them,
+/// for the values it exports to take (a kosmos' `Params`).
+structs: []const Struct = &.{},
+
+/// A struct the script declares besides the base.
+pub const Struct = struct {
+    /// Its name in the module, as the script gives it: "Params".
+    name: []const u8,
+    /// Its fields, in the order the script writes them.
+    fields: []const Declaration.Field,
+    /// The doc comment written above it, without the comment markers; null for none.
+    doc: ?[]const u8 = null,
+    /// The line it is declared on, for messages; 0 when unknown.
+    line: usize = 0,
+};
 
 /// The name the type of the base the script declares has in its Zig module, and in a
 /// `Value.type` naming it.
@@ -41,6 +56,7 @@ pub const Value = struct {
 pub const Parameter = struct {
     /// The name the script gives it: "look".
     name: []const u8,
-    /// Its Zig type by the name a script reaches it under: "kosm_base.Look".
+    /// Its Zig type by the name a script reaches it under ("kosm_base.Look"), or the name of a
+    /// struct the script declares ("Params").
     type: []const u8,
 };

@@ -67,6 +67,11 @@ pub fn collectImports(arena: std.mem.Allocator, script: Script, field: Declarati
             return collectImports(arena, script, field, child.*, modules, imports, diagnostics);
         },
         .list => |child| return collectImports(arena, script, field, child.*, modules, imports, diagnostics),
+        .applied => |applied| {
+            try collectImports(arena, script, field, .{ .zig = applied.function }, modules, imports, diagnostics);
+            for (applied.arguments) |argument| try collectImports(arena, script, field, argument, modules, imports, diagnostics);
+        },
+        .declared => {},
         .zig => |name| {
             var segments = std.mem.splitScalar(u8, name, '.');
             const module = segments.first();
@@ -170,7 +175,15 @@ pub fn writeType(writer: *std.Io.Writer, field_type: Declaration.Type) std.Io.Wr
             try writer.writeAll("[]const ");
             try writeType(writer, child.*);
         },
-        .zig => |name| try writer.writeAll(name),
+        .zig, .declared => |name| try writer.writeAll(name),
+        .applied => |applied| {
+            try writer.print("{s}(", .{applied.function});
+            for (applied.arguments, 0..) |argument, position| {
+                if (position != 0) try writer.writeAll(", ");
+                try writeType(writer, argument);
+            }
+            try writer.writeAll(")");
+        },
     }
 }
 
@@ -179,11 +192,12 @@ pub fn writeDefault(writer: *std.Io.Writer, script: Script, field: Declaration.F
     const given = field.default orelse switch (field.type) {
         .optional => return writer.writeAll("null"),
         .list => return writer.writeAll("&.{}"),
-        .zig => return writer.writeAll(".{}"),
+        .zig, .declared, .applied => return writer.writeAll(".{}"),
         .boolean, .integer, .float, .text => return fail(diagnostics, script, field.line, "{s}: {s} needs a default, as kosm.{s}({s}); or make it kosm.optional(kosm.{s})", .{
             field.name, described(field.type), @tagName(field.type), exampleDefault(field.type), @tagName(field.type),
         }),
     };
+    if (field.type == .zig or field.type == .applied) return writeLiteral(writer, script, field, given, 0, diagnostics);
     const scalar = switch (field.type) {
         .optional => |child| child.*,
         else => field.type,
@@ -197,9 +211,44 @@ pub fn writeDefault(writer: *std.Io.Writer, script: Script, field: Declaration.F
             else => {},
         },
         .text => if (given.value == .string) return writer.print("\"{f}\"", .{std.zig.fmtString(given.value.string)}),
-        .optional, .list, .zig => return fail(diagnostics, script, field.line, "{s}: only a boolean, integer, float or text takes a default; this one starts as its type's own", .{field.name}),
+        .optional, .list, .zig, .declared, .applied => return fail(diagnostics, script, field.line, "{s}: only a boolean, integer, float, text or Zig type takes a default; this one starts as its type's own", .{field.name}),
     }
     return fail(diagnostics, script, field.line, "{s}: the default does not fit {s}", .{ field.name, described(scalar) });
+}
+
+/// How deep a default's tables may nest; deeper is taken for a mistake.
+const max_literal_depth = 16;
+
+/// `value`, the default of the Zig-typed `field`, as a Zig literal its type coerces from: a table
+/// as `.{ .name = ... }`, a list as `&.{ ... }`, text as a string, numbers and booleans as they
+/// are. A text the type reads as an enum, union tag or color is not known here, so such a
+/// field is set in the function instead.
+fn writeLiteral(writer: *std.Io.Writer, script: Script, field: Declaration.Field, value: kosm.Loose, depth: usize, diagnostics: *kosm.Diagnostics) WriteError!void {
+    if (depth > max_literal_depth) return fail(diagnostics, script, field.line, "{s}: the default nests deeper than {d} tables", .{ field.name, max_literal_depth });
+    switch (value.value) {
+        .table => |entries| {
+            try writer.writeAll(".{");
+            for (entries, 0..) |entry, position| {
+                try writer.print("{s} .{f} = ", .{ if (position == 0) "" else ",", std.zig.fmtId(entry.key) });
+                try writeLiteral(writer, script, field, entry.value, depth + 1, diagnostics);
+            }
+            try writer.writeAll(if (entries.len == 0) "}" else " }");
+        },
+        .list => |items| {
+            try writer.writeAll("&.{");
+            for (items, 0..) |item, position| {
+                try writer.writeAll(if (position == 0) " " else ", ");
+                try writeLiteral(writer, script, field, item, depth + 1, diagnostics);
+            }
+            try writer.writeAll(if (items.len == 0) "}" else " }");
+        },
+        .string, .text => |text| try writer.print("\"{f}\"", .{std.zig.fmtString(text)}),
+        .integer => |integer| try writer.print("{d}", .{integer}),
+        .float => |float| if (std.math.isFinite(float)) try writer.print("{d}", .{float}) else return fail(diagnostics, script, field.line, "{s}: the default holds {d}, which is no number Zig writes", .{ field.name, float }),
+        .boolean => |boolean| try writer.print("{}", .{boolean}),
+        .null => try writer.writeAll("null"),
+        .handle, .function => return fail(diagnostics, script, field.line, "{s}: a default holds plain values only: tables, lists, text, numbers and booleans", .{field.name}),
+    }
 }
 
 /// A scalar type as messages name it: "an integer".
@@ -238,19 +287,31 @@ pub fn writeTypeChecks(writer: *std.Io.Writer, script: Script, declaration: Decl
             });
             end = next;
         }
-        try writer.print("        if (@TypeOf({s}) != type) @compileError(\"{f}:{d}: {f}: {f} is not a type\");\n", .{
+        if (!isApplied(field.type)) try writer.print("        if (@TypeOf({s}) != type) @compileError(\"{f}:{d}: {f}: {f} is not a type\");\n", .{
             name, std.zig.fmtString(script.path), field.line, std.zig.fmtString(field.name), std.zig.fmtString(name),
         });
     }
     if (wrote_any) try writer.writeAll("    }\n");
 }
 
-/// The Zig type `field_type` names, through optionals and lists, or null.
+/// The Zig type `field_type` names, through optionals and lists, or the function an applied
+/// type calls; null for none.
 fn zigName(field_type: Declaration.Type) ?[]const u8 {
     return switch (field_type) {
         .optional, .list => |child| zigName(child.*),
         .zig => |name| name,
+        .applied => |applied| applied.function,
         else => null,
+    };
+}
+
+/// Whether `field_type` is a Zig function's type applied to its arguments, through optionals
+/// and lists.
+fn isApplied(field_type: Declaration.Type) bool {
+    return switch (field_type) {
+        .optional, .list => |child| isApplied(child.*),
+        .applied => true,
+        else => false,
     };
 }
 

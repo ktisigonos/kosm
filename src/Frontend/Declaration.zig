@@ -29,8 +29,20 @@ pub const Type = union(enum) {
     /// A list of items of this type; its default is empty.
     list: *const Type,
     /// A Zig type by the name a script reaches it under ("kosm.Color", "kosm_cursor.App"); its
-    /// default is `.{}`, so a struct whose fields all have defaults.
+    /// default is `.{}`, so a struct whose fields all have defaults, or a table the field gives.
     zig: []const u8,
+    /// A struct the same script declares, by its name ("Base", "Params"); its default is `.{}`.
+    declared: []const u8,
+    /// A Zig function giving a type, called with these types: `kosm.Kosmos(Base)`. Its default
+    /// is `.{}`, or a table the field gives.
+    applied: Applied,
+
+    /// A Zig function giving a type, and what it is called with.
+    pub const Applied = struct {
+        /// The function by the name a script reaches it under: "kosm.Kosmos".
+        function: []const u8,
+        arguments: []const Type,
+    };
 };
 
 /// Whether the script gives the function `name`.
