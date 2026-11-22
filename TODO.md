@@ -17,13 +17,6 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-Step 22c: a command-line improvement the human asked for.
-
-- **22c. Install shell completions**
-  - Done: `kosm init` and `kosm update` write the fish and bash scripts where each shell loads them (`$XDG_DATA_HOME/fish/vendor_completions.d/kosm.fish`, `${BASH_COMPLETION_USER_DIR:-$XDG_DATA_HOME/bash-completion}/completions/kosm`), rewriting one only when it changed; zsh keeps `kosm completions zsh`. fish completes in a scratch HOME.
-  - Left: bash-completion is not installed on the human's machine, so its loading the script by itself is unchecked (the script completes when sourced).
-  - Done when: in a scratch HOME with bash-completion installed, bash completes kosm without the user adding anything.
-
 - **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
   - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.
   - Done when: the human has agreed on the prompt, and picking a suggestion applies that kosmos, under a test.
