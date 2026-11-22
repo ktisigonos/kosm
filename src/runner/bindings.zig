@@ -136,8 +136,9 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                 const full = name ++ "." ++ decl_name;
                 if (Declared == type) {
                     if (depth < max_depth and comptime isWalkable(decl)) {
+                        // Kept when empty too, so a script names the type (`kosm.takes(kosm.Theme.Input, ...)`).
                         const child = &NamespaceOf(decl, full, depth + 1).namespace;
-                        if (child.entries.len != 0) entries = entries ++ .{Namespace.Entry{ .name = decl_name, .kind = .{ .namespace = child } }};
+                        entries = entries ++ .{Namespace.Entry{ .name = decl_name, .kind = .{ .namespace = child } }};
                     }
                 } else if (@typeInfo(Declared) == .@"fn") {
                     if (comptime !isKosmos(Space, decl_name) and !isRunByKosm(Space, decl_name) and isBindable(Declared)) {

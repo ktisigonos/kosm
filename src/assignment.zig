@@ -126,7 +126,8 @@ const Walker = struct {
         @setEvalBranchQuota(branch_quota);
         const outer_origin = walker.enter(loose);
         defer walker.origin = outer_origin;
-        if (loose.value == .handle) return walker.fromHandle(T, target, loose);
+        // A kosm.Value takes a color or raw text a script holds, not only a handle to a Value.
+        if (loose.value == .handle and T != Value) return walker.fromHandle(T, target, loose);
         if (comptime kosmos.is(T)) {
             const name = pathOf(loose) orelse return walker.expected(T, loose);
             target.* = .{ .name = try walker.arena.dupe(u8, name) };
@@ -723,6 +724,16 @@ test "a kosm.Value takes a color or raw text a script holds" {
     const written = fixture.kittyApp().extra[0].value.list;
     try testing.expectEqual(color, written[0].color);
     try testing.expectEqualStrings("2pt", written[1].raw);
+}
+
+test "a kosm.Value given as a script's raw text is written raw" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    var raw: Raw = .{ .text = "2pt" };
+    const raw_handle: Handle = .{ .pointer = &raw, .type = &.{ .id = Handle.id(Raw), .name = "kosm.Raw", .get = undefined, .set = undefined, .length = undefined } };
+    const extra = looseOf(.{ .table = &.{ entryOf("path", .{ .string = "a" }), entryOf("value", .{ .handle = raw_handle }) } });
+    try fixture.assignLoose(fixture.kitty("extra", .{ .list = &.{extra} }));
+    try testing.expectEqualStrings("2pt", fixture.kittyApp().extra[0].value.raw);
 }
 
 test "wrong kinds of values name the path and what was expected" {
