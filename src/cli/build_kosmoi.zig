@@ -23,6 +23,8 @@ const kosmoi_directory = "kosmoi/";
 pub fn build(context: Context, selection: ?Settings.Selection) Error!void {
     const chosen = selection orelse try loadSelection(context);
     const subject = if (selection == null) try std.Io.Dir.path.join(context.arena, &.{ context.config, Settings.file_name }) else "";
+    // Listing them builds the config's lister, which takes a while.
+    try context.stdout.writeAll("finding the kosmoi\n");
     const picked_names = try pick(context, chosen, subject);
     const picked = try splitScripts(context, picked_names);
     const names = picked.zig;
@@ -78,14 +80,9 @@ fn splitScripts(context: Context, names: []const []const u8) Error!Picked {
 
 /// Builds the runner every script kosmos shares, naming it in the report; returns whether it built.
 fn buildScripts(context: Context) Error!bool {
-    try context.stdout.writeAll("building the script runner\n");
-    try context.stdout.flush();
-    if (!try scripts.build(context)) {
-        try context.stderr.writeAll("error: the script runner does not build, so no script kosmos can be applied\n");
-        return false;
-    }
-    try context.stdout.writeAll("built the script runner\n");
-    return true;
+    if (try scripts.buildReporting(context)) return true;
+    try context.stderr.writeAll("error: the script runner does not build, so no script kosmos can be applied\n");
+    return false;
 }
 
 const Listed = known_kosmoi.Listed;

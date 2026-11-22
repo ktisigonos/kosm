@@ -211,8 +211,15 @@ pub fn build(context: Context) Error!bool {
 /// false only when that build failed.
 pub fn buildIfAny(context: Context) Error!bool {
     if (!try any(context)) return true;
+    return buildReporting(context);
+}
+
+/// `build`, saying on stdout that the runner is building and, once it is, that it built.
+pub fn buildReporting(context: Context) Error!bool {
     try context.stdout.writeAll("building the script runner\n");
-    return build(context);
+    if (!try build(context)) return false;
+    try context.stdout.writeAll("built the script runner\n");
+    return true;
 }
 
 /// Copies each editor file the last build of the runner gave (`.luarc.json`) into the config's
@@ -909,11 +916,11 @@ test "script kosmoi apply on a Zig kosmos, on each other and on none, and a vari
     try testing.expectEqualStrings("error: there is no kosmos 'bare.ligth'; did you mean 'bare.light'?\n", stderr.written());
     stdout.clearRetainingCapacity();
     try @import("build_kosmoi.zig").build(context, .{ .only = &.{"on"} });
-    try testing.expectEqualStrings("building the script runner\nbuilt the script runner\n", stdout.written());
+    try testing.expectEqualStrings("finding the kosmoi\nbuilding the script runner\nbuilt the script runner\n", stdout.written());
     // A Zig kosmos building on another is applied by the runner of scripts, built along.
     stdout.clearRetainingCapacity();
     try @import("build_kosmoi.zig").build(context, .{ .only = &.{"snow.melted"} });
-    try testing.expectEqualStrings("building the script runner\nbuilt the script runner\nbuilding 1 kosmos: snow.melted\nbuilt snow.melted\n", stdout.written());
+    try testing.expectEqualStrings("finding the kosmoi\nbuilding the script runner\nbuilt the script runner\nbuilding 1 kosmos: snow.melted\nbuilt snow.melted\n", stdout.written());
 
     try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/frost.kosmos", .data = "" });
     stderr.clearRetainingCapacity();

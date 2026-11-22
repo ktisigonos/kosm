@@ -98,8 +98,8 @@ const Builds = struct {
     environ: *const std.process.Environ.Map,
     /// The sources builds use in place of a config's pinned kosm, or null for the pinned one.
     sources: ?Sources,
-    /// Shared by every context of the command, so the fork note is printed once.
-    fork_explained: *bool,
+    /// Shared by every context of the command, so which kosm it builds with is said once.
+    sources_announced: *bool,
 
     /// Null after printing why the sources can't be found (a broken `kosm source` record).
     fn prepare(init: std.process.Init, stderr: *std.Io.Writer) !?Builds {
@@ -116,13 +116,13 @@ const Builds = struct {
             }
             return null;
         };
-        const fork_explained = try arena.create(bool);
-        fork_explained.* = false;
-        return .{ .environ = environ, .sources = sources, .fork_explained = fork_explained };
+        const sources_announced = try arena.create(bool);
+        sources_announced.* = false;
+        return .{ .environ = environ, .sources = sources, .sources_announced = sources_announced };
     }
 
     fn context(builds: Builds, init: std.process.Init, config: []const u8, stdout: *std.Io.Writer, stderr: *std.Io.Writer) Context {
-        return .{ .io = init.io, .arena = init.arena.allocator(), .config = config, .environ_map = builds.environ, .sources = builds.sources, .fork_explained = builds.fork_explained, .stdout = stdout, .stderr = stderr };
+        return .{ .io = init.io, .arena = init.arena.allocator(), .config = config, .environ_map = builds.environ, .sources = builds.sources, .sources_announced = builds.sources_announced, .stdout = stdout, .stderr = stderr };
     }
 };
 
