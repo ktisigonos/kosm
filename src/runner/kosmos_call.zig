@@ -152,6 +152,12 @@ pub fn buildsOnKosmoi(comptime Params: type) bool {
 /// process' usual 8 or 16 MiB. It is only reserved: memory is used as deep as the kosmos goes.
 pub const kosmos_stack_size = 256 * 1024 * 1024;
 
+/// How much of the kosmos stack's bottom the part it ran in leaves out. The thread's entry and
+/// the copies of a call's arguments sit above the kosmos' frame, so the full size measured down
+/// from that frame reaches past the stack into other memory, such as a list kosm allocated;
+/// only a kosmos nesting deeper than all the rest of the stack loses the check.
+const unchecked_stack_bottom = 1024 * 1024;
+
 /// Calls `function` with `arguments` on a thread with a `kosmos_stack_size` stack, writing what
 /// it returns to `returned`, and gives the part of that stack it ran in.
 pub fn callOnKosmosStack(comptime function: anytype, arguments: anytype, returned: *@typeInfo(@TypeOf(function)).@"fn".return_type.?, diagnostics: *kosm.Diagnostics) Reported!lifetime.Stack {
@@ -165,7 +171,7 @@ pub fn callOnKosmosStack(comptime function: anytype, arguments: anytype, returne
     const thread = std.Thread.spawn(.{ .stack_size = kosmos_stack_size }, Call.run, .{ arguments, returned, &top }) catch |err|
         return fail(diagnostics, "cannot start the thread the kosmos runs on: {s}", .{@errorName(err)});
     thread.join();
-    return .{ .low = top -| kosmos_stack_size, .high = top };
+    return .{ .low = top -| (kosmos_stack_size - unchecked_stack_bottom), .high = top };
 }
 
 fn readHostname(buffer: *[std.posix.HOST_NAME_MAX]u8, diagnostics: *kosm.Diagnostics) Reported![]const u8 {
