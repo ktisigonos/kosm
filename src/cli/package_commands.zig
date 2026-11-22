@@ -61,10 +61,10 @@ pub fn remove(context: Context, name: []const u8) Error!void {
 }
 
 /// `kosm update [name]`: fetches every package in packages.zon again (or only `name`) at its
-/// ref and checks all but kosm itself like `add`, in one build. Dependencies missing from
-/// packages.zon are skipped. A successful update deletes the config's `.zig-cache`, which
-/// otherwise keeps every build made with the old packages; then the script runner is built,
-/// when there are scripts, for their completion.
+/// ref, all at once, and saves those whose content changed; packages whose hash is unchanged
+/// keep their pin. When any changed, it checks all of them but kosm itself like `add`, in one
+/// build, then builds the script runner, when there are scripts, for their completion.
+/// Dependencies missing from packages.zon are skipped.
 pub fn update(context: Context, name: ?[]const u8) Error!void {
     const packages = try loadPackages(context);
     const original = try readManifest(context);
@@ -81,9 +81,15 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
     };
     if (selected.len == 0) return context.stdout.print("nothing to update: {s} lists no packages\n", .{Packages.file_name});
 
+    const changed = try changedPackages(context, original, selected);
+    if (changed.len == 0) {
+        if (selected.len == 1) return context.stdout.print("{s} is up to date\n", .{selected[0].name});
+        return context.stdout.writeAll("every package is up to date\n");
+    }
     errdefer restoreManifest(context, original);
-    for (selected) |package| {
-        try progress(context, "fetching {s}", .{package.name});
+    // `--save` rewrites build.zig.zon, so these run one at a time.
+    for (changed) |package| {
+        try progress(context, "saving {s}", .{package.name});
         try save(context, package);
     }
     var checked: std.ArrayList([]const u8) = .empty;
@@ -92,9 +98,29 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
         if (!std.mem.eql(u8, package.name, kosm_name)) try checked.append(context.arena, package.name);
     }
     if (checked.items.len != 0) try check(context, checked.items);
-    for (selected) |package| try context.stdout.print("updated {s}\n", .{package.name});
-    try deleteCache(context);
+    for (changed) |package| try context.stdout.print("updated {s}\n", .{package.name});
     try refreshScripts(context);
+}
+
+/// Fetches every package in `selected` at once and returns those whose hash differs from the
+/// one `manifest_source` pins, or that it does not pin. A package fetched to the same hash has
+/// the same contents, so its pin is kept even if its ref moved to another commit.
+fn changedPackages(context: Context, manifest_source: [:0]const u8, selected: []const Packages.Package) Error![]const Packages.Package {
+    const pinned = manifest.dependencies(context.arena, manifest_source) catch |err| return invalidManifest(context, err);
+    if (selected.len == 1) try progress(context, "fetching {s}", .{selected[0].name}) else try progress(context, "fetching {d} packages", .{selected.len});
+    const argvs = try context.arena.alloc([]const []const u8, selected.len);
+    for (selected, argvs) |package, *argv| argv.* = try context.zigArguments(&.{ "fetch", try package.fetchArgument(context.arena) });
+    const results = try context.runAll(argvs);
+    var changed: std.ArrayList(Packages.Package) = .empty;
+    for (selected, results) |package, result| {
+        if (!result.term.success()) return failRun(context, result, "zig fetch could not fetch {s}", .{package.url});
+        const hash = std.mem.trim(u8, result.stdout, " \t\r\n");
+        const pin = for (pinned) |dependency| {
+            if (std.mem.eql(u8, dependency.name, package.name)) break dependency.hash;
+        } else null;
+        if (pin == null or !std.mem.eql(u8, pin.?, hash)) try changed.append(context.arena, package);
+    }
+    return changed.items;
 }
 
 /// Builds the script runner when the config has scripts, so their completion is current right
@@ -150,18 +176,6 @@ fn check(context: Context, names: []const []const u8) Error!void {
 }
 
 const RunResult = std.process.RunResult;
-
-/// The config's own Zig cache, relative to the config.
-const cache_name = ".zig-cache";
-
-/// Deletes the config's Zig cache, never the global one. The update has already succeeded, so a
-/// failure is a warning.
-fn deleteCache(context: Context) Error!void {
-    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, cache_name });
-    std.Io.Dir.cwd().deleteTree(context.io, path) catch |err| {
-        try context.stderr.print("warning: cannot delete {s} ({s}); delete it yourself to free its space\n", .{ path, @errorName(err) });
-    };
-}
 
 fn readManifest(context: Context) Error![:0]const u8 {
     const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, manifest_name });
@@ -478,27 +492,48 @@ test "update fetches a package again, and a failing check puts build.zig.zon bac
 
 const second_adapter_fingerprint = 0x21c6164728404232;
 
-test "update checks every package in one build, then deletes the config's cache" {
+test "update checks every package in one build when one changed" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
     const arena = fixture.arena.allocator();
     try add(fixture.context(), try fixture.writePackage("test_adapter", adapter_fingerprint, adapterRoot("probe")));
     try add(fixture.context(), try fixture.writePackage("test_second", second_adapter_fingerprint, adapterRoot("second")));
-    try fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{});
 
+    _ = try fixture.writePackage("test_second", second_adapter_fingerprint, adapterRoot("changed"));
     fixture.stdout.clearRetainingCapacity();
+    fixture.stderr.clearRetainingCapacity();
     try update(fixture.context(), null);
     try testing.expect(std.mem.endsWith(u8, fixture.stdout.written(), "test_adapter provides:\n  adapter  probe\n" ++
-        "test_second provides:\n  adapter  second\nupdated test_adapter\nupdated test_second\n"));
-    try testing.expectError(error.FileNotFound, fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{}));
+        "test_second provides:\n  adapter  changed\nupdated test_second\n"));
+    try testing.expect(std.mem.find(u8, fixture.stderr.written(), "fetching 2 packages\nsaving test_second\nchecking 2 packages\n") != null);
 
     const inspector = try std.Io.Dir.path.join(arena, &.{ fixture.root, "config", inspector_path });
     const inspected = try fixture.context().run(&.{inspector});
-    try testing.expectEqualStrings("test_adapter provides:\n  adapter  probe\ntest_second provides:\n  adapter  second\n", inspected.stdout);
+    try testing.expectEqualStrings("test_adapter provides:\n  adapter  probe\ntest_second provides:\n  adapter  changed\n", inspected.stdout);
 }
 
-test "an update with a package that does not compile names its files and keeps the cache" {
+test "an update where no package changed saves and builds nothing" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    try add(fixture.context(), try fixture.writePackage("test_adapter", adapter_fingerprint, adapterRoot("probe")));
+    try add(fixture.context(), try fixture.writePackage("test_second", second_adapter_fingerprint, adapterRoot("second")));
+    const added = (try fixture.read("build.zig.zon")).?;
+
+    fixture.stdout.clearRetainingCapacity();
+    fixture.stderr.clearRetainingCapacity();
+    try update(fixture.context(), null);
+    try testing.expect(std.mem.endsWith(u8, fixture.stdout.written(), "every package is up to date\n"));
+    try testing.expectEqualStrings("fetching 2 packages\n", fixture.stderr.written());
+    try testing.expectEqualStrings(added, (try fixture.read("build.zig.zon")).?);
+
+    fixture.stdout.clearRetainingCapacity();
+    try update(fixture.context(), "test_second");
+    try testing.expectEqualStrings("test_second is up to date\n", fixture.stdout.written());
+}
+
+test "an update with a package that does not compile names its files and puts build.zig.zon back" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -512,10 +547,9 @@ test "an update with a package that does not compile names its files and keeps t
     try testing.expect(std.mem.find(u8, stderr, "zig-pkg/test_second-") != null);
     try testing.expect(std.mem.find(u8, stderr, "missing_adapter") != null);
     try testing.expect(std.mem.find(u8, stderr, "the packages do not all build in this config project") != null);
-    try testing.expect(std.mem.find(u8, stderr, "fetching test_adapter\nfetching test_second\nchecking 2 packages\n") != null);
+    try testing.expect(std.mem.find(u8, stderr, "fetching 2 packages\nsaving test_second\nchecking 2 packages\n") != null);
     try testing.expect(std.mem.endsWith(u8, stderr, "reverted: build.zig.zon is back as it was, so no package changed\n"));
     try testing.expectEqualStrings(added, (try fixture.read("build.zig.zon")).?);
-    try fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{});
 }
 
 const kosmoi_fingerprint = 0xb0c4401d1234abcd;

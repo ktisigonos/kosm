@@ -67,6 +67,48 @@ pub fn runBuild(context: Context, arguments: []const []const u8) RunError!bool {
     return term.success();
 }
 
+/// Runs every argv in `argvs` at once in the config directory and collects each one's output,
+/// in the order given; a program that cannot start fails, and stops the others.
+pub fn runAll(context: Context, argvs: []const []const []const u8) RunError![]std.process.RunResult {
+    const children = try context.arena.alloc(std.process.Child, argvs.len);
+    var started: usize = 0;
+    defer for (children[0..started]) |*child| child.kill(context.io);
+    for (argvs, children) |argv, *child| {
+        child.* = std.process.spawn(context.io, .{
+            .argv = argv,
+            .cwd = .{ .path = context.config },
+            .environ_map = context.environ_map,
+            .stdin = .ignore,
+            .stdout = .pipe,
+            .stderr = .pipe,
+        }) catch |err| return context.fail("cannot run {s}: {s}", .{ argv[0], @errorName(err) });
+        started += 1;
+    }
+    const results = try context.arena.alloc(std.process.RunResult, argvs.len);
+    for (argvs, children, results) |argv, *child, *result| {
+        result.* = collect(context, child) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => return context.fail("cannot read the output of {s}: {s}", .{ argv[0], @errorName(err) }),
+        };
+    }
+    return results;
+}
+
+/// Reads `child`'s stdout and stderr to their ends, then waits for it.
+fn collect(context: Context, child: *std.process.Child) !std.process.RunResult {
+    var buffer: std.Io.File.MultiReader.Buffer(2) = undefined;
+    var reader: std.Io.File.MultiReader = undefined;
+    reader.init(context.arena, context.io, buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
+    defer reader.deinit();
+    while (reader.fill(64, .none)) |_| {} else |err| switch (err) {
+        error.EndOfStream => {},
+        else => |other| return other,
+    }
+    try reader.checkAnyError();
+    const term = try child.wait(context.io);
+    return .{ .term = term, .stdout = try reader.toOwnedSlice(0), .stderr = try reader.toOwnedSlice(1) };
+}
+
 /// Runs `argv` in the config directory and collects its output; a program that cannot start fails.
 pub fn run(context: Context, argv: []const []const u8) RunError!std.process.RunResult {
     return std.process.run(context.arena, context.io, .{
