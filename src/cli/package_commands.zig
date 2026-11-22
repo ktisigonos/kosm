@@ -63,7 +63,9 @@ pub fn remove(context: Context, name: []const u8) Error!void {
 /// `kosm update [name]`: fetches every package in packages.zon again (or only `name`) at its
 /// ref, all at once, and saves those whose content changed; packages whose hash is unchanged
 /// keep their pin. When any changed, it checks all of them but kosm itself like `add`, in one
-/// build, then builds the script runner, when there are scripts, for their completion.
+/// build, and deletes the config's `.zig-cache`, which otherwise keeps every build made with the
+/// old packages; every executable recompiles against new packages anyway. Then it builds the
+/// script runner, when there are scripts, for their completion.
 /// Dependencies missing from packages.zon are skipped.
 pub fn update(context: Context, name: ?[]const u8) Error!void {
     const packages = try loadPackages(context);
@@ -99,6 +101,7 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
     }
     if (checked.items.len != 0) try check(context, checked.items);
     for (changed) |package| try context.stdout.print("updated {s}\n", .{package.name});
+    try deleteCache(context);
     try refreshScripts(context);
 }
 
@@ -176,6 +179,19 @@ fn check(context: Context, names: []const []const u8) Error!void {
 }
 
 const RunResult = std.process.RunResult;
+
+/// The config's own Zig cache, relative to the config.
+const cache_name = ".zig-cache";
+
+/// Deletes the config's Zig cache, never the global one. Zig's manifests point into it, so it
+/// goes whole: a build whose manifest names a deleted output folder fails for good. The update
+/// has already succeeded, so a failure is a warning.
+fn deleteCache(context: Context) Error!void {
+    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, cache_name });
+    std.Io.Dir.cwd().deleteTree(context.io, path) catch |err| {
+        try context.stderr.print("warning: cannot delete {s} ({s}); delete it yourself to free its space\n", .{ path, @errorName(err) });
+    };
+}
 
 fn readManifest(context: Context) Error![:0]const u8 {
     const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, manifest_name });
@@ -492,7 +508,7 @@ test "update fetches a package again, and a failing check puts build.zig.zon bac
 
 const second_adapter_fingerprint = 0x21c6164728404232;
 
-test "update checks every package in one build when one changed" {
+test "update checks every package in one build when one changed, then deletes the config's cache" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -507,32 +523,14 @@ test "update checks every package in one build when one changed" {
     try testing.expect(std.mem.endsWith(u8, fixture.stdout.written(), "test_adapter provides:\n  adapter  probe\n" ++
         "test_second provides:\n  adapter  changed\nupdated test_second\n"));
     try testing.expect(std.mem.find(u8, fixture.stderr.written(), "fetching 2 packages\nsaving test_second\nchecking 2 packages\n") != null);
+    try testing.expectError(error.FileNotFound, fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{}));
 
     const inspector = try std.Io.Dir.path.join(arena, &.{ fixture.root, "config", inspector_path });
     const inspected = try fixture.context().run(&.{inspector});
     try testing.expectEqualStrings("test_adapter provides:\n  adapter  probe\ntest_second provides:\n  adapter  changed\n", inspected.stdout);
-    // Three checks built three inspectors; the build recorded the last, and the others were pruned.
-    try fixture.tmp.dir.access(testing.io, "config/zig-out/built/inspect", .{});
-    try testing.expectEqual(1, try countInspectors(fixture.tmp.dir));
 }
 
-/// The folders of the config's cache holding an inspector.
-fn countInspectors(dir: std.Io.Dir) !usize {
-    var outputs = try dir.openDir(testing.io, "config/.zig-cache/o", .{ .iterate = true });
-    defer outputs.close(testing.io);
-    var count: usize = 0;
-    var iterator = outputs.iterate();
-    while (try iterator.next(testing.io)) |entry| {
-        if (entry.kind != .directory) continue;
-        var folder = try outputs.openDir(testing.io, entry.name, .{});
-        defer folder.close(testing.io);
-        folder.access(testing.io, "inspect", .{}) catch continue;
-        count += 1;
-    }
-    return count;
-}
-
-test "an update where no package changed saves and builds nothing" {
+test "an update where no package changed saves and builds nothing, and keeps the cache" {
     var fixture: Fixture = undefined;
     try fixture.init();
     defer fixture.deinit();
@@ -546,6 +544,7 @@ test "an update where no package changed saves and builds nothing" {
     try testing.expect(std.mem.endsWith(u8, fixture.stdout.written(), "every package is up to date\n"));
     try testing.expectEqualStrings("fetching 2 packages\n", fixture.stderr.written());
     try testing.expectEqualStrings(added, (try fixture.read("build.zig.zon")).?);
+    try fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{});
 
     fixture.stdout.clearRetainingCapacity();
     try update(fixture.context(), "test_second");

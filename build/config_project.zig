@@ -12,8 +12,7 @@
 //! one, so editors see the config's imports. An app, adapter or modifier written through a frontend
 //! (`apps/<name>.<extension>`, `apps/<name>/root.<extension>`, and the same in `adapters/`,
 //! `frontends/` and `colors/`) is the module kosm generates from what its script declares, in
-//! `.zig-cache/kosm/modules/`. Each executable a build makes is recorded in `zig-out/built/`, naming
-//! its cache folder, so kosm can delete the folders of executables a newer build replaced.
+//! `.zig-cache/kosm/modules/`.
 
 const std = @import("std");
 const import_scanner = @import("../src/cli/import_scanner.zig");
@@ -101,18 +100,6 @@ pub fn addConfigProject(b: *std.Build, comptime manifest: anytype) void {
     const name = kosmos_name orelse return;
     const runner = addRunner(b, target, optimize, kosm_dependency, names.modules.items, name) orelse return;
     b.installArtifact(runner);
-    recordBuilt(b, runner, b.fmt("kosmos/{s}", .{name}));
-}
-
-/// Installs `zig-out/built/<record>`, which names the cache folder `executable` was built in, so
-/// kosm can delete the folders of the executables a newer build replaced. It is Zig source
-/// (`pub const path: []const u8 = "...";`), as the build writes it.
-fn recordBuilt(b: *std.Build, executable: *std.Build.Step.Compile, record: []const u8) void {
-    const options = b.addOptions();
-    options.addOptionPathUntracked("path", executable.getEmittedBin());
-    // Untracked paths add no dependency of their own.
-    options.step.dependOn(&executable.step);
-    b.getInstallStep().dependOn(&b.addInstallFile(options.getOutput(), b.fmt("built/{s}", .{record})).step);
 }
 
 /// Compiles the runner of each kosmos in `names`, as `-Dkosmos=` would but without installing
@@ -129,7 +116,6 @@ fn addPrebuilt(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
         const marker = b.addInstallFile(markers.add(name, ""), b.fmt("prebuilt/{s}", .{name}));
         marker.step.dependOn(&runner.step);
         b.getInstallStep().dependOn(&marker.step);
-        recordBuilt(b, runner, b.fmt("kosmos/{s}", .{name}));
     }
 }
 
@@ -194,7 +180,6 @@ fn addAppGenerator(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
         frontends.append(b.allocator, .{ .package = package, .name = entry.name, .module = entry.module }) catch @panic("OOM");
     }
     const generator = app_generator.addGenerator(b, target, optimize, kosm_dependency.module("kosm_runner"), frontends.items);
-    recordBuilt(b, generator, "kosm-apps");
 
     const run = b.addRunArtifact(generator);
     run.addArg(b.root.joinString(b.allocator, generated_folder) catch @panic("OOM"));
@@ -540,7 +525,6 @@ fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
     const runner = b.addExecutable(.{ .name = "scripts", .root_module = root_module });
     dependOnGenerated(runner, entries);
     b.installArtifact(runner);
-    recordBuilt(b, runner, "scripts");
     addScriptCompletions(b, runner, entries);
 }
 
@@ -724,7 +708,6 @@ fn addInspector(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     const inspector = b.addExecutable(.{ .name = "inspect", .root_module = root_module });
     dependOnGenerated(inspector, entries);
     b.installArtifact(inspector);
-    recordBuilt(b, inspector, "inspect");
 }
 
 fn findPackage(entries: []const Entry, name: []const u8) ?Entry {
@@ -773,7 +756,6 @@ fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     const list_executable = b.addExecutable(.{ .name = "list", .root_module = root_module });
     dependOnGenerated(list_executable, entries);
     b.installArtifact(list_executable);
-    recordBuilt(b, list_executable, "list");
 }
 
 /// Every local kosmos, app and adapter, and every installed package but kosm itself: each may
