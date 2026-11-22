@@ -46,6 +46,16 @@ const list_module = @import("list.zig");
 /// (`[--param value]... [--set path=value]... [--diff] [--config dir]`).
 /// Returns the exit status: 0 on success, 1 after printing what went wrong.
 pub fn run(init: std.process.Init, comptime target: Target) !u8 {
+    const Body = struct {
+        fn call(given: std.process.Init) !u8 {
+            return runHere(given, target);
+        }
+    };
+    return onRunnerStack(init, Body.call);
+}
+
+/// `run` on the stack it was called on.
+fn runHere(init: std.process.Init, comptime target: Target) !u8 {
     const declared = comptime findTarget(target);
     const kosmos = @field(declared.Namespace, declared.function);
     const adapters = comptime discovery.adapters(target.adapter_sources);
@@ -79,6 +89,38 @@ pub fn run(init: std.process.Init, comptime target: Target) !u8 {
 /// them: reads it and every script below it, then applies it on its Zig kosmos, or on none.
 /// Returns the exit status: 0 on success, 1 after printing what went wrong.
 pub fn runScript(init: std.process.Init, comptime target: ScriptTarget) !u8 {
+    const Body = struct {
+        fn call(given: std.process.Init) !u8 {
+            return runScriptHere(given, target);
+        }
+    };
+    return onRunnerStack(init, Body.call);
+}
+
+/// Calls `body` with `init` on a thread with a stack as large as a kosmos', and gives what it
+/// returns. Planning, delivering and reloading pass the tree and its apps by value, which in a
+/// Debug build outgrows a process' usual 8 or 16 MiB as a kosmos does.
+fn onRunnerStack(init: std.process.Init, comptime body: anytype) !u8 {
+    const Result = @typeInfo(@TypeOf(body)).@"fn".return_type.?;
+    const Call = struct {
+        fn run(given: std.process.Init, result: *Result) void {
+            result.* = body(given);
+        }
+    };
+    var result: Result = undefined;
+    const thread = std.Thread.spawn(.{ .stack_size = kosmos_call.kosmos_stack_size }, Call.run, .{ init, &result }) catch |err| {
+        var buffer: [256]u8 = undefined;
+        var stderr = std.Io.File.stderr().writer(init.io, &buffer);
+        try stderr.interface.print("error: cannot start the thread kosm runs on: {s}\n", .{@errorName(err)});
+        try stderr.interface.flush();
+        return 1;
+    };
+    thread.join();
+    return result;
+}
+
+/// `runScript` on the stack it was called on.
+fn runScriptHere(init: std.process.Init, comptime target: ScriptTarget) !u8 {
     var terminal: Terminal = .{};
     const streams = try terminal.open(init);
     if (!try interface.check(init.environ_map, streams.stderr)) {

@@ -989,10 +989,20 @@ test "local packages provide their adapters, kosmoi and folders wherever they li
     try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "home/out.nord", .{}));
 }
 
-/// A kosmos whose stack outgrows a process' usual 8 or 16 MiB, as a Debug build of many large
-/// apps does.
+/// A kosmos and an app whose stacks outgrow a process' usual 8 or 16 MiB, as a Debug build of
+/// many large apps does.
 const test_deep = test_header ++ testAdapter("deep") ++
-    \\pub fn kosmos() struct { own: Writer } {
+    \\pub const Deep = struct {
+    \\    pub fn apply(self: Deep, output: *kosm.Output) !void {
+    \\        var scratch: [64 * 1024 * 1024]u8 = undefined;
+    \\        @memset(&scratch, 1);
+    \\        std.mem.doNotOptimizeAway(&scratch);
+    \\        _ = self;
+    \\        try output.generate(.{ .file = "~/out.deep" }, .{ .written = scratch[0] });
+    \\    }
+    \\};
+    \\
+    \\pub fn kosmos() struct { own: Deep } {
     \\    var scratch: [64 * 1024 * 1024]u8 = undefined;
     \\    @memset(&scratch, 1);
     \\    std.mem.doNotOptimizeAway(&scratch);
@@ -1018,7 +1028,7 @@ const test_dangling = test_header ++
     \\
 ;
 
-test "a kosmos runs on a stack deeper than the process', and a list left in it is refused" {
+test "a kosmos and its apps run on a stack deeper than the process', and a list left in a kosmos' stack is refused" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);

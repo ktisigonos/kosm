@@ -174,3 +174,4 @@ When unsure about any std function, grep the std source for its definition befor
 - **A `pub var` in a namespace breaks comptime reflection over it** ("unable to resolve comptime value" from `@field` on each declaration); keep the variable private behind functions.
 - **`if (c) inline for (...) |x| { ... }` does not parse** ("expected ';' or 'else' after statement"); move the condition into the loop body.
 - **`@typeInfo(T).@"struct"` has no `fields`:** it gives parallel `field_names` and `field_types` slices (and `field_attrs`); walk them with `inline for (info.field_names, info.field_types) |name, Field|`.
+- **Debug frames hold a slot for every temporary:** a switch returning an 83 KB struct by value got a 1.2 MiB frame, and walking a tree by value 1.8 MiB per level. A segfault at a function's opening line is a stack overflow; find frame sizes with `objdump -d` (`mov $size,%r10` before `sub %r10,%rsp`) and `nm`.
