@@ -378,10 +378,10 @@ fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
 /// stderr, so they point at the user's files. Returns whether it succeeded.
 fn build(context: Context, kosmos: []const u8) !bool {
     const kosmos_option = try std.fmt.allocPrint(context.arena, "-Dkosmos={s}", .{kosmos});
-    const argv = try context.zigArguments(&.{ "build", kosmos_option });
-    var child = try std.process.spawn(context.io, .{ .argv = argv, .cwd = .{ .path = context.config }, .environ_map = context.environ_map });
-    const term = try child.wait(context.io);
-    return term.success();
+    return context.runBuild(&.{ "build", kosmos_option }) catch |err| switch (err) {
+        error.Failed => false,
+        else => |other| other,
+    };
 }
 
 /// `~/.config/kosm` resolved like `kosm apply` resolves `--config`, so a symlinked default
@@ -690,6 +690,7 @@ test {
     std.testing.refAllDecls(new_command);
     std.testing.refAllDecls(Sources);
     std.testing.refAllDecls(Settings);
+    std.testing.refAllDecls(@import("cache_pruning.zig"));
 }
 
 const testing = std.testing;

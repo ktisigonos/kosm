@@ -4,6 +4,7 @@ const Context = @This();
 
 const std = @import("std");
 const Sources = @import("Sources.zig");
+const cache_pruning = @import("cache_pruning.zig");
 
 io: std.Io,
 /// Holds everything a command allocates; freed by the caller.
@@ -52,8 +53,16 @@ fn forkArgument(context: Context, arguments: []const []const u8) std.mem.Allocat
 }
 
 /// Runs `zig build` with `arguments` (which start with "build") in the config directory and
-/// returns whether it succeeded. A failure's output reaches stderr either way.
+/// returns whether it succeeded. A failure's output reaches stderr either way. A successful build
+/// deletes the cache folders of executables it replaced.
 pub fn runBuild(context: Context, arguments: []const []const u8) RunError!bool {
+    const started = std.Io.Timestamp.now(context.io, .real);
+    const succeeded = try context.build(arguments);
+    if (succeeded) try cache_pruning.prune(context, started);
+    return succeeded;
+}
+
+fn build(context: Context, arguments: []const []const u8) RunError!bool {
     if (!context.show_build_output) {
         const result = try context.runZig(arguments);
         if (!result.term.success()) try context.stderr.writeAll(result.stderr);

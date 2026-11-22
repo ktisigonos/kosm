@@ -101,7 +101,8 @@ When unsure about any std function, grep the std source for its definition befor
 - **A test that runs `zig build` on other files is cached on its own inputs only:** editing just `build/config_project.zig` leaves `run test cached`, so a check of that file never reruns. Change the test file too (or the cache key) before trusting a pass.
 - **Tests run in random order** (the runner takes a `--seed`): tests sharing state must set and restore it themselves.
 - **`+- run test w` plus `failed command:` is not a failure:** the build runner prints a passing step that wrote to stderr this way. Check the `Build Summary` line and the exit code.
-- **Never delete files inside `.zig-cache/o/`:** the cache manifests still point at them and cached steps then fail with no useful message. Remove the whole `.zig-cache` or nothing.
+- **Deleting single files inside `.zig-cache/o/` breaks cached steps:** the manifests still point at them, and the steps fail with no useful message. A compile step's whole `o/<hash>/` folder (an executable, or the `configurer` build runner) may go: Zig rebuilds it on the next hit (verified on 0.17.1).
+- **A build can name an artifact's cache path without running anything:** `options.addOptionPathUntracked("path", compile.getEmittedBin())` plus `options.step.dependOn(&compile.step)`, then install `options.getOutput()`; it writes `pub const path: []const u8 = ".zig-cache/o/<hash>/<name>";`, relative to the build root. There are no custom make steps in 0.17 (build.zig only configures).
 
 ### Build system and packages
 

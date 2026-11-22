@@ -511,6 +511,25 @@ test "update checks every package in one build when one changed" {
     const inspector = try std.Io.Dir.path.join(arena, &.{ fixture.root, "config", inspector_path });
     const inspected = try fixture.context().run(&.{inspector});
     try testing.expectEqualStrings("test_adapter provides:\n  adapter  probe\ntest_second provides:\n  adapter  changed\n", inspected.stdout);
+    // Three checks built three inspectors; the build recorded the last, and the others were pruned.
+    try fixture.tmp.dir.access(testing.io, "config/zig-out/built/inspect", .{});
+    try testing.expectEqual(1, try countInspectors(fixture.tmp.dir));
+}
+
+/// The folders of the config's cache holding an inspector.
+fn countInspectors(dir: std.Io.Dir) !usize {
+    var outputs = try dir.openDir(testing.io, "config/.zig-cache/o", .{ .iterate = true });
+    defer outputs.close(testing.io);
+    var count: usize = 0;
+    var iterator = outputs.iterate();
+    while (try iterator.next(testing.io)) |entry| {
+        if (entry.kind != .directory) continue;
+        var folder = try outputs.openDir(testing.io, entry.name, .{});
+        defer folder.close(testing.io);
+        folder.access(testing.io, "inspect", .{}) catch continue;
+        count += 1;
+    }
+    return count;
 }
 
 test "an update where no package changed saves and builds nothing" {
