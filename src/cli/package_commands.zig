@@ -38,7 +38,7 @@ pub fn add(context: Context, argument: []const u8) Error!void {
 
     errdefer restoreManifest(context, original);
     try save(context, package);
-    try check(context, &.{package.name});
+    try check(context, &.{package.name}, &.{package.name});
     try packages.put(context.arena, package);
     try savePackages(context, packages);
     try context.stdout.print("added {s}\n", .{package.name});
@@ -99,7 +99,11 @@ pub fn update(context: Context, name: ?[]const u8) Error!void {
         // Kosm provides no app, adapter, kosmos or base; the next build checks it.
         if (!std.mem.eql(u8, package.name, kosm_name)) try checked.append(context.arena, package.name);
     }
-    if (checked.items.len != 0) try check(context, checked.items);
+    var shown: std.ArrayList([]const u8) = .empty;
+    for (changed) |package| {
+        if (!std.mem.eql(u8, package.name, kosm_name)) try shown.append(context.arena, package.name);
+    }
+    if (checked.items.len != 0) try check(context, checked.items, shown.items);
     for (changed) |package| try context.stdout.print("updated {s}\n", .{package.name});
     try deleteCache(context);
     try refreshScripts(context);
@@ -158,9 +162,9 @@ fn save(context: Context, package: Packages.Package) Error!void {
     if (!result.term.success()) return failRun(context, result, "zig fetch could not save {s}", .{package.name});
 }
 
-/// Builds the packages against the config in one build and prints what each provides; fails
-/// when one does not compile there or provides nothing kosm uses.
-fn check(context: Context, names: []const []const u8) Error!void {
+/// Builds the packages in `names` against the config in one build and prints what each of
+/// those in `shown` provides; fails when one does not compile there or provides nothing kosm uses.
+fn check(context: Context, names: []const []const u8, shown: []const []const u8) Error!void {
     var arguments: std.ArrayList([]const u8) = .empty;
     try arguments.append(context.arena, "build");
     for (names) |name| try arguments.append(context.arena, try context.arena.print("-Dinspect={s}", .{name}));
@@ -170,7 +174,7 @@ fn check(context: Context, names: []const []const u8) Error!void {
         return fail(context, "the packages do not all build in this config project; zig's errors above name the failing one's files (zig-pkg/<name>-...)", .{});
     }
     const inspector = try std.Io.Dir.path.join(context.arena, &.{ context.config, inspector_path });
-    const result = try context.run(&.{inspector});
+    const result = try context.run(try std.mem.concat(context.arena, []const u8, &.{ &.{inspector}, shown }));
     if (!result.term.success()) {
         try context.stderr.writeAll(result.stderr);
         return error.Failed;
@@ -520,13 +524,13 @@ test "update checks every package in one build when one changed, then deletes th
     fixture.stdout.clearRetainingCapacity();
     fixture.stderr.clearRetainingCapacity();
     try update(fixture.context(), null);
-    try testing.expect(std.mem.endsWith(u8, fixture.stdout.written(), "test_adapter provides:\n  adapter  probe\n" ++
-        "test_second provides:\n  adapter  changed\nupdated test_second\n"));
+    try testing.expect(std.mem.endsWith(u8, fixture.stdout.written(), "\ntest_second provides:\n  adapter  changed\nupdated test_second\n"));
+    try testing.expect(std.mem.find(u8, fixture.stdout.written(), "test_adapter provides:") == null);
     try testing.expect(std.mem.find(u8, fixture.stderr.written(), "fetching 2 packages\nsaving test_second\nchecking 2 packages\n") != null);
     try testing.expectError(error.FileNotFound, fixture.tmp.dir.access(testing.io, "config/" ++ cache_name, .{}));
 
     const inspector = try std.Io.Dir.path.join(arena, &.{ fixture.root, "config", inspector_path });
-    const inspected = try fixture.context().run(&.{inspector});
+    const inspected = try fixture.context().run(&.{ inspector, "test_adapter", "test_second" });
     try testing.expectEqualStrings("test_adapter provides:\n  adapter  probe\ntest_second provides:\n  adapter  changed\n", inspected.stdout);
 }
 

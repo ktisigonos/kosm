@@ -9,7 +9,8 @@ const interface = @import("kosm_interface");
 
 /// Prints what each package provides to stdout and returns 0, or prints why one is not a kosm
 /// package to stderr and returns 1 after reporting every other. `packages` is a tuple of
-/// `.{ name, @import(name) }` pairs.
+/// `.{ name, @import(name) }` pairs. It prints reports only for the packages named in its
+/// arguments, but checks every one.
 pub fn inspect(init: std.process.Init, comptime packages: anytype) !u8 {
     var stderr_buffer: [512]u8 = undefined;
     var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
@@ -19,6 +20,8 @@ pub fn inspect(init: std.process.Init, comptime packages: anytype) !u8 {
     }
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    const arguments = try init.minimal.args.toSlice(init.arena.allocator());
+    const shown = arguments[1..];
     var all_provide = true;
     inline for (packages) |package| {
         const name: []const u8 = package[0];
@@ -26,11 +29,18 @@ pub fn inspect(init: std.process.Init, comptime packages: anytype) !u8 {
         if (report.isEmpty()) {
             try stderr.interface.print("error: package '{s}' provides no app, adapter, kosmos, base, modifier, palette style or variation family, so it is not a kosm package\n", .{name});
             all_provide = false;
-        } else try report.write(name, &stdout.interface);
+        } else if (isShown(shown, name)) try report.write(name, &stdout.interface);
     }
     try stdout.interface.flush();
     try stderr.interface.flush();
     return if (all_provide) 0 else 1;
+}
+
+fn isShown(shown: []const []const u8, name: []const u8) bool {
+    for (shown) |candidate| {
+        if (std.mem.eql(u8, candidate, name)) return true;
+    }
+    return false;
 }
 
 /// A package's apps, adapters, kosmoi and bases, each as the user spells them.
