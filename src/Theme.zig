@@ -1,5 +1,6 @@
 //! What every app's `from` receives: the resolved palette, the mode, the roles, the code and
-//! diff colors, the variations, the alpha of backgrounds and the kosmos' names.
+//! diff colors, the variations, the alpha of backgrounds, the kosmos' names and the traits of
+//! the colors' source.
 //!
 //! `from` works everything out from an `Input`, in order: palette, roles, code colors, diff
 //! colors. To
@@ -12,6 +13,7 @@ const std = @import("std");
 const Color = @import("Color.zig");
 const Palette = @import("Palette.zig");
 const Variations = @import("Variations.zig");
+const Traits = @import("Traits.zig");
 
 /// What the theme was built from. Change it, then call `updatePalette`, `updateRoles`,
 /// `updateCode` or `updateDiff` to work out that level and every one after it again.
@@ -38,6 +40,10 @@ name: ?[]const u8 = null,
 /// How the files a program picks by name are named. Default: `.shared`, `kosm.<ext>` for
 /// every kosmos.
 files: Files = .shared,
+/// What the source of the theme's colors is like (an image's), for apps basing choices of
+/// their own on it, such as a blur from how blue a picture is. `from` takes it from
+/// `input.traits`; null for a theme made by hand.
+traits: ?Traits = null,
 
 /// The single global fact modules use to choose backgrounds and foregrounds.
 pub const Mode = enum { dark, light };
@@ -74,6 +80,7 @@ pub fn from(input: Input) Theme {
         .code = undefined,
         .diff = undefined,
         .variations = .from(input.mode),
+        .traits = input.traits,
     };
     theme.updatePalette();
     return theme;

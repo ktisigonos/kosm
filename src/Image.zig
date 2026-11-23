@@ -74,11 +74,27 @@ pub fn palette(image: Image, options: Options) Error!Palette {
     return paletteFrom(analysis, options, modeOf(analysis, options));
 }
 
-/// What `Theme.from` takes: the image's palette, its mode, and the accent, secondary and
-/// tertiary roles from its best-scoring hues (by `Options.accent_by`). Roles with no hue to take
-/// stay null, so they default from the palette.
+/// What `Theme.from` takes: the image's palette, its mode, the accent, secondary and tertiary
+/// roles from its best-scoring hues (by `Options.accent_by`), and its traits (as `traits`
+/// gives them). Roles with no hue to take stay null, so they default from the palette.
 pub fn themeInput(image: Image, options: Options) Error!Theme.Input {
+    try image.checkLoaded();
     const analysis = try image.analyse(options);
+    var input = colorsInput(analysis, options);
+    input.traits = image.measuredTraits(analysis, input, options);
+    return input;
+}
+
+/// What the image is like (`kosm.Traits`), measured as `options.traits` says; readability
+/// is measured against the colors of the theme `themeInput` gives with `options`.
+pub fn traits(image: Image, options: Options) Error!Traits {
+    try image.checkLoaded();
+    const analysis = try image.analyse(options);
+    return image.measuredTraits(analysis, colorsInput(analysis, options), options);
+}
+
+/// `themeInput` without its traits.
+fn colorsInput(analysis: Analysis, options: Options) Theme.Input {
     const mode = modeOf(analysis, options);
     const result = paletteFrom(analysis, options, mode);
     const accent = bestHue(analysis, options, &.{});
@@ -95,16 +111,12 @@ pub fn themeInput(image: Image, options: Options) Error!Theme.Input {
     };
 }
 
-/// What the image is like (`kosm.Traits`), measured as `options.traits` says; readability
-/// is measured against the colors of the theme `themeInput` gives with `options`.
-pub fn traits(image: Image, options: Options) Error!Traits {
-    try image.checkLoaded();
-    const input = try image.themeInput(options);
-    const analysis = try image.analyse(options);
+/// The traits of a loaded image, readability measured against the theme `colors` gives.
+fn measuredTraits(image: Image, analysis: Analysis, colors: Theme.Input, options: Options) Traits {
     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     defer arena.deinit();
     // A kosmos cannot handle running out of memory; kosm stops with this message instead.
-    return image.traitsOf(arena.allocator(), .from(input), analysis, options) catch @panic("kosm.Image.traits: out of memory");
+    return image.traitsOf(arena.allocator(), .from(colors), analysis, options) catch @panic("kosm.Image.traits: out of memory");
 }
 
 fn traitsOf(image: Image, allocator: std.mem.Allocator, theme: Theme, analysis: Analysis, options: Options) std.mem.Allocator.Error!Traits {
@@ -409,6 +421,12 @@ fn wheelPixel(position: usize, lightness: f64, chroma: f64) Color {
     return .{ .lightness = lightness, .chroma = chroma, .hue = Analysis.referenceHues()[position] };
 }
 
+/// A loaded image whose colors and lightness come from `pixels`, `width` pixels per row.
+fn loadedImage(pixels: []const Color, lightness: []f32, width: usize) Image {
+    for (lightness, pixels) |*value, pixel| value.* = @floatCast(pixel.lightness);
+    return .{ .path = "test", .pixels = pixels, .width = width, .lightness = lightness, .lightness_width = width };
+}
+
 test "an image kosm did not load has no colors" {
     const image: Image = .{ .path = "~/wallpaper.jxl" };
     try testing.expectError(error.ImageNotLoaded, image.palette(.{}));
@@ -500,11 +518,13 @@ test "vivid raises chroma within sRGB and muted lowers it" {
 
 test "a bright image gets a light theme unless the mode is set" {
     const pixels: [10]Color = @splat(gray(0.85));
-    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    var lightness: [10]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 10);
     try testing.expectEqual(.light, (try image.themeInput(.{})).mode);
     try testing.expectEqual(.dark, (try image.themeInput(.{ .mode = .dark })).mode);
     const dim: [10]Color = @splat(gray(0.3));
-    try testing.expectEqual(.dark, (try (Image{ .path = "/b.png", .pixels = &dim }).themeInput(.{})).mode);
+    var dim_lightness: [10]f32 = undefined;
+    try testing.expectEqual(.dark, (try loadedImage(&dim, &dim_lightness, 10).themeInput(.{})).mode);
 }
 
 /// 40% dull green and 10% vivid orange over gray.
@@ -517,7 +537,8 @@ fn campfirePixels() [100]Color {
 
 test "the vivid accent is a small bright hue, the dominant one the most common" {
     const pixels = campfirePixels();
-    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    var lightness: [100]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 10);
     const vivid = try image.themeInput(.{ .style = .literal });
     try testing.expectApproxEqAbs(0.18, vivid.roles.accent.?.chroma, 1e-9);
     try testing.expectApproxEqAbs(0.035, vivid.roles.secondary.?.chroma, 1e-9);
@@ -530,7 +551,8 @@ test "the secondary role keeps its distance from the accent" {
     var pixels: [100]Color = @splat(gray(0.5));
     for (pixels[0..30]) |*pixel| pixel.* = wheelPixel(8, 0.5, 0.15);
     for (pixels[30..50]) |*pixel| pixel.* = wheelPixel(9, 0.5, 0.15);
-    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    var lightness: [100]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 10);
     const input = try image.themeInput(.{ .style = .literal });
     try testing.expectApproxEqAbs(Analysis.referenceHues()[8], input.roles.accent.?.hue, 1e-9);
     try testing.expectEqual(null, input.roles.secondary);
@@ -544,7 +566,8 @@ test "the tertiary role keeps its distance from both the accent and the secondar
     for (pixels[30..50]) |*pixel| pixel.* = wheelPixel(4, 0.5, 0.15);
     for (pixels[50..65]) |*pixel| pixel.* = wheelPixel(5, 0.5, 0.15);
     for (pixels[65..75]) |*pixel| pixel.* = wheelPixel(8, 0.5, 0.15);
-    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    var lightness: [100]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 10);
     const input = try image.themeInput(.{ .style = .literal });
     try testing.expectApproxEqAbs(Analysis.referenceHues()[0], input.roles.accent.?.hue, 1e-9);
     try testing.expectApproxEqAbs(Analysis.referenceHues()[4], input.roles.secondary.?.hue, 1e-9);
@@ -553,7 +576,8 @@ test "the tertiary role keeps its distance from both the accent and the secondar
 
 test "an image with no hues leaves the accent to the palette" {
     const pixels: [10]Color = @splat(gray(0.2));
-    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    var lightness: [10]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 10);
     const input = try image.themeInput(.{});
     try testing.expectEqual(null, input.roles.accent);
     _ = Theme.from(input);
@@ -612,7 +636,8 @@ test "made-up hues of a gray image take the fallback chroma, and are made readab
 test "made-up hues are never picked as the accent" {
     var pixels: [100]Color = @splat(gray(0.5));
     for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(8, 0.6, 0.05);
-    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    var lightness: [100]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 10);
     const input = try image.themeInput(.{ .style = .literal, .fill = .complete });
     try testing.expectApproxEqAbs(Analysis.referenceHues()[8], input.roles.accent.?.hue, 1e-9);
     try testing.expectEqual(null, input.roles.secondary);
@@ -653,12 +678,6 @@ test {
     testing.refAllDecls(Analysis);
 }
 
-/// A loaded image whose colors and lightness come from `pixels`, `side` pixels square.
-fn loadedImage(pixels: []const Color, lightness: []f32, side: usize) Image {
-    for (lightness, pixels) |*value, pixel| value.* = @floatCast(pixel.lightness);
-    return .{ .path = "test", .pixels = pixels, .width = side, .lightness = lightness, .lightness_width = side };
-}
-
 test "a flat image is calm, flat, soft, glows not and reads without opacity" {
     const pixels: [64 * 64]Color = @splat(gray(0.2));
     var lightness: [64 * 64]f32 = undefined;
@@ -687,6 +706,30 @@ test "a busy red image is detailed, colorful, warm and mostly red, and blur make
     try testing.expect(traits_value.flatness < 0.3);
     const alphas = traits_value.readability.alphas;
     try testing.expect(alphas[0] > alphas[alphas.len - 1]);
+}
+
+/// An app basing a value of its own on the theme's traits, as an app's `from` may.
+const TraitsApp = struct {
+    /// Whether the picture is mostly solid colors; null without traits.
+    flat: ?bool = null,
+
+    fn from(theme: Theme) TraitsApp {
+        const theme_traits = theme.traits orelse return .{};
+        return .{ .flat = theme_traits.flatness > 0.5 };
+    }
+};
+
+test "a theme from an image carries the image's traits into an app, a hand-made one none" {
+    const pixels: [64 * 64]Color = @splat(gray(0.2));
+    var lightness: [64 * 64]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 64);
+    const theme = Theme.from(try image.themeInput(.{}));
+    try testing.expectEqual(try image.traits(.{}), theme.traits.?);
+    try testing.expectEqual(true, TraitsApp.from(theme).flat);
+
+    const by_hand = Theme.from(.{ .palette = .{ .black = gray(0), .white = gray(1) }, .mode = .dark });
+    try testing.expectEqual(null, by_hand.traits);
+    try testing.expectEqual(null, TraitsApp.from(by_hand).flat);
 }
 
 test "traits need a loaded image" {

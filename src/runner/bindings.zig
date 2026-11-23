@@ -964,7 +964,7 @@ test "a failing function, or one returning a list from its own stack, fails with
     defer script.deinit();
     try script.expectFailure(script.callAt(&.{ "test_package", "failing" }, &.{.{ .value = .{ .string = "luck" } }}), "test_package.failing: no luck today");
     try script.expectFailure(script.callAt(&.{ "test_package", "deadList" }, &.{.{ .value = .{ .string = "us" } }}), "test_package.deadList: what it returns at layouts points into a function that has returned, so it is garbage; it must keep run-time lists with kosm.keep");
-    try script.expectFailure(script.callAt(&.{ "kosm", "Theme", "from" }, &.{.{ .value = .{ .integer = 1 } }}), "kosm.Theme.from: argument 1: expected a table of its fields (palette, mode, roles, code, diff), got the integer 1");
+    try script.expectFailure(script.callAt(&.{ "kosm", "Theme", "from" }, &.{.{ .value = .{ .integer = 1 } }}), "kosm.Theme.from: argument 1: expected a table of its fields (palette, mode, roles, code, diff, traits), got the integer 1");
 }
 
 test "completion describes the namespaces, their functions and values, and records' methods" {
