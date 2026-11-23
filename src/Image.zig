@@ -219,7 +219,21 @@ fn paletteFrom(analysis: Analysis, options: Options, mode: Theme.Mode) Palette {
     inline for (@typeInfo(Palette.Hue).@"enum".field_names, 0..) |name, position| {
         if (hues[position]) |color| @field(result, name) = styled(color, background, options);
     }
+    if (options.fill == .semantic) mixFromOwnHues(&result, analysis, background, options);
     return result;
+}
+
+/// Sets every hue still missing to what mixing the image's own hues gives, so the hues
+/// `.semantic` made up are never mixed into the others.
+fn mixFromOwnHues(result: *Palette, analysis: Analysis, background: Color, options: Options) void {
+    var own: Palette = .{ .black = result.black, .white = result.white };
+    inline for (@typeInfo(Palette.Hue).@"enum".field_names, 0..) |name, position| {
+        if (analysis.hues[position]) |color| @field(own, name) = styled(color, background, options);
+    }
+    const mixed = own.resolve();
+    inline for (@typeInfo(Palette.Hue).@"enum".field_names) |name| {
+        if (@field(result, name) == null) @field(result, name) = @field(mixed, name);
+    }
 }
 
 /// The hues the role defaults read, which `.semantic` makes up when the image lacks them.
@@ -603,8 +617,20 @@ test "semantic makes up only red, yellow and green, at the image's lightness and
         try testing.expectApproxEqAbs(0.1, hue.?.chroma, 1e-9);
         try testing.expectApproxEqAbs(references[position], hue.?.hue, 1e-9);
     }
-    try testing.expectEqual(null, result.orange);
-    try testing.expectEqual(null, result.purple);
+}
+
+test "semantic mixes the other missing hues from the image's own hues, never the made-up ones" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(8, 0.6, 0.1);
+    const image: Image = .{ .path = "/a.png", .pixels = &pixels };
+    const semantic = try image.palette(.{ .style = .literal });
+    const extracted = (try image.palette(.{ .style = .literal, .fill = .extracted })).resolve();
+    inline for (.{ "orange", "lime", "teal", "cyan", "sky", "purple", "magenta", "pink" }) |name| {
+        const hue = @field(semantic, name).?;
+        try testing.expectApproxEqAbs(@field(extracted, name).hue, hue.hue, 1e-9);
+        try testing.expectApproxEqAbs(@field(extracted, name).chroma, hue.chroma, 1e-9);
+    }
+    try testing.expect(semantic.orange.?.hue != semantic.red.?.mix(semantic.yellow.?, 0.5).hue);
 }
 
 test "complete makes up every hue from its neighbours by wheel position" {

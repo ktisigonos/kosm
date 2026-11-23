@@ -84,7 +84,7 @@ pub const Fill = enum {
     extracted,
     /// The image's own hues, plus red, yellow and green made up when the image lacks them, so
     /// the error, warning and success roles they default to stay recognizable; the rest are
-    /// left to mixing.
+    /// mixed from the image's own hues alone, as with `.extracted`.
     semantic,
     /// Every hue the image lacks is made up.
     complete,
