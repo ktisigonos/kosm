@@ -53,9 +53,10 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: the human wants a palette generator besides images; ask what it generates from (a seed color, a few hues, a scheme like Material's) and propose its API beside `kosm.Image`'s.
   - Done when: the human has agreed on it and it builds a palette.
 
-- **18q. A mapping from traits to values, with curves** `PLAN FIRST`
+- **18q. A mapping from traits to values, with curves**
   - Do: `kosm.Curve.Bezier` gains `at(x)`: y at x, solving the cubic for x (bisection or Newton), tested on the named easings and the straight line.
-  - Do: `kosm_base` gains `Values.glow` (`range`, `render_power`, `color`; Hyprland's `decoration.glow`, enabled when its range is above 0) and any other common power still missing; all unset by default.
+  - Do: `kosm_base` gains `Values.glow` (`range`, `render_power`, `color`; Hyprland's `decoration.glow`, enabled when its range is above 0); all unset by default. Its color is a type of its own (a role or a fixed color, as `BorderColor` is) that users may set, defaulting to the active border's color. No other shared value is added.
+  - Do: the names are `kosm_base.Mapping` (replacing `ImageOptions`), `Mapping.Rule` (`range`, `curve`, `from`), `Mapping.Mix` (one optional `kosm.Image.Contributor` per trait) and `Look.fromTraits(look, theme, mapping)` reading `theme.traits`; `Look.fromImage` stays as a thin call through it.
   - Do: `kosm_base` replaces `Look.fromImage` with a mapping from traits: each derived value is a weighted mix of traits (contributors with default weights) through an optional `curve` (a `kosm.Curve.Bezier`, linear by default) into its `{ min, max }` range. Alpha keeps readability as a floor and goes lower for flat or blurry pictures; rounding follows softness and blurriness; glow follows the glow trait and color, its range starting at 0; rounding's range starts at 0 so crisp pictures get square corners. The image kosmos calls it as today; anyone may write their own from the same traits. Update its README.
   - Do: `Look.fromImage` still calls the removed `Image.surface` and `SurfaceOptions`; its alpha and blur now read `traits.readability.alphaAt(spread)`, and `ImageOptions.measure` gives way to `Image.Options.traits` (inside `colors`).
   - Do: the config's `personal.image` keeps working through it, `--colors-only` included; re-pin kosm and `kosm_base` there.
