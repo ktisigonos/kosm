@@ -19,6 +19,53 @@ pub const Curve = union(enum) {
         /// 0..1.
         x2: f64,
         y2: f64,
+
+        /// Progress at time `x` (clamped to 0..1): y where the curve passes x. Beyond 0..1 only
+        /// where the control points make it overshoot.
+        pub fn at(bezier: Bezier, x: f64) f64 {
+            const time = std.math.clamp(x, 0, 1);
+            return coordinate(bezier.y1, bezier.y2, bezier.parameterAt(time));
+        }
+
+        /// Newton steps before falling back to bisection; enough for 1e-12 on smooth curves.
+        const newton_steps = 8;
+        /// Bisection halvings: 1 / 2^50 is below f64's precision on 0..1.
+        const bisection_steps = 50;
+        const tolerance = 1e-12;
+
+        /// The curve's parameter at which its x is `x`. x rises with the parameter, as both
+        /// x control points lie in 0..1.
+        fn parameterAt(bezier: Bezier, x: f64) f64 {
+            var parameter = x;
+            for (0..newton_steps) |_| {
+                const offset = coordinate(bezier.x1, bezier.x2, parameter) - x;
+                if (@abs(offset) < tolerance) return parameter;
+                const slope = slopeOf(bezier.x1, bezier.x2, parameter);
+                if (@abs(slope) < 1e-9) break;
+                parameter -= offset / slope;
+                if (parameter < 0 or parameter > 1) break;
+            }
+            var low: f64 = 0;
+            var high: f64 = 1;
+            for (0..bisection_steps) |_| {
+                parameter = (low + high) / 2;
+                if (coordinate(bezier.x1, bezier.x2, parameter) < x) low = parameter else high = parameter;
+            }
+            return (low + high) / 2;
+        }
+
+        /// One coordinate of the curve from 0 to 1 through control values `first` and
+        /// `second`, at `parameter`.
+        fn coordinate(first: f64, second: f64, parameter: f64) f64 {
+            const rest = 1 - parameter;
+            return 3 * rest * rest * parameter * first + 3 * rest * parameter * parameter * second + parameter * parameter * parameter;
+        }
+
+        /// How fast `coordinate` changes with the parameter.
+        fn slopeOf(first: f64, second: f64, parameter: f64) f64 {
+            const rest = 1 - parameter;
+            return 3 * rest * rest * first + 6 * rest * parameter * (second - first) + 3 * parameter * parameter * (1 - second);
+        }
     };
 
     /// A mass on a spring: stiffer is faster, more damping overshoots less.
@@ -120,4 +167,51 @@ test "every easing is a bezier whose time stays within 0..1, and sharper familie
     try testing.expect(Curve.ease_in_sine.bezier.x1 < Curve.ease_in_cubic.bezier.x1);
     try testing.expect(Curve.ease_in_cubic.bezier.x1 < Curve.ease_in_quint.bezier.x1);
     try testing.expect(Curve.ease_in_quint.bezier.x1 < Curve.ease_in_expo.bezier.x1);
+}
+
+test "at follows the straight line exactly, and every easing starts at 0 and ends at 1" {
+    for ([_]f64{ 0, 0.1, 0.25, 0.5, 0.9, 1 }) |x| {
+        try testing.expectApproxEqAbs(x, Curve.linear.bezier.at(x), 1e-12);
+    }
+    inline for (@typeInfo(Curve).@"union".decl_names) |name| {
+        if (@TypeOf(@field(Curve, name)) != Curve) continue;
+        const bezier = @field(Curve, name).bezier;
+        try testing.expectApproxEqAbs(0, bezier.at(0), 1e-12);
+        try testing.expectApproxEqAbs(1, bezier.at(1), 1e-12);
+    }
+}
+
+test "at clamps time to 0..1" {
+    try testing.expectApproxEqAbs(0, Curve.ease.bezier.at(-2), 1e-12);
+    try testing.expectApproxEqAbs(1, Curve.ease.bezier.at(3), 1e-12);
+}
+
+test "at gives CSS's values, halves in-out easings, and mirrors out easings through their in" {
+    // Browsers give `ease` at half time 0.8024.
+    try testing.expectApproxEqAbs(0.8024033877, Curve.ease.bezier.at(0.5), 1e-9);
+    inline for (families) |family| {
+        const in = @field(Curve, "ease_in_" ++ family).bezier;
+        const out = @field(Curve, "ease_out_" ++ family).bezier;
+        const in_out = @field(Curve, "ease_in_out_" ++ family).bezier;
+        try testing.expectApproxEqAbs(0.5, in_out.at(0.5), 1e-9);
+        for ([_]f64{ 0.1, 0.3, 0.7, 0.95 }) |x| {
+            try testing.expectApproxEqAbs(1 - in.at(1 - x), out.at(x), 1e-9);
+        }
+    }
+}
+
+test "at rises with time on every easing that does not overshoot, and overshoots on back" {
+    inline for (@typeInfo(Curve).@"union".decl_names) |name| {
+        if (@TypeOf(@field(Curve, name)) != Curve) continue;
+        const bezier = @field(Curve, name).bezier;
+        if (comptime std.mem.endsWith(u8, name, "back")) continue;
+        var previous: f64 = 0;
+        for (1..101) |step| {
+            const y = bezier.at(@as(f64, @floatFromInt(step)) / 100);
+            try testing.expect(y >= previous - 1e-12);
+            previous = y;
+        }
+    }
+    try testing.expect(Curve.ease_out_back.bezier.at(0.6) > 1);
+    try testing.expect(Curve.ease_in_back.bezier.at(0.3) < 0);
 }
