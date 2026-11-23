@@ -122,6 +122,10 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: then list what else Windows needs: paths with `\` and drive letters, file replacement and permissions in commits, reloads (gsettings, `touch -c`, signals) that have no Windows counterpart, building and running a kosmos there, and which apps exist on Windows at all.
   - Done when: the human has agreed on the plan, and a kosmos applies on Windows with its apps' files in the right folders.
 
+- **22. Shell completion of path parameters**
+  - Do: `kosm apply personal.image --wallpaper ~/Pictures/<TAB>` offers nothing: the fish script disables file completion for every word (`complete -c kosm -f`), and `completeApply` prints nothing after any parameter, so a `kosm.Image` or `kosm.File` parameter (and a `--set` path whose value is one) gets no path completion. The runner reports each parameter's kind along with its flag, `kosm complete` prints a marker for a path-valued one, and the fish, bash and zsh scripts fall back to their own file completion on it, as fish already does after `--config`.
+  - Done when: in fish, bash and zsh, Tab after `--wallpaper` completes files, and a test covers the marker `kosm complete` prints for a path parameter and for an ordinary one.
+
 - **99. Optimization** (last: once the final product works) `PLAN FIRST`
   - Do: work through the list below, measuring before and after each change. Steps before this one only add to the list; they never optimize on their own.
   - Do: the runner's stack. A Debug build gives every temporary its own stack slot, and kosm's values are large: a `kosm.Modifier` is 2.4 KB (its chain holds 7 steps inline), a `kosm.Theme` 83 KB (80 KB of it the 33 variation modifiers), `kosm_icons`' `Recolor` holds a whole theme and `BeautyLine` two. `Colors.rule` (a three-line switch) got a 1.2 MiB frame, `walk.planNode` 1.8 MiB per level, some `assignment.copy.deep` 16.7 MiB. The runner now runs on a 256 MiB thread to fit. Options: store a modifier's chain out of line, have `Recolor` hold only the palette and roles, walk trees by pointer, build the runner in ReleaseSafe.
