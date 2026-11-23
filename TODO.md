@@ -55,7 +55,7 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 
 - **18o. Traits** `PLAN FIRST`
   - Decided with the human: sources describe, readers decide (`DESIGN.md`, Traits). `kosm.Traits` is one plain struct in core: 0..1 measures and a few colors, the same whatever source gave them; `kosm.Image` gives them (`image.traits(options)`) beside its palette. Readability is measured against the colors the image's own theme gives; a kosmos changing its text colors later is on its own.
-  - Do: the measures, each from contributors with default weights in the options: detail and softness (as `Image.surface` today), glow (bright, soft-edged highlights) and its color (their hue), flatness (a few solid colors in large regions), blurriness (out of focus), lightness, contrast, colorfulness, warmth, and each wheel hue's share (the palette analysis counts them). Readability as the lowest readable alpha at a few fixed blur spreads.
+  - Do: the measures, each from contributors with default weights in the options: detail and softness (as `Image.surface` today), glow (bright, soft-edged highlights) and its color (their hue), flatness (a few solid colors in large regions), blurriness (out of focus), lightness, contrast, colorfulness, warmth, and each wheel hue's share (the palette analysis counts them). Readability as the lowest readable alpha at fixed blur spreads (0, 4, 8, 16, 32 screen px, `Traits.blur_spreads`), in a `Traits.Readability` with `alphaAt(spread)` reading between them. Glow stays two flat fields, `glow` and `glow_color`, so mappings name every trait alike.
   - Do: `Image.surface`, `Surface` and `readableAlpha` fold into the traits; keep `readableAlpha` public for a kosmos changing its colors.
   - Done when: every trait is under tests on made-up images, and `kosm colors`-style output or a temporary test shows sensible traits on the human's wallpapers (glow high on NeonCity, flatness high on the solids and Blackout's flat areas).
 
@@ -69,6 +69,11 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: `kosm_base` replaces `Look.fromImage` with a mapping from traits: each derived value is a weighted mix of traits (contributors with default weights) through an optional `curve` (a `kosm.Curve.Bezier`, linear by default) into its `{ min, max }` range. Alpha keeps readability as a floor and goes lower for flat or blurry pictures; rounding follows softness and blurriness; glow follows the glow trait and color, its range starting at 0; rounding's range starts at 0 so crisp pictures get square corners. The image kosmos calls it as today; anyone may write their own from the same traits. Update its README.
   - Do: the config's `personal.image` keeps working through it, `--colors-only` included; re-pin kosm and `kosm_base` there.
   - Done when: `--diff` on MonoCubes gives square or near-square corners, NeonCity a glow in its neon's color, and the mapping is under tests.
+
+- **18s. Simple controls over the mapping** `ASK`
+  - Decided with the human: a layer over the ranges, curves and contributors for people who never touch those: a handful of plain fields on the mapping's options, so a kosmos sets them and the image kosmos takes them as flags (`--frost 0.8`, `--opacity 0.7`, `--opaque true`). Amounts are multipliers, 1 being what the picture calls for, and stay within the ranges; `opaque` is a hard toggle.
+  - Do: propose the list (likely opaque, opacity, blur, frost toward more passes, roundness, spacing, borders, shadow, glow) and their exact effect first; then add them to `kosm_base`'s mapping and `personal.image`'s `Params`, with README rows.
+  - Done when: the human agreed on the list, it is under tests, and `--diff` shows `--frost` and `--opaque` changing the look.
 
 - **18r. Hyprland reads traits**
   - Do: `kosm_hyprland.from(theme)` with traits picks its blur variant from them (frost for a blue, cold picture) and whatever else the human agrees on; propose the list first.
