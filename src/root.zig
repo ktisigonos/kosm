@@ -14,6 +14,8 @@ const kosmos_file = @import("kosmos.zig");
 pub const Modifier = @import("Modifier.zig");
 pub const Variations = @import("Variations.zig");
 pub const Theme = @import("Theme.zig");
+/// What a source of colors is like, as plain values any app, base or kosmos may read.
+pub const Traits = @import("Traits.zig");
 pub const Mode = Theme.Mode;
 pub const Keyboard = @import("Keyboard.zig");
 pub const Curve = @import("curve.zig").Curve;
@@ -115,12 +117,15 @@ test {
     std.testing.refAllDecls(Image);
     std.testing.refAllDecls(Image.Style.Function);
     std.testing.refAllDecls(@import("Image/Plane.zig"));
-    std.testing.refAllDecls(Image.Surface);
+    std.testing.refAllDecls(@import("Image/Measurements.zig"));
+    std.testing.refAllDecls(@import("Image/Contributor.zig"));
     std.testing.refAllDecls(@import("Image/readability.zig"));
     std.testing.refAllDecls(File);
     std.testing.refAllDecls(failure);
     std.testing.refAllDecls(@import("keep.zig"));
     std.testing.refAllDecls(Theme);
+    std.testing.refAllDecls(Traits);
+    std.testing.refAllDecls(Traits.Readability);
     std.testing.refAllDecls(Theme.Roles);
     std.testing.refAllDecls(Theme.Code);
     std.testing.refAllDecls(Theme.Diff);

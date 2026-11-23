@@ -4,8 +4,8 @@
 const std = @import("std");
 const Color = @import("../Color.zig");
 const Plane = @import("Plane.zig");
-const Surface = @import("Surface.zig");
-const SurfaceOptions = @import("SurfaceOptions.zig");
+const Measurements = @import("Measurements.zig");
+const ReadingOptions = @import("ReadingOptions.zig");
 const Window = @import("Window.zig");
 
 /// The step the alphas are first tried in, from opaque down.
@@ -19,7 +19,7 @@ const alpha_precision = 100;
 /// over the image: enough contrast, and little enough texture behind it, everywhere but
 /// `options.worst_share` of the image. `pixels` (`width` per row) give its colors;
 /// `lightness` is a larger copy's lightness, for its texture. 1 if only an opaque window is.
-pub fn readableAlpha(allocator: std.mem.Allocator, pixels: []const Color, width: usize, lightness: Plane, window: Window, options: SurfaceOptions) std.mem.Allocator.Error!f64 {
+pub fn readableAlpha(allocator: std.mem.Allocator, pixels: []const Color, width: usize, lightness: Plane, window: Window, options: ReadingOptions) std.mem.Allocator.Error!f64 {
     const contrast_alpha = try contrastAlpha(allocator, pixels, width, window, options);
     const texture_alpha = try textureAlpha(allocator, lightness, window, options);
     const alpha = @max(contrast_alpha, texture_alpha);
@@ -28,17 +28,13 @@ pub fn readableAlpha(allocator: std.mem.Allocator, pixels: []const Color, width:
 
 /// The lowest alpha at which the texture left behind the window is at most
 /// `options.maximum_texture`; the window's alpha scales what shows through.
-fn textureAlpha(allocator: std.mem.Allocator, lightness: Plane, window: Window, options: SurfaceOptions) std.mem.Allocator.Error!f64 {
+fn textureAlpha(allocator: std.mem.Allocator, lightness: Plane, window: Window, options: ReadingOptions) std.mem.Allocator.Error!f64 {
     const blurred = try lightness.clone(allocator);
     defer allocator.free(blurred.values);
-    try blurred.blur(allocator, window.blur * scaleOf(lightness.width, options));
-    const behind = try Surface.worstTexture(allocator, blurred, options);
+    try blurred.blur(allocator, window.blur * options.scale(lightness.width));
+    const behind = try Measurements.worstTexture(allocator, blurred, options);
     if (behind <= options.maximum_texture) return 0;
     return std.math.clamp(1 - options.maximum_texture / behind, 0, 1);
-}
-
-fn scaleOf(width: usize, options: SurfaceOptions) f64 {
-    return @as(f64, @floatFromInt(width)) / options.screen_width;
 }
 
 /// The image's gamma-encoded channels, blurred, and the window's colors, for blending.
@@ -48,7 +44,7 @@ const Backdrop = struct {
     foreground_luminance: f64,
     table: *const LinearTable,
 
-    fn from(allocator: std.mem.Allocator, pixels: []const Color, width: usize, window: Window, options: SurfaceOptions, table: *const LinearTable) std.mem.Allocator.Error!Backdrop {
+    fn from(allocator: std.mem.Allocator, pixels: []const Color, width: usize, window: Window, options: ReadingOptions, table: *const LinearTable) std.mem.Allocator.Error!Backdrop {
         var channels: [3]Plane = undefined;
         for (&channels) |*channel| channel.* = .{ .values = try allocator.alloc(f32, pixels.len), .width = width };
         for (pixels, 0..) |pixel, index| {
@@ -57,7 +53,7 @@ const Backdrop = struct {
             channels[1].values[index] = clip(rgb.green);
             channels[2].values[index] = clip(rgb.blue);
         }
-        for (channels) |channel| try channel.blur(allocator, window.blur * scaleOf(width, options));
+        for (channels) |channel| try channel.blur(allocator, window.blur * options.scale(width));
         const background = window.background.toRgb();
         return .{
             .channels = channels,
@@ -72,7 +68,7 @@ const Backdrop = struct {
     }
 
     /// Whether at most `options.worst_share` of the image lacks the contrast at `alpha`.
-    fn reads(backdrop: Backdrop, alpha: f64, options: SurfaceOptions) bool {
+    fn reads(backdrop: Backdrop, alpha: f64, options: ReadingOptions) bool {
         const opacity: f32 = @floatCast(alpha);
         const count = backdrop.channels[0].values.len;
         const allowed = options.worst_share * @as(f64, @floatFromInt(count));
@@ -96,7 +92,7 @@ const luminance_weights = [3]f64{ 0.2126, 0.7152, 0.0722 };
 
 /// The lowest alpha at which the text keeps `options.minimum_contrast`, found from opaque
 /// down, so an alpha passing below a failing one is not taken.
-fn contrastAlpha(allocator: std.mem.Allocator, pixels: []const Color, width: usize, window: Window, options: SurfaceOptions) std.mem.Allocator.Error!f64 {
+fn contrastAlpha(allocator: std.mem.Allocator, pixels: []const Color, width: usize, window: Window, options: ReadingOptions) std.mem.Allocator.Error!f64 {
     const table: LinearTable = .init();
     const backdrop: Backdrop = try .from(allocator, pixels, width, window, options, &table);
     defer backdrop.free(allocator);
@@ -185,7 +181,7 @@ test "busy texture needs opacity, and blur takes it away" {
     var lightness: [64 * 64]f32 = undefined;
     for (&lightness, 0..) |*value, index| value.* = if ((index % 64 / 2 + index / 128) % 2 == 0) 0.1 else 0.3;
     const plane: Plane = .{ .values = &lightness, .width = 64 };
-    const options: SurfaceOptions = .{ .screen_width = 64, .text_size = 8 };
+    const options: ReadingOptions = .{ .screen_width = 64, .text_size = 8 };
     const sharp = try readableAlpha(testing.allocator, &pixels, 8, plane, dark_window, options);
     var blurred_window = dark_window;
     blurred_window.blur = 8;

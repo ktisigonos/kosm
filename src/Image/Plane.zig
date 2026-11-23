@@ -55,6 +55,32 @@ fn gaussianBoxes(sigma: f64) [box_count]usize {
     return radii;
 }
 
+/// Which extreme `extremes` keeps.
+pub const Extreme = enum { highest, lowest };
+
+/// Replaces every value with the highest or lowest in the square of `radius` pixels around
+/// it, in place.
+pub fn extremes(plane: Plane, scratch: []f32, radius: usize, extreme: Extreme) void {
+    const rows = plane.height();
+    for (0..rows) |row| extremeLine(plane.values, row * plane.width, 1, plane.width, scratch, radius, extreme);
+    for (0..plane.width) |column| extremeLine(plane.values, column, plane.width, rows, scratch, radius, extreme);
+}
+
+fn extremeLine(values: []f32, start: usize, stride: usize, length: usize, scratch: []f32, radius: usize, extreme: Extreme) void {
+    const line = scratch[0..length];
+    for (line, 0..) |*value, index| value.* = values[start + index * stride];
+    for (0..length) |index| {
+        var kept = line[index];
+        for (index -| radius..@min(index + radius + 1, length)) |near| {
+            kept = switch (extreme) {
+                .highest => @max(kept, line[near]),
+                .lowest => @min(kept, line[near]),
+            };
+        }
+        values[start + index * stride] = kept;
+    }
+}
+
 /// Box-blurs the `length` values at `start`, `start + stride`, ... with a running sum.
 fn blurLine(values: []f32, start: usize, stride: usize, length: usize, scratch: []f32, radius: usize) void {
     const line = scratch[0..length];
@@ -92,6 +118,8 @@ pub fn localDeviation(plane: Plane, allocator: std.mem.Allocator, radius: usize)
 
 /// Buckets `upperValue` sorts values into; its answer is within (max / buckets) of exact.
 const buckets = 4096;
+/// The width of `upperValue`'s buckets for values in 0..1.
+pub const bucket_width: f32 = 1.0 / @as(f32, buckets);
 
 /// The value that `share` (0..1) of the values are above, for values in 0..`max`; larger
 /// values count as `max`.
@@ -115,6 +143,16 @@ fn bucketOf(value: f32, max: f32) usize {
 }
 
 const testing = std.testing;
+
+test "extremes keep the highest or lowest value nearby" {
+    var values = [_]f32{ 0, 0, 1, 0, 0, 0, 0, 0 };
+    var scratch: [8]f32 = undefined;
+    (Plane{ .values = &values, .width = 8 }).extremes(&scratch, 1, .highest);
+    try testing.expectEqualSlices(f32, &.{ 0, 1, 1, 1, 0, 0, 0, 0 }, &values);
+    var low = [_]f32{ 1, 1, 0, 1, 1, 1, 1, 1 };
+    (Plane{ .values = &low, .width = 4 }).extremes(&scratch, 1, .lowest);
+    try testing.expectEqualSlices(f32, &.{ 1, 0, 0, 0, 1, 0, 0, 0 }, &low);
+}
 
 test "a blur keeps a flat plane flat and its edges repeated" {
     var values: [12]f32 = @splat(0.5);

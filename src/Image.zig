@@ -10,6 +10,8 @@ const Palette = @import("Palette.zig");
 const Theme = @import("Theme.zig");
 const Analysis = @import("Image/Analysis.zig");
 const Plane = @import("Image/Plane.zig");
+const Traits = @import("Traits.zig");
+const Measurements = @import("Image/Measurements.zig");
 const readability = @import("Image/readability.zig");
 
 /// Where the image is: `~/` for the home directory, `~~/` for the config, `~~kosmos/` for the
@@ -43,10 +45,13 @@ pub const Fill = Options.Fill;
 /// The lightness and chroma made-up hues get: their neighbours' or the image's average.
 pub const Tone = Options.Tone;
 
-/// What the image is like as a desktop's backdrop: how busy and how soft it is.
-pub const Surface = @import("Image/Surface.zig");
-/// How `surface` and `readableAlpha` measure the image, each threshold with a default.
-pub const SurfaceOptions = @import("Image/SurfaceOptions.zig");
+/// How `traits` measures the image: how text is judged readable, and what each trait is mixed
+/// from, each with a default.
+pub const TraitsOptions = @import("Image/TraitsOptions.zig");
+/// How text on a window over the image is judged readable, each threshold with a default.
+pub const ReadingOptions = @import("Image/ReadingOptions.zig");
+/// One measurement's part in a trait: its weight and the values it rises between.
+pub const Contributor = @import("Image/Contributor.zig");
 /// A translucent window over the image, whose text `readableAlpha` checks.
 pub const Window = @import("Image/Window.zig");
 
@@ -90,22 +95,80 @@ pub fn themeInput(image: Image, options: Options) Error!Theme.Input {
     };
 }
 
-/// How busy the image is behind text and how soft its edges are, measured on its lightness.
-pub fn surface(image: Image, options: SurfaceOptions) Error!Surface {
-    try image.checkLightness();
+/// What the image is like (`kosm.Traits`), measured as `options.traits` says; readability
+/// is measured against the colors of the theme `themeInput` gives with `options`.
+pub fn traits(image: Image, options: Options) Error!Traits {
+    try image.checkLoaded();
+    const input = try image.themeInput(options);
+    const analysis = try image.analyse(options);
     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     defer arena.deinit();
     // A kosmos cannot handle running out of memory; kosm stops with this message instead.
-    return Surface.from(arena.allocator(), image.lightnessPlane(arena.allocator()), options) catch @panic("kosm.Image.surface: out of memory");
+    return image.traitsOf(arena.allocator(), .from(input), analysis, options) catch @panic("kosm.Image.traits: out of memory");
 }
 
+fn traitsOf(image: Image, allocator: std.mem.Allocator, theme: Theme, analysis: Analysis, options: Options) std.mem.Allocator.Error!Traits {
+    const plane = image.lightnessPlane(allocator);
+    const reading = options.traits.reading;
+    const measured = try Measurements.from(allocator, image.pixels, plane, reading);
+    const mixed = Mixed{ .options = options.traits, .measured = measured };
+    var result: Traits = .{
+        .detail = mixed.detail(),
+        .softness = mixed.softness(),
+        .glow = mixed.glow(),
+        .flatness = mixed.flatness(),
+        .blurriness = mixed.blurriness(),
+        .lightness = Contributor.mix(&.{options.traits.lightness.average}, &.{measured.average_lightness}),
+        .contrast = Contributor.mix(&.{options.traits.contrast.spread}, &.{measured.lightness_spread}),
+        .colorfulness = Contributor.mix(&.{options.traits.colorfulness.chroma}, &.{measured.average_chroma}),
+        .warmth = Contributor.mix(&.{options.traits.warmth.lean}, &.{measured.warm_lean}),
+    };
+    if (result.glow > 0) result.glow_color = measured.highlight_color;
+    inline for (@typeInfo(Palette.Hue).@"enum".field_names, analysis.shares) |name, share| @field(result.hues, name) = share;
+    var window: Window = .{ .background = theme.roles.background, .foreground = theme.roles.foreground };
+    for (&result.readability.alphas, Traits.Readability.blur_spreads) |*alpha, spread| {
+        window.blur = spread;
+        alpha.* = try readability.readableAlpha(allocator, image.pixels, image.width, plane, window, reading);
+    }
+    return result;
+}
+
+/// The traits mixed from several measurements.
+const Mixed = struct {
+    options: TraitsOptions,
+    measured: Measurements,
+
+    fn detail(mixed: Mixed) f64 {
+        return Contributor.mix(&.{mixed.options.detail.texture}, &.{mixed.measured.texture});
+    }
+
+    fn softness(mixed: Mixed) f64 {
+        const parts = mixed.options.softness;
+        return Contributor.mix(&.{ parts.crispness, parts.straightness }, &.{ mixed.measured.crispness, mixed.measured.straightness });
+    }
+
+    fn glow(mixed: Mixed) f64 {
+        const parts = mixed.options.glow;
+        const measured = mixed.measured;
+        return Contributor.mix(&.{ parts.highlight_lift, parts.halo, parts.highlight_chroma }, &.{ measured.highlight_lift, measured.halo, measured.highlight_chroma });
+    }
+
+    fn flatness(mixed: Mixed) f64 {
+        const parts = mixed.options.flatness;
+        return Contributor.mix(&.{ parts.flat_share, parts.color_concentration }, &.{ mixed.measured.flat_share, mixed.measured.color_concentration });
+    }
+
+    fn blurriness(mixed: Mixed) f64 {
+        return Contributor.mix(&.{mixed.options.blurriness.edge_sharpness}, &.{mixed.measured.edge_sharpness});
+    }
+};
+
 /// The lowest alpha (0..1, rounded up to hundredths) `window`'s background can have over the
-/// image with its text still readable: enough contrast (`SurfaceOptions.minimum_contrast`)
+/// image with its text still readable: enough contrast (`ReadingOptions.minimum_contrast`)
 /// and little enough texture behind it (`maximum_texture`), with the image blurred by
 /// `window.blur`. 1 if only an opaque window reads.
-pub fn readableAlpha(image: Image, window: Window, options: SurfaceOptions) Error!f64 {
-    try image.checkLightness();
-    if (image.pixels.len == 0 or image.width == 0 or image.pixels.len % image.width != 0) return error.ImageNotLoaded;
+pub fn readableAlpha(image: Image, window: Window, options: ReadingOptions) Error!f64 {
+    try image.checkLoaded();
     var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -113,7 +176,8 @@ pub fn readableAlpha(image: Image, window: Window, options: SurfaceOptions) Erro
     return readability.readableAlpha(allocator, image.pixels, image.width, image.lightnessPlane(allocator), window, options) catch @panic("kosm.Image.readableAlpha: out of memory");
 }
 
-fn checkLightness(image: Image) Error!void {
+fn checkLoaded(image: Image) Error!void {
+    if (image.pixels.len == 0 or image.width == 0 or image.pixels.len % image.width != 0) return error.ImageNotLoaded;
     if (image.lightness.len == 0 or image.lightness_width == 0 or image.lightness.len % image.lightness_width != 0) return error.ImageNotLoaded;
 }
 
@@ -587,4 +651,45 @@ test "tint turns made-up hues toward the accent, the shortest way round" {
 
 test {
     testing.refAllDecls(Analysis);
+}
+
+/// A loaded image whose colors and lightness come from `pixels`, `side` pixels square.
+fn loadedImage(pixels: []const Color, lightness: []f32, side: usize) Image {
+    for (lightness, pixels) |*value, pixel| value.* = @floatCast(pixel.lightness);
+    return .{ .path = "test", .pixels = pixels, .width = side, .lightness = lightness, .lightness_width = side };
+}
+
+test "a flat image is calm, flat, soft, glows not and reads without opacity" {
+    const pixels: [64 * 64]Color = @splat(gray(0.2));
+    var lightness: [64 * 64]f32 = undefined;
+    const traits_value = try loadedImage(&pixels, &lightness, 64).traits(.{});
+    try testing.expectEqual(0, traits_value.detail);
+    try testing.expectEqual(1, traits_value.flatness);
+    try testing.expectEqual(1, traits_value.softness);
+    try testing.expectEqual(0, traits_value.glow);
+    try testing.expectEqual(null, traits_value.glow_color);
+    try testing.expectEqual(0, traits_value.colorfulness);
+    try testing.expectEqual(0.5, traits_value.warmth);
+    try testing.expectEqual(0, traits_value.hues.red);
+    for (traits_value.readability.alphas) |alpha| try testing.expectEqual(0, alpha);
+}
+
+test "a busy red image is detailed, colorful, warm and mostly red, and blur makes it readable" {
+    var pixels: [64 * 64]Color = undefined;
+    var random: std.Random.DefaultPrng = .init(5);
+    for (&pixels) |*pixel| pixel.* = .{ .lightness = 0.3 + 0.5 * random.random().float(f64), .chroma = 0.15, .hue = 29 };
+    var lightness: [64 * 64]f32 = undefined;
+    const traits_value = try loadedImage(&pixels, &lightness, 64).traits(.{ .traits = .{ .reading = .{ .screen_width = 64 } } });
+    try testing.expectEqual(1, traits_value.detail);
+    try testing.expectEqual(1, traits_value.colorfulness);
+    try testing.expect(traits_value.warmth > 0.8);
+    try testing.expect(traits_value.hues.red > 0.9);
+    try testing.expect(traits_value.flatness < 0.3);
+    const alphas = traits_value.readability.alphas;
+    try testing.expect(alphas[0] > alphas[alphas.len - 1]);
+}
+
+test "traits need a loaded image" {
+    const image: Image = .{ .path = "unloaded" };
+    try testing.expectError(error.ImageNotLoaded, image.traits(.{}));
 }

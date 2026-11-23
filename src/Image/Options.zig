@@ -1,7 +1,9 @@
-//! How `Image.palette` and `Image.themeInput` take colors from an image. Lightness and chroma
+//! How `Image.palette` and `Image.themeInput` take colors from an image, and how
+//! `Image.traits` measures it. Lightness and chroma
 //! are OKLCH (lightness 0..1), contrast is the WCAG 2 ratio (1..21).
 
 const Mode = @import("../Theme.zig").Mode;
+const TraitsOptions = @import("TraitsOptions.zig");
 
 /// How colors are taken from the image. Default: `.readable`.
 style: Style = .readable,
@@ -48,6 +50,8 @@ foreground_contrast: f64 = 7,
 vivid_chroma: f64 = 1.3,
 /// With `.muted`, how much the hues' chroma is multiplied by. Default: 0.6.
 muted_chroma: f64 = 0.6,
+/// How the image's traits are measured: readability, and what each trait is mixed from.
+traits: TraitsOptions = .{},
 
 /// How colors are taken from the image.
 pub const Style = union(enum) {
