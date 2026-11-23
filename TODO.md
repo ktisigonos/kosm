@@ -53,6 +53,13 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: the human wants a palette generator besides images; ask what it generates from (a seed color, a few hues, a scheme like Material's) and propose its API beside `kosm.Image`'s.
   - Done when: the human has agreed on it and it builds a palette.
 
+- **18o. Look values from an image** `PLAN FIRST`
+  - Decided with the human: from the wallpaper kosm derives, besides the palette, how see-through, blurred, round and spaced the desktop is. Every derived value has a configurable range (min and max, with sane defaults, convenient to set: `1..1` alpha means always opaque, `0..1` anything) and gets as much of it as the image calls for. Users override anything they dislike on top, as with every value.
+  - Do: `kosm.Image` keeps the shrunk image's width, so analyses can see where pixels sit. One decode, one `Image`; a spatial analysis beside the color one, in kosm core, knowing no app. It measures, with thresholds as defaulted options like the palette's: readability (the theme's background at an alpha, over the wallpaper blurred by a given strength, against the foreground: the contrast a low percentile of pixels reaches, not the average), detail at text size (how busy the image is), and softness (how few hard edges and straight lines).
+  - Do: `kosm_base` turns the measurements into `Values` through a struct of ranges; one call on the image gives the theme input and the values together. Transparency first: the lowest alpha in its range at which some blur in its range keeps text readable, with the least such blur; if none does, the alpha's max. Then: rounding, rounding power, padding and shadow grow with softness; gaps shrink with detail (gaps show the wallpaper); border size shrinks with softness.
+  - Do: `Values.blur` becomes a strength instead of a bool: a size (0 turns blur off) and passes (Hyprland's `decoration.blur.size` and `passes`; the terminals and Vicinae turn blur on for a size above 0). Default ranges: alpha 0.6..1, passes 2..4 (somewhat blurry to acrylic glass), blur size from 0 so a calm image can stay clear; the others' defaults are tuned by eye on the human's wallpapers. Update `kosm_base`'s README field list.
+  - Done when: on a calm, a busy and a saturated dark wallpaper of the human's, `kosm colors`-style output (or `--diff`) shows clear, blurred and opaque-or-blurred choices that read well, the measurements and range mapping are under tests, and `DESIGN.md` says how look values come from an image.
+
 
 - **13a. kosm_json's clip warning tests**
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
