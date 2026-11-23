@@ -53,11 +53,26 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: the human wants a palette generator besides images; ask what it generates from (a seed color, a few hues, a scheme like Material's) and propose its API beside `kosm.Image`'s.
   - Done when: the human has agreed on it and it builds a palette.
 
-- **18o. Look values from an image** `PLAN FIRST`
-  - Decided with the human: from the wallpaper kosm derives, besides the palette, how see-through, blurred, round and spaced the desktop is. Every derived value has a configurable range (min and max, with sane defaults, convenient to set: `1..1` alpha means always opaque, `0..1` anything) and gets as much of it as the image calls for. Users override anything they dislike on top, as with every value.
-  - Done: kosm measures images (`Image.surface`, `Image.readableAlpha`); `kosm_base` `c3d02cd` (pushed) has `Values.blur` as size and passes for every app with blur, and `Look.fromImage` with a range per value in `kosm_base.ImageOptions`. The config pins it: Krystallos and OG Steam give `blur_behind = { size = 20, passes = 4 }` and keep the base's blur strength in their Hyprland tweaks; `personal.image` wears the image's look, and `--colors-only true` takes only its colors. `--diff` on a calm, a busy and a geometric wallpaper gives different gaps, rounding, borders, shadows and blur.
-  - Left for the human: apply `personal.image` on a few wallpapers and judge how it reads and looks; tune the default ranges (`ImageOptions`) and thresholds (`Image.SurfaceOptions`) from that. Every picture tried so far lands on the alpha range's minimum (0.6) with a little blur, so the alpha range is what the human will most likely want to tune.
-  - Done when: the human is happy with how image looks read and look.
+- **18o. Traits** `PLAN FIRST`
+  - Decided with the human: sources describe, readers decide (`DESIGN.md`, Traits). `kosm.Traits` is one plain struct in core: 0..1 measures and a few colors, the same whatever source gave them; `kosm.Image` gives them (`image.traits(options)`) beside its palette. Readability is measured against the colors the image's own theme gives; a kosmos changing its text colors later is on its own.
+  - Do: the measures, each from contributors with default weights in the options: detail and softness (as `Image.surface` today), glow (bright, soft-edged highlights) and its color (their hue), flatness (a few solid colors in large regions), blurriness (out of focus), lightness, contrast, colorfulness, warmth, and each wheel hue's share (the palette analysis counts them). Readability as the lowest readable alpha at a few fixed blur spreads.
+  - Do: `Image.surface`, `Surface` and `readableAlpha` fold into the traits; keep `readableAlpha` public for a kosmos changing its colors.
+  - Done when: every trait is under tests on made-up images, and `kosm colors`-style output or a temporary test shows sensible traits on the human's wallpapers (glow high on NeonCity, flatness high on the solids and Blackout's flat areas).
+
+- **18p. Traits on the theme**
+  - Do: `Theme.Input` and `Theme` gain `traits: ?kosm.Traits` (null by hand), set by `Image.themeInput`, carried through `Theme.from` and every copy, so every app's `from(theme)` may read it.
+  - Done when: a theme from an image carries its traits into an app under a test, and a hand-made one has none.
+
+- **18q. A mapping from traits to values, with curves** `PLAN FIRST`
+  - Do: `kosm.Curve.Bezier` gains `at(x)`: y at x, solving the cubic for x (bisection or Newton), tested on the named easings and the straight line.
+  - Do: `kosm_base` gains `Values.glow` (`range`, `render_power`, `color`; Hyprland's `decoration.glow`, enabled when its range is above 0) and any other common power still missing; all unset by default.
+  - Do: `kosm_base` replaces `Look.fromImage` with a mapping from traits: each derived value is a weighted mix of traits (contributors with default weights) through an optional `curve` (a `kosm.Curve.Bezier`, linear by default) into its `{ min, max }` range. Alpha keeps readability as a floor and goes lower for flat or blurry pictures; rounding follows softness and blurriness; glow follows the glow trait and color, its range starting at 0; rounding's range starts at 0 so crisp pictures get square corners. The image kosmos calls it as today; anyone may write their own from the same traits. Update its README.
+  - Do: the config's `personal.image` keeps working through it, `--colors-only` included; re-pin kosm and `kosm_base` there.
+  - Done when: `--diff` on MonoCubes gives square or near-square corners, NeonCity a glow in its neon's color, and the mapping is under tests.
+
+- **18r. Hyprland reads traits**
+  - Do: `kosm_hyprland.from(theme)` with traits picks its blur variant from them (frost for a blue, cold picture) and whatever else the human agrees on; propose the list first.
+  - Done when: the human has agreed on the list and `--diff` shows it on two different wallpapers.
 
 - **13a. kosm_json's clip warning tests**
   - Do: when `kosm_json` next pins kosm, drop its tests of clip warnings (`context.clipped`, the `outside sRGB` warning).
