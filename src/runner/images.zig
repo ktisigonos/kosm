@@ -26,11 +26,17 @@ pub const Error = error{Reported} || std.mem.Allocator.Error || std.Io.Writer.Er
 /// The cache folder inside a config project.
 pub const cache_folder = ".zig-cache/kosm/images";
 
-/// ImageMagick shrinks an image to fit this, keeping its aspect: plenty for its colors, and
-/// quick to read. `-sample` picks pixels instead of averaging them, which is twice as fast.
-const geometry = "256x256>";
+/// ImageMagick shrinks an image to fit this, keeping its aspect, averaging the pixels it
+/// merges (`-scale`): large enough to tell crisp edges and fine texture from soft ones.
+const geometry = "1024x1024>";
 /// The longest PPM a `geometry`-sized image gives, with room for its header.
-const output_limit = 256 * 256 * 6 + 64;
+const output_limit = 1024 * 1024 * 6 + 64;
+/// The colors are taken from every few pixels of the decoded copy, so that at most this many
+/// lie along its long side: plenty for its colors, and quick to analyse.
+const palette_side = 256;
+/// Part of every cache entry's name; changing what is cached changes it, so older entries are
+/// never read.
+const cache_version = "1024";
 
 /// Loads the pixels of every `kosm.Image` (or non-null `?kosm.Image`) field of `params_value`.
 pub fn fill(comptime Params: type, params_value: *Params, context: Context) Error!void {
@@ -59,7 +65,11 @@ fn load(context: Context, comptime name: []const u8, image: *kosm.Image) Error!v
             return fail(context, name, image.path, "cannot read the image: {s}", .{@errorName(err)});
     }
     if (stat.kind != .file) return fail(context, name, image.path, "the image is neither a file nor a folder", .{});
-    image.pixels = try loadFile(context, name, image.path, full_path, stat);
+    const decoded = try loadFile(context, name, image.path, full_path, stat);
+    image.pixels = decoded.pixels;
+    image.width = decoded.width;
+    image.lightness = decoded.lightness;
+    image.lightness_width = decoded.lightness_width;
     image.path = full_path;
 }
 
@@ -98,12 +108,12 @@ fn extensionList() []const u8 {
     return list;
 }
 
-fn loadFile(context: Context, comptime name: []const u8, path: []const u8, full_path: []const u8, stat: std.Io.File.Stat) Error![]const kosm.Color {
+fn loadFile(context: Context, comptime name: []const u8, path: []const u8, full_path: []const u8, stat: std.Io.File.Stat) Error!Decoded {
     const cache_path = if (context.cache) |folder| try cachePath(context.arena, folder, full_path, stat) else null;
     if (cache_path) |cached| {
         // The cache is only a shortcut: a missing or unreadable entry is decoded again.
         if (readCache(context, cached)) |bytes| {
-            if (parsePpm(context.arena, bytes)) |pixels| return pixels else |err| switch (err) {
+            if (parsePpm(context.arena, bytes)) |decoded| return decoded else |err| switch (err) {
                 error.OutOfMemory => return error.OutOfMemory,
                 else => {},
             }
@@ -111,14 +121,14 @@ fn loadFile(context: Context, comptime name: []const u8, path: []const u8, full_
     }
 
     const bytes = try decode(context, name, path, full_path);
-    const pixels = parsePpm(context.arena, bytes) catch |err| switch (err) {
+    const decoded = parsePpm(context.arena, bytes) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return fail(context, name, path, "ImageMagick's output is not a PPM image: {s}", .{@errorName(err)}),
     };
     if (cache_path) |cached| writeCache(context, cached, bytes) catch |err| {
         try kosm.Diagnostics.writeReport(context.stderr, "warning", context.diagnostics.kosmos, "", path, try context.arena.print("cannot cache the decoded image in {s}: {s}", .{ cached, @errorName(err) }));
     };
-    return pixels;
+    return decoded;
 }
 
 fn resolve(context: Context, comptime name: []const u8, path: []const u8) Error![]const u8 {
@@ -131,7 +141,7 @@ fn resolve(context: Context, comptime name: []const u8, path: []const u8) Error!
 /// The cache entry of the image at `full_path` as `stat` describes it; a changed size or
 /// modification time gives a new entry.
 pub fn cachePath(arena: std.mem.Allocator, folder: []const u8, full_path: []const u8, stat: std.Io.File.Stat) std.mem.Allocator.Error![]const u8 {
-    const entry = try arena.print("{x:0>16}-{d}-{d}.ppm", .{ std.hash.Wyhash.hash(0, full_path), stat.size, stat.mtime.nanoseconds });
+    const entry = try arena.print("{x:0>16}-{d}-{d}-{s}.ppm", .{ std.hash.Wyhash.hash(0, full_path), stat.size, stat.mtime.nanoseconds, cache_version });
     return std.Io.Dir.path.join(arena, &.{ folder, entry });
 }
 
@@ -151,7 +161,7 @@ fn writeCache(context: Context, cache_path: []const u8, bytes: []const u8) !void
 fn decode(context: Context, comptime name: []const u8, path: []const u8, full_path: []const u8) Error![]const u8 {
     const input = try context.arena.print("{s}[0]", .{full_path});
     const result = std.process.run(context.arena, context.io, .{
-        .argv = &.{ "magick", input, "-sample", geometry, "-colorspace", "sRGB", "-depth", "8", "ppm:-" },
+        .argv = &.{ "magick", input, "-scale", geometry, "-colorspace", "sRGB", "-depth", "8", "ppm:-" },
         .stdout_limit = .limited(output_limit),
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
@@ -167,8 +177,18 @@ fn decode(context: Context, comptime name: []const u8, path: []const u8, full_pa
 
 pub const PpmError = error{ NotPpm, BadHeader, Truncated } || std.mem.Allocator.Error;
 
+/// What kosm keeps of a decoded image: the fields of `kosm.Image` it fills.
+pub const Decoded = struct {
+    /// Every few pixels' colors, at most `palette_side` along the long side.
+    pixels: []const kosm.Color,
+    width: usize,
+    /// Every pixel's OKLCH lightness.
+    lightness: []const f32,
+    lightness_width: usize,
+};
+
 /// The pixels of a binary PPM (`P6`), with a maximum value up to 65535.
-pub fn parsePpm(allocator: std.mem.Allocator, bytes: []const u8) PpmError![]const kosm.Color {
+pub fn parsePpm(allocator: std.mem.Allocator, bytes: []const u8) PpmError!Decoded {
     if (!std.mem.startsWith(u8, bytes, "P6")) return error.NotPpm;
     var position: usize = 2;
     const width = try headerNumber(bytes, &position);
@@ -182,21 +202,37 @@ pub fn parsePpm(allocator: std.mem.Allocator, bytes: []const u8) PpmError![]cons
     const pixel_count = std.math.mul(usize, width, height) catch return error.BadHeader;
     const data_length = std.math.mul(usize, pixel_count, 3 * channel_size) catch return error.BadHeader;
     if (bytes.len - position < data_length) return error.Truncated;
-    const data = bytes[position..][0..data_length];
+    const reader: PpmPixels = .{ .data = bytes[position..][0..data_length], .channel_size = channel_size, .scale = @floatFromInt(maximum) };
 
-    const pixels = try allocator.alloc(kosm.Color, pixel_count);
-    const scale: f64 = @floatFromInt(maximum);
-    for (pixels, 0..) |*pixel, index| {
+    const lightness = try allocator.alloc(f32, pixel_count);
+    for (lightness, 0..) |*value, index| value.* = @floatCast(reader.color(index).lightness);
+
+    const step = std.math.divCeil(usize, @max(width, height), palette_side) catch unreachable;
+    const sampled_width = std.math.divCeil(usize, width, step) catch unreachable;
+    const sampled_height = std.math.divCeil(usize, height, step) catch unreachable;
+    const pixels = try allocator.alloc(kosm.Color, sampled_width * sampled_height);
+    for (0..sampled_height) |row| for (0..sampled_width) |column| {
+        pixels[row * sampled_width + column] = reader.color(row * step * width + column * step);
+    };
+    return .{ .pixels = pixels, .width = sampled_width, .lightness = lightness, .lightness_width = width };
+}
+
+/// The pixel data of a PPM, read one pixel at a time.
+const PpmPixels = struct {
+    data: []const u8,
+    channel_size: usize,
+    scale: f64,
+
+    fn color(pixels: PpmPixels, index: usize) kosm.Color {
         var channels: [3]f64 = undefined;
         for (&channels, 0..) |*channel, offset| {
-            const at = (index * 3 + offset) * channel_size;
-            const value: u16 = if (channel_size == 2) std.mem.readInt(u16, data[at..][0..2], .big) else data[at];
-            channel.* = @as(f64, @floatFromInt(value)) / scale;
+            const at = (index * 3 + offset) * pixels.channel_size;
+            const value: u16 = if (pixels.channel_size == 2) std.mem.readInt(u16, pixels.data[at..][0..2], .big) else pixels.data[at];
+            channel.* = @as(f64, @floatFromInt(value)) / pixels.scale;
         }
-        pixel.* = .fromRgb(.{ .red = channels[0], .green = channels[1], .blue = channels[2] });
+        return .fromRgb(.{ .red = channels[0], .green = channels[1], .blue = channels[2] });
     }
-    return pixels;
-}
+};
 
 /// Skips whitespace and `#` comments, then reads a decimal number.
 fn headerNumber(bytes: []const u8, position: *usize) PpmError!usize {
@@ -225,11 +261,32 @@ test "a PPM's pixels are read as colors, 8 or 16 bits per channel" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const eight = try parsePpm(arena, "P6\n# made by a test\n2 1\n255\n\xff\x00\x00\x00\x00\xff");
-    try testing.expectEqual(2, eight.len);
-    try testing.expectEqualStrings("#ff0000", eight[0].hex().slice());
-    try testing.expectEqualStrings("#0000ff", eight[1].hex().slice());
+    try testing.expectEqual(2, eight.pixels.len);
+    try testing.expectEqualStrings("#ff0000", eight.pixels[0].hex().slice());
+    try testing.expectEqualStrings("#0000ff", eight.pixels[1].hex().slice());
     const sixteen = try parsePpm(arena, "P6 1 1 65535 \xff\xff\x80\x00\x00\x00");
-    try testing.expectEqualStrings("#ff8000", sixteen[0].hex().slice());
+    try testing.expectEqualStrings("#ff8000", sixteen.pixels[0].hex().slice());
+}
+
+test "a large PPM keeps every pixel's lightness and every few pixels' colors" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const width = 2 * palette_side + 1;
+    const header = std.fmt.comptimePrint("P6 {d} 2 255\n", .{width});
+    const bytes = try arena.alloc(u8, header.len + width * 2 * 3);
+    @memcpy(bytes[0..header.len], header);
+    for (bytes[header.len..], 0..) |*byte, index| byte.* = if (index / 3 % width % 2 == 0) 255 else 0;
+    const decoded = try parsePpm(arena, bytes);
+    try testing.expectEqual(width, decoded.lightness_width);
+    try testing.expectEqual(width * 2, decoded.lightness.len);
+    try testing.expectApproxEqAbs(0, decoded.lightness[3], 1e-6);
+    try testing.expectApproxEqAbs(1, decoded.lightness[4], 1e-6);
+    // Every third pixel of one row: 513 wide is 171 sampled, at most `palette_side`.
+    try testing.expectEqual(171, decoded.width);
+    try testing.expectEqual(171, decoded.pixels.len);
+    try testing.expectEqualStrings("#ffffff", decoded.pixels[0].hex().slice());
+    try testing.expectEqualStrings("#000000", decoded.pixels[1].hex().slice());
 }
 
 test "bad and cut-short PPMs are errors" {

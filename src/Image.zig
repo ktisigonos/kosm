@@ -9,6 +9,8 @@ const Color = @import("Color.zig");
 const Palette = @import("Palette.zig");
 const Theme = @import("Theme.zig");
 const Analysis = @import("Image/Analysis.zig");
+const Plane = @import("Image/Plane.zig");
+const readability = @import("Image/readability.zig");
 
 /// Where the image is: `~/` for the home directory, `~~/` for the config, `~~kosmos/` for the
 /// applied kosmos' folder, `~~<name>/` for a package's or local module's folder
@@ -20,6 +22,13 @@ path: []const u8,
 /// The image's pixels, shrunk. Kosm fills them in for every image in a kosmos' `Params`
 /// before calling it; an image built anywhere else has none, and taking colors from it fails.
 pixels: []const Color = &.{},
+/// Pixels per row of `pixels`. Kosm sets it with them.
+width: usize = 0,
+/// The OKLCH lightness (0..1) of a larger copy of the image (about 1024 pixels on its long
+/// side), row by row, for measuring its texture and edges. Kosm fills it in with `pixels`.
+lightness: []const f32 = &.{},
+/// Pixels per row of `lightness`. Kosm sets it with them.
+lightness_width: usize = 0,
 
 /// How colors are taken from the image: the style, the mode, how the accent is picked, and the
 /// thresholds, each with a default.
@@ -33,6 +42,13 @@ pub const AccentBy = Options.AccentBy;
 pub const Fill = Options.Fill;
 /// The lightness and chroma made-up hues get: their neighbours' or the image's average.
 pub const Tone = Options.Tone;
+
+/// What the image is like as a desktop's backdrop: how busy and how soft it is.
+pub const Surface = @import("Image/Surface.zig");
+/// How `surface` and `readableAlpha` measure the image, each threshold with a default.
+pub const SurfaceOptions = @import("Image/SurfaceOptions.zig");
+/// A translucent window over the image, whose text `readableAlpha` checks.
+pub const Window = @import("Image/Window.zig");
 
 pub const Error = error{
     /// The image has no pixels: kosm loads only the images a kosmos names in its `Params`.
@@ -72,6 +88,40 @@ pub fn themeInput(image: Image, options: Options) Error!Theme.Input {
             .tertiary = if (tertiary) |position| hueOf(result, position) else null,
         },
     };
+}
+
+/// How busy the image is behind text and how soft its edges are, measured on its lightness.
+pub fn surface(image: Image, options: SurfaceOptions) Error!Surface {
+    try image.checkLightness();
+    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    defer arena.deinit();
+    // A kosmos cannot handle running out of memory; kosm stops with this message instead.
+    return Surface.from(arena.allocator(), image.lightnessPlane(arena.allocator()), options) catch @panic("kosm.Image.surface: out of memory");
+}
+
+/// The lowest alpha (0..1, rounded up to hundredths) `window`'s background can have over the
+/// image with its text still readable: enough contrast (`SurfaceOptions.minimum_contrast`)
+/// and little enough texture behind it (`maximum_texture`), with the image blurred by
+/// `window.blur`. 1 if only an opaque window reads.
+pub fn readableAlpha(image: Image, window: Window, options: SurfaceOptions) Error!f64 {
+    try image.checkLightness();
+    if (image.pixels.len == 0 or image.width == 0 or image.pixels.len % image.width != 0) return error.ImageNotLoaded;
+    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    // A kosmos cannot handle running out of memory; kosm stops with this message instead.
+    return readability.readableAlpha(allocator, image.pixels, image.width, image.lightnessPlane(allocator), window, options) catch @panic("kosm.Image.readableAlpha: out of memory");
+}
+
+fn checkLightness(image: Image) Error!void {
+    if (image.lightness.len == 0 or image.lightness_width == 0 or image.lightness.len % image.lightness_width != 0) return error.ImageNotLoaded;
+}
+
+/// A copy of `lightness` the measurements may change.
+fn lightnessPlane(image: Image, allocator: std.mem.Allocator) Plane {
+    // A kosmos cannot handle running out of memory; kosm stops with this message instead.
+    const values = allocator.dupe(f32, image.lightness) catch @panic("kosm.Image: out of memory");
+    return .{ .values = values, .width = image.lightness_width };
 }
 
 fn analyse(image: Image, options: Options) Error!Analysis {

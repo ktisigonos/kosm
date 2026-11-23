@@ -114,6 +114,9 @@ test {
     std.testing.refAllDecls(Palette);
     std.testing.refAllDecls(Image);
     std.testing.refAllDecls(Image.Style.Function);
+    std.testing.refAllDecls(@import("Image/Plane.zig"));
+    std.testing.refAllDecls(Image.Surface);
+    std.testing.refAllDecls(@import("Image/readability.zig"));
     std.testing.refAllDecls(File);
     std.testing.refAllDecls(failure);
     std.testing.refAllDecls(@import("keep.zig"));
