@@ -62,6 +62,11 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
   - Do: the config's `personal.image` keeps working through it, `--colors-only` included; re-pin kosm and `kosm_base` there.
   - Done when: `--diff` on MonoCubes gives square or near-square corners, NeonCity a glow in its neon's color, and the mapping is under tests.
 
+- **18t. Made-up semantic hues serve only their roles** `ASK`
+  - Do: with `fill = .semantic`, the red, yellow and green made up for a picture lacking them exist so errors, warnings and successes stay recognizable, but code colors default from the same hues (`string` from green, `type` from yellow, `tag` from red), so a blue picture gets green strings and yellow types from no color in it. Code colors that would default to a made-up hue take the picture's own colors instead (the accent, secondary and tertiary roles, or its nearest own hues): `Image.themeInput` sets them in the input's code overrides, so a kosmos setting them still wins. The success, warning and error roles and the diff colors following them keep the made-up hues.
+  - Do: propose first which code color takes which role, and whether terminals' ANSI red, green and yellow keep the made-up hues (programs print errors in ANSI red) or follow the code colors.
+  - Done when: the human has agreed on the mapping, and under a test a blue picture with `.semantic` gives code colors from its own hues and the semantic roles from the made-up ones.
+
 - **18s. Simple controls over the mapping** `ASK`
   - Decided with the human: a layer over the ranges, curves and contributors for people who never touch those: a handful of plain fields on the mapping's options, so a kosmos sets them and the image kosmos takes them as flags (`--frost 0.8`, `--opacity 0.7`, `--opaque true`). Amounts are multipliers, 1 being what the picture calls for, and stay within the ranges; `opaque` is a hard toggle.
   - Do: propose the list (likely opaque, opacity, blur, frost toward more passes, roundness, spacing, borders, shadow, glow) and their exact effect first; then add them to `kosm_base`'s mapping and `personal.image`'s `Params`, with README rows.
