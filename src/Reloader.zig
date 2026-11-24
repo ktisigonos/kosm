@@ -8,6 +8,9 @@ const std = @import("std");
 io: std.Io,
 /// What a leading `~/` in `run`'s arguments expands to; set by kosm.
 home: []const u8 = "",
+/// How long a command may run before kosm stops it and the reload fails, so a program that
+/// hangs (a frozen compositor) cannot hang kosm.
+timeout: std.Io.Duration = .fromSeconds(10),
 failure_buffer: [failure_capacity]u8 = undefined,
 failure_length: usize = 0,
 
@@ -18,7 +21,8 @@ pub const Error = error{ReloadFailed};
 
 /// Runs `argv` (`&.{ "pkill", "-USR1", "-x", "kitty" }`) and waits for it. An argument
 /// starting with `~/` is a path under the home directory, as in apps' files. A command that
-/// cannot start, or exits with anything but 0, fails the reload. Its stdout is discarded.
+/// cannot start, exits with anything but 0, or runs longer than `timeout` (then it is killed)
+/// fails the reload. Its stdout is discarded.
 pub fn run(reloader: *Reloader, argv: []const []const u8) Error!void {
     if (argv.len == 0) return reloader.fail("the reload command is empty", .{});
     // A reload gets no allocator; the expanded arguments live only as long as this call.
@@ -28,9 +32,42 @@ pub fn run(reloader: *Reloader, argv: []const []const u8) Error!void {
     const command: Command = .{ .argv = expanded };
     var child = std.process.spawn(reloader.io, .{ .argv = expanded, .stdin = .ignore, .stdout = .ignore }) catch |err|
         return reloader.fail("cannot run {f}: {s}", .{ command, @errorName(err) });
-    const term = child.wait(reloader.io) catch |err|
+    const term = waitAtMost(reloader.io, &child, reloader.timeout) catch |err|
         return reloader.fail("cannot wait for {f}: {s}", .{ command, @errorName(err) });
-    if (!term.success()) return reloader.fail("{f} {f}", .{ command, term });
+    const finished = term orelse
+        return reloader.fail("{f} ran longer than {d} ms, so kosm stopped it", .{ command, reloader.timeout.toMilliseconds() });
+    if (!finished.success()) return reloader.fail("{f} {f}", .{ command, finished });
+}
+
+const Waited = union(enum) {
+    exited: std.process.Child.WaitError!std.process.Child.Term,
+    timed_out: std.Io.Cancelable!void,
+};
+
+/// Waits for `child` to exit, or kills it once `timeout` passed and returns null. Waits without
+/// a limit when the `Io` cannot run the wait and the timer side by side.
+fn waitAtMost(io: std.Io, child: *std.process.Child, timeout: std.Io.Duration) std.process.Child.WaitError!?std.process.Child.Term {
+    const pid = child.id.?;
+    var buffer: [2]Waited = undefined;
+    var select: std.Io.Select(Waited) = .init(io, &buffer);
+    defer select.cancelDiscard();
+    select.concurrent(.exited, std.process.Child.wait, .{ child, io }) catch return try child.wait(io);
+    select.concurrent(.timed_out, std.Io.sleep, .{ io, timeout, .awake }) catch {};
+    switch (try select.await()) {
+        .exited => |term| return try term,
+        .timed_out => {
+            // Unless it exited this instant, the wait still runs, so the child is not reaped
+            // and its id is still its own.
+            std.posix.kill(pid, .KILL) catch {};
+            while (true) switch (try select.await()) {
+                .exited => |term| {
+                    _ = term catch |err| return err;
+                    return null;
+                },
+                .timed_out => {},
+            };
+        },
+    }
 }
 
 fn expandHome(reloader: *const Reloader, allocator: std.mem.Allocator, argv: []const []const u8) std.mem.Allocator.Error![]const []const u8 {
@@ -83,6 +120,14 @@ test "a command exiting non-zero fails with its exit code" {
     var reloader: Reloader = .{ .io = testing.io };
     try testing.expectError(error.ReloadFailed, reloader.run(&.{ "false", "--quiet" }));
     try testing.expectEqualStrings("'false --quiet' exited with code 1", reloader.failure());
+}
+
+test "a command running past the timeout is killed and fails the reload" {
+    var reloader: Reloader = .{ .io = testing.io, .timeout = .fromMilliseconds(50) };
+    const started = std.Io.Timestamp.now(testing.io, .awake);
+    try testing.expectError(error.ReloadFailed, reloader.run(&.{ "sleep", "30" }));
+    try testing.expectEqualStrings("'sleep 30' ran longer than 50 ms, so kosm stopped it", reloader.failure());
+    try testing.expect(started.untilNow(testing.io, .awake).toMilliseconds() < 5000);
 }
 
 test "a command that cannot start fails naming it" {
