@@ -33,8 +33,18 @@ pub fn current(file: File) []const u8 {
 pub fn changed(file: File) bool {
     const old = file.old orelse return true;
     if (file.executable and !file.was_executable) return true;
-    return !std.mem.eql(u8, old, file.new);
+    return !sameBytes(old, file.new);
 }
+
+/// Whether `first` and `second` hold the same bytes. libc's `memcmp` is optimized even in a
+/// debug build, where `std.mem.eql` made comparing every planned file a tenth of an apply.
+fn sameBytes(first: []const u8, second: []const u8) bool {
+    if (first.len != second.len) return false;
+    if (first.len == 0) return true;
+    return memcmp(first.ptr, second.ptr, first.len) == 0;
+}
+
+extern "c" fn memcmp(first: [*]const u8, second: [*]const u8, length: usize) c_int;
 
 /// The first planned edit that `edit` clashes with, if any.
 pub fn clash(file: *const File, edit: Edit) ?*const Edit {
