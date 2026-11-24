@@ -23,6 +23,12 @@ pub fn nothingToChange(writer: *std.Io.Writer) std.Io.Writer.Error!void {
     try writer.writeAll("nothing to change\n");
 }
 
+/// A newer apply started before this one committed, so this one wrote nothing and leaves the
+/// disk to it.
+pub fn superseded(writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    try writer.writeAll("a newer kosm apply started, so this one wrote nothing\n");
+}
+
 /// A reload that failed after the commit: a warning, since the files are written and the
 /// program may simply not be running.
 pub fn reloadFailed(writer: *std.Io.Writer, kosmos: []const u8, app: []const u8, reason: []const u8) std.Io.Writer.Error!void {

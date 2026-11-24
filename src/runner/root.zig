@@ -753,7 +753,8 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
     if (init.environ_map.get(interface.colors_variable) != null) return showColors(tree.*, diagnostics, streams);
 
     const lock = if (arguments.diff) null else try lockApply(init, diagnostics, streams.stderr);
-    defer if (lock) |file| file.close(init.io);
+    defer if (lock) |held| held.file.close(init.io);
+    if (lock) |held| if (!held.latest.isNewest(init.io)) return report.superseded(streams.stderr);
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
     var warnings: kosm.Warnings = .init(arena);
@@ -766,20 +767,32 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         .home = home,
         .diff = arguments.diff,
         .recording = try recording(arena, init.environ_map, diagnostics.kosmos, arguments),
+        .latest = if (lock) |held| held.latest else null,
         .diagnostics = diagnostics,
         .streams = streams,
     });
 }
 
-/// Waits for any other apply to finish and holds the lock until the returned file is closed,
-/// so the files this one plans are not changed by it meanwhile. Null when there is no state
-/// directory to keep the lock in.
-fn lockApply(init: std.process.Init, diagnostics: *kosm.Diagnostics, stderr: *std.Io.Writer) !?std.Io.File {
-    const path = try Record.statePath(init.arena.allocator(), init.environ_map, apply_lock.file_name) orelse return null;
-    return apply_lock.acquire(init.io, path, stderr) catch |err| switch (err) {
+/// The lock an apply holds, and the mark telling whether a newer apply started since.
+const HeldLock = struct {
+    file: std.Io.File,
+    latest: apply_lock.Latest,
+};
+
+/// Says this apply is the newest, then waits for any other apply to finish and holds the lock
+/// until its file is closed, so the files this one plans are not changed by it meanwhile. Null
+/// when there is no state directory to keep the lock in.
+fn lockApply(init: std.process.Init, diagnostics: *kosm.Diagnostics, stderr: *std.Io.Writer) !?HeldLock {
+    const arena = init.arena.allocator();
+    const latest_path = try Record.statePath(arena, init.environ_map, apply_lock.latest_file_name) orelse return null;
+    const latest = apply_lock.Latest.announce(init.io, latest_path) catch |err|
+        return fail(diagnostics, "cannot write {s}, which tells an older apply that this one is newer: {s}", .{ latest_path, @errorName(err) });
+    const path = try Record.statePath(arena, init.environ_map, apply_lock.file_name) orelse return null;
+    const file = apply_lock.acquire(init.io, path, stderr) catch |err| switch (err) {
         error.WriteFailed => return error.WriteFailed,
         else => return fail(diagnostics, "cannot lock {s} against another apply: {s}", .{ path, @errorName(err) }),
     };
+    return .{ .file = file, .latest = latest };
 }
 
 /// Prints every theme in `tree`, for `kosm colors`, or fails when it holds none.
@@ -882,6 +895,8 @@ const Delivery = struct {
     diff: bool,
     /// Saved after a successful commit; null records nothing.
     recording: ?Recording,
+    /// Tells whether a newer apply started, which makes this one write nothing; null never does.
+    latest: ?apply_lock.Latest = null,
     diagnostics: *kosm.Diagnostics,
     streams: Streams,
 };
@@ -894,6 +909,7 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
         if (!plan.hasChanges()) return report.nothingToChange(stdout);
         return kosm.diff.writePlan(delivery.gpa, .{ .writer = stdout, .mode = delivery.streams.stdout_mode }, plan);
     }
+    if (delivery.latest) |latest| if (!latest.isNewest(delivery.io)) return report.superseded(delivery.streams.stderr);
     if (plan.hasChanges()) {
         var failure: kosm.commit.Failure = .{};
         kosm.commit.writePlan(delivery.gpa, delivery.io, plan, &failure) catch |err| {
@@ -1073,6 +1089,45 @@ test "a commit reloads every app, also when nothing changed" {
     try planAndDeliver(&arena, tree, home, false, &diagnostics, &second);
     try testing.expectEqual(2, reloads);
     try testing.expectEqualStrings("nothing to change\n", second.written());
+}
+
+test "an apply that a newer one started after writes and reloads nothing" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const home = try tmpPath(&tmp, &home_buffer);
+    var reloads: usize = 0;
+    var diagnostics: kosm.Diagnostics = .{ .kosmos = "nord" };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const tree = .{ .kitty = ReloadingApp{ .file = "~/a.lines", .reloads = &reloads } };
+    const latest_path = try std.Io.Dir.path.join(arena.allocator(), &.{ home, "state", apply_lock.latest_file_name });
+    const nord = try apply_lock.Latest.announce(testing.io, latest_path);
+    _ = try apply_lock.Latest.announce(testing.io, latest_path);
+
+    var plan: kosm.Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    var stderr_buffer: [256]u8 = undefined;
+    var stderr: std.Io.Writer = .fixed(&stderr_buffer);
+    var stdout: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer stdout.deinit();
+    var gathered: kosm.Warnings = .init(arena.allocator());
+    try planWarning(tree, .{ .allocator = arena.allocator(), .home = home, .adapters = &.{lines_adapter}, .plan = &plan, .diagnostics = &diagnostics, .warnings = &gathered }, &stderr);
+    try deliver(tree, &plan, .{
+        .gpa = testing.allocator,
+        .arena = arena.allocator(),
+        .io = testing.io,
+        .home = home,
+        .diff = false,
+        .recording = null,
+        .latest = nord,
+        .diagnostics = &diagnostics,
+        .streams = .{ .stdout = &stdout.writer, .stderr = &stderr, .stdout_mode = .no_color },
+    });
+    try testing.expectEqualStrings("a newer kosm apply started, so this one wrote nothing\n", stderr.buffered());
+    try testing.expectEqualStrings("", stdout.written());
+    try testing.expectEqual(0, reloads);
+    try testing.expectError(error.FileNotFound, tmp.dir.statFile(testing.io, "a.lines", .{}));
 }
 
 test "a failed commit reloads nothing" {
