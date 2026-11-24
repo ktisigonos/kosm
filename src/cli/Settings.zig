@@ -7,10 +7,10 @@ const std = @import("std");
 
 /// The kosmoi `kosm build` builds when its command line names none.
 build: Selection = .all,
-/// How the config's kosmoi, apps and runners are compiled. `.safe` (the default) runs fast and
-/// still stops with a message on a bug; `.fast` drops those checks for a little more speed;
-/// `.debug` compiles in seconds instead of minutes, but applies several times slower.
-optimize: std.builtin.Optimize = .safe,
+/// How the config's kosmoi, apps and runners are compiled. `.debug` (the default) compiles in
+/// seconds; `.safe` takes minutes but applies a few times faster, still stopping with a message
+/// on a bug; `.fast` drops those checks for a little more speed.
+optimize: std.builtin.Optimize = .debug,
 
 /// Which kosmoi a command works on. A name means a kosmos file or group and every variant in
 /// it ("frost", "frost.cold"), or one variant ("frost.iced"), as `kosm list` matches them.
@@ -62,10 +62,10 @@ test "build is all, only or except, and all when left out" {
     try testing.expectError(error.ParseZon, testParse(arena.allocator(), ".{ .bild = .all }"));
 }
 
-test "optimize is safe when left out, and only Zig's modes are accepted" {
+test "optimize is debug when left out, and only Zig's modes are accepted" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
-    try testing.expectEqual(.safe, (try testParse(arena.allocator(), ".{}")).optimize);
-    try testing.expectEqual(.debug, (try testParse(arena.allocator(), ".{ .optimize = .debug }")).optimize);
+    try testing.expectEqual(.debug, (try testParse(arena.allocator(), ".{}")).optimize);
+    try testing.expectEqual(.safe, (try testParse(arena.allocator(), ".{ .optimize = .safe }")).optimize);
     try testing.expectError(error.ParseZon, testParse(arena.allocator(), ".{ .optimize = .ReleaseSafe }"));
 }
