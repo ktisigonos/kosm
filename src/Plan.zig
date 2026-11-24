@@ -52,18 +52,42 @@ pub fn deinit(plan: *Plan) void {
 pub const LoadError = std.mem.Allocator.Error || std.Io.Dir.ReadFileAllocError;
 
 /// The planned file at absolute `path`, reading what is there now when it is new to the plan.
-/// The pointer is valid until the next `load` or `add`. Copies both paths.
+/// Paths reaching one file through symbolic links give the same planned file, whose `path` is
+/// the real one. The pointer is valid until the next `load` or `add`. Copies both paths.
 pub fn load(plan: *Plan, path: []const u8, display_path: []const u8) LoadError!*File {
-    if (plan.findPlanned(path)) |file| return file;
-    return plan.append(path, display_path, try plan.read(path));
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const real_path = plan.resolve(path, &buffer);
+    if (plan.findPlanned(real_path)) |file| return file;
+    return plan.append(real_path, display_path, try plan.read(real_path));
 }
 
 /// Like `load`, but a file that is neither on disk nor planned is null, and stays out of the
 /// plan.
 pub fn loadExisting(plan: *Plan, path: []const u8, display_path: []const u8) LoadError!?*File {
-    if (plan.findPlanned(path)) |file| return file;
-    const old = try plan.read(path) orelse return null;
-    return try plan.append(path, display_path, old);
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const real_path = plan.resolve(path, &buffer);
+    if (plan.findPlanned(real_path)) |file| return file;
+    const old = try plan.read(real_path) orelse return null;
+    return try plan.append(real_path, display_path, old);
+}
+
+/// `path` with its symbolic links resolved, so two paths reaching one file are planned as one:
+/// the file's real path, else `resolveFolder`'s. Points into `buffer` or `path`.
+fn resolve(plan: *const Plan, path: []const u8, buffer: *[std.Io.Dir.max_path_bytes]u8) []const u8 {
+    if (std.Io.Dir.realPathFileAbsolute(plan.io, path, buffer)) |length| return buffer[0..length] else |_| {}
+    return plan.resolveFolder(path, buffer);
+}
+
+/// `path` with the links in its folder resolved but not a link at `path` itself: the folder's
+/// real path and the name, else `path` as given. Points into `buffer` or `path`.
+fn resolveFolder(plan: *const Plan, path: []const u8, buffer: *[std.Io.Dir.max_path_bytes]u8) []const u8 {
+    const folder = std.Io.Dir.path.dirname(path) orelse return path;
+    const name = std.Io.Dir.path.basename(path);
+    const length = std.Io.Dir.realPathFileAbsolute(plan.io, folder, buffer) catch return path;
+    if (length + 1 + name.len > buffer.len) return path;
+    buffer[length] = std.Io.Dir.path.sep;
+    @memcpy(buffer[length + 1 ..][0..name.len], name);
+    return buffer[0 .. length + 1 + name.len];
 }
 
 fn findPlanned(plan: *Plan, path: []const u8) ?*File {
@@ -123,7 +147,9 @@ pub const LinkError = std.mem.Allocator.Error || std.Io.Dir.ReadLinkError || err
 /// Plans a symbolic link at absolute `path` pointing to `target`, reading what is there now.
 /// A path planned before, as a link or a file, is `error.AlreadyPlanned`. Copies every argument.
 pub fn addLink(plan: *Plan, path: []const u8, display_path: []const u8, owner: []const u8, target: []const u8, group: ?[]const u8) LinkError!void {
-    if (plan.file_index.contains(path) or plan.link_index.contains(path)) return error.AlreadyPlanned;
+    var real_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    // A link replaces what is at its path, so a file planned where the link points is no clash.
+    if (plan.file_index.contains(plan.resolveFolder(path, &real_buffer)) or plan.link_index.contains(path)) return error.AlreadyPlanned;
     var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const old_target: ?[]const u8 = if (std.Io.Dir.readLinkAbsolute(plan.io, path, &buffer)) |length|
         buffer[0..length]
@@ -187,9 +213,10 @@ pub fn add(plan: *Plan, path: []const u8, display_path: []const u8, owner: []con
     try plan.addEdit(file, .{ .target = .whole_file, .start = 0, .end = file.current().len, .content = content, .owner = owner });
 }
 
-/// The planned file at absolute `path`, if any.
+/// The planned file at absolute `path`, or reached through it by symbolic links, if any.
 pub fn find(plan: *const Plan, path: []const u8) ?*const File {
-    const index = plan.file_index.get(path) orelse return null;
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const index = plan.file_index.get(plan.resolve(path, &buffer)) orelse return null;
     return &plan.files.items[index];
 }
 

@@ -466,6 +466,47 @@ test "a symlinked file is written through to its target" {
     try testing.expectEqual(.sym_link, link_stat.kind);
 }
 
+test "two apps writing one file through a symlink, or a symlinked folder, is an error" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(testing.io, "dotfiles");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "dotfiles/kitty.conf", .data = "old\n" });
+    try tmp.dir.symLink(testing.io, "dotfiles/kitty.conf", "kitty.conf", .{});
+    try tmp.dir.symLink(testing.io, "dotfiles", "config", .{});
+    var root_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try tmpPath(&tmp, &root_buffer);
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    try plan.add(try std.Io.Dir.path.join(arena, &.{ root, "kitty.conf" }), "~/kitty.conf", "one", "1\n");
+    try testing.expectError(error.EditsOverlap, plan.add(try std.Io.Dir.path.join(arena, &.{ root, "dotfiles/kitty.conf" }), "~/dotfiles/kitty.conf", "two", "2\n"));
+    try plan.add(try std.Io.Dir.path.join(arena, &.{ root, "config/new.conf" }), "~/config/new.conf", "one", "1\n");
+    const through_dotfiles = try std.Io.Dir.path.join(arena, &.{ root, "dotfiles/new.conf" });
+    try testing.expectError(error.EditsOverlap, plan.add(through_dotfiles, "~/dotfiles/new.conf", "two", "2\n"));
+    try testing.expectEqualStrings("~/config/new.conf", plan.find(through_dotfiles).?.display_path);
+}
+
+test "a link pointing at a planned file is no clash, though both reach the file" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "hand2", .data = "cursor\n" });
+    try tmp.dir.symLink(testing.io, "hand2", "pointer", .{});
+    var root_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try tmpPath(&tmp, &root_buffer);
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    try plan.add(try std.Io.Dir.path.join(arena, &.{ root, "hand2" }), "~/hand2", "cursor", "new cursor\n");
+    try plan.addLink(try std.Io.Dir.path.join(arena, &.{ root, "pointer" }), "~/pointer", "cursor", "hand2", null);
+    try testing.expectError(error.AlreadyPlanned, plan.addLink(try std.Io.Dir.path.join(arena, &.{ root, "hand2" }), "~/hand2", "cursor", "pointer", null));
+}
+
 test "two apps writing one file is an error" {
     var plan: Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
