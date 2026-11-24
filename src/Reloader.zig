@@ -70,6 +70,25 @@ fn waitAtMost(io: std.Io, child: *std.process.Child, timeout: std.Io.Duration) s
     }
 }
 
+/// Runs `argv` as `run` does, only when a process named `process` is running (`kitty`,
+/// `Hyprland`: its name as `pgrep -x` matches it, at most 15 bytes). A program that isn't
+/// running has nothing to reload, so that is no failure. When `pgrep` cannot run, `argv` runs.
+pub fn runIfRunning(reloader: *Reloader, process: []const u8, argv: []const []const u8) Error!void {
+    if (!reloader.isRunning(process)) return;
+    return reloader.run(argv);
+}
+
+fn isRunning(reloader: *Reloader, process: []const u8) bool {
+    var child = std.process.spawn(reloader.io, .{ .argv = &.{ "pgrep", "-x", process }, .stdin = .ignore, .stdout = .ignore, .stderr = .ignore }) catch return true;
+    const term = waitAtMost(reloader.io, &child, reloader.timeout) catch return true;
+    const finished = term orelse return true;
+    // pgrep exits 1 when no process matched; anything else leaves it to the command to tell.
+    return switch (finished) {
+        .exited => |code| code != 1,
+        else => true,
+    };
+}
+
 fn expandHome(reloader: *const Reloader, allocator: std.mem.Allocator, argv: []const []const u8) std.mem.Allocator.Error![]const []const u8 {
     const expanded = try allocator.alloc([]const u8, argv.len);
     for (argv, expanded) |argument, *result| {
@@ -128,6 +147,19 @@ test "a command running past the timeout is killed and fails the reload" {
     try testing.expectError(error.ReloadFailed, reloader.run(&.{ "sleep", "30" }));
     try testing.expectEqualStrings("'sleep 30' ran longer than 50 ms, so kosm stopped it", reloader.failure());
     try testing.expect(started.untilNow(testing.io, .awake).toMilliseconds() < 5000);
+}
+
+test "a command for a program that isn't running is skipped without failing" {
+    var reloader: Reloader = .{ .io = testing.io };
+    try reloader.runIfRunning("kosm-not-running", &.{"false"});
+    try testing.expectEqualStrings("", reloader.failure());
+}
+
+test "a command for a running program runs" {
+    var buffer: [32]u8 = undefined;
+    const comm = try std.Io.Dir.cwd().readFile(testing.io, "/proc/self/comm", &buffer);
+    var reloader: Reloader = .{ .io = testing.io };
+    try testing.expectError(error.ReloadFailed, reloader.runIfRunning(std.mem.trimEnd(u8, comm, "\n"), &.{"false"}));
 }
 
 test "a command that cannot start fails naming it" {
