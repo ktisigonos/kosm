@@ -23,7 +23,10 @@ pub fn addGenerator(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         \\const std = @import("std");
         \\const runner = @import("kosm_runner");
         \\
-        \\pub fn main(init: std.process.Init) !u8 {
+        \\pub fn main(minimal: std.process.Init.Minimal) !u8 {
+        \\    var process: runner.Process = undefined;
+        \\    const init = try process.start(minimal);
+        \\    defer process.stop();
         \\    return runner.generateApps(init, &.{
         \\
     ) catch @panic("OOM");

@@ -402,7 +402,10 @@ fn addRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         \\const std = @import("std");
         \\const runner = @import("kosm_runner");
         \\
-        \\pub fn main(init: std.process.Init) !u8 {{
+        \\pub fn main(minimal: std.process.Init.Minimal) !u8 {{
+        \\    var process: runner.Process = undefined;
+        \\    const init = try process.start(minimal);
+        \\    defer process.stop();
         \\    return runner.run(init, .{{
         \\        .name = "{f}",
         \\        .path = "{f}",
@@ -466,7 +469,10 @@ fn addScriptRunner(b: *std.Build, target: std.Build.ResolvedTarget, optimize: st
         \\const std = @import("std");
         \\const runner = @import("kosm_runner");
         \\
-        \\pub fn main(init: std.process.Init) !u8 {{
+        \\pub fn main(minimal: std.process.Init.Minimal) !u8 {{
+        \\    var process: runner.Process = undefined;
+        \\    const init = try process.start(minimal);
+        \\    defer process.stop();
         \\    return runner.runScript(init, .{{
         \\        .config = "{f}",
         \\        .folders = &.{{
@@ -687,7 +693,10 @@ fn addInspector(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     var source: std.Io.Writer.Allocating = .init(b.allocator);
     const writer = &source.writer;
     writer.writeAll(
-        \\pub fn main(init: @import("std").process.Init) !u8 {
+        \\pub fn main(minimal: @import("std").process.Init.Minimal) !u8 {
+        \\    var process: @import("kosm_runner").Process = undefined;
+        \\    const init = try process.start(minimal);
+        \\    defer process.stop();
         \\    return @import("kosm_runner").inspect(init, .{
         \\
     ) catch @panic("OOM");
@@ -729,7 +738,10 @@ fn addLister(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         \\const std = @import("std");
         \\const runner = @import("kosm_runner");
         \\
-        \\pub fn main(init: std.process.Init) !u8 {
+        \\pub fn main(minimal: std.process.Init.Minimal) !u8 {
+        \\    var process: runner.Process = undefined;
+        \\    const init = try process.start(minimal);
+        \\    defer process.stop();
         \\    return runner.list(init, &.{
         \\
     ) catch @panic("OOM");
