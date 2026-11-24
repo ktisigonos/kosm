@@ -20,7 +20,7 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 Steps 23a-23k come from a review of kosm with the human (2026-11-24), in the order to take them.
 
 - **23a. Re-pin the packages that reload only while their program runs** (waits on the human)
-  - Do: kosm_kitty, kosm_ghostty, kosm_dunst, kosm_hyprland, kosm_hyprpaper and kosm_cursor call `Reloader.runIfRunning`, which their pinned kosm lacks, so on their own they build only with `--fork` to a local kosm. Once the human has pushed kosm and the six packages, pin each to that kosm, then `kosm_base` and the config to the new package commits.
+  - Do: kosm_kitty, kosm_ghostty, kosm_dunst, kosm_hyprland, kosm_hyprpaper and kosm_cursor call `Reloader.runIfRunning`, which their pinned kosm lacks, so on their own they build only with `--fork` to a local kosm. Once the human has pushed kosm and the six packages, pin each to that kosm, then `kosm_base` and the config to the new package commits. Pin the config to kosm_icons `341ff4c` (faster recoloring) as well; kosm_cursor's pin includes `b68359e` (faster cursor writing).
   - Done when: each package's `zig build test` passes without `--fork`, and an apply with kitty closed prints no warning.
 
 - **23b. `kosm doctor`** `PLAN FIRST`
