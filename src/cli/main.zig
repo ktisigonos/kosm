@@ -121,8 +121,15 @@ const Builds = struct {
         return .{ .environ = environ, .sources = sources, .sources_announced = sources_announced };
     }
 
-    fn context(builds: Builds, init: std.process.Init, config: []const u8, stdout: *std.Io.Writer, stderr: *std.Io.Writer) Context {
-        return .{ .io = init.io, .arena = init.arena.allocator(), .config = config, .environ_map = builds.environ, .sources = builds.sources, .sources_announced = builds.sources_announced, .stdout = stdout, .stderr = stderr };
+    /// Null after printing why the config's `kosm.zon` can't be read.
+    fn context(builds: Builds, init: std.process.Init, config: []const u8, stdout: *std.Io.Writer, stderr: *std.Io.Writer) !?Context {
+        var made: Context = .{ .io = init.io, .arena = init.arena.allocator(), .config = config, .environ_map = builds.environ, .sources = builds.sources, .sources_announced = builds.sources_announced, .stdout = stdout, .stderr = stderr };
+        const settings = made.loadSettings() catch |err| switch (err) {
+            error.Failed => return null,
+            else => |other| return other,
+        };
+        made.optimize = settings.optimize;
+        return made;
     }
 };
 
@@ -175,7 +182,7 @@ fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stder
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
-    const context = builds.context(init, config, &stdout.interface, stderr);
+    const context = try builds.context(init, config, &stdout.interface, stderr) orelse return 1;
     init_command.init(context, init_command.official) catch |err| switch (err) {
         error.Failed => return 1,
         else => |other| return other,
@@ -190,7 +197,7 @@ fn runNew(init: std.process.Init, builds: Builds, command: New, stderr: *std.Io.
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
-    var context = builds.context(init, config, &stdout.interface, stderr);
+    var context = try builds.context(init, config, &stdout.interface, stderr) orelse return 1;
     context.show_build_output = true;
     const working_directory = try std.process.currentPathAlloc(init.io, init.arena.allocator());
     new_command.new(context, command.kind, command.name, command.language, working_directory) catch |err| switch (err) {
@@ -211,7 +218,7 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
     };
     try stderr.flush();
 
-    var context = builds.context(init, config, stderr, stderr);
+    var context = try builds.context(init, config, stderr, stderr) orelse return 1;
     context.show_build_output = true;
     const is_script = scripts.isScript(context, command.kosmos) catch |err| switch (err) {
         error.Failed => return 1,
@@ -292,7 +299,7 @@ fn scriptRunnerArguments(arena: std.mem.Allocator, config: []const u8, command: 
 fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, kosmos: []const u8, diff: bool, stderr: *std.Io.Writer) !bool {
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
-    const context = builds.context(init, config, &stdout.interface, stderr);
+    const context = try builds.context(init, config, &stdout.interface, stderr) orelse return false;
     directory_package.refreshApplied(context, kosmos, if (diff) .report else .write) catch |err| switch (err) {
         error.Failed => return false,
         else => |other| return other,
@@ -309,7 +316,7 @@ fn runList(init: std.process.Init, builds: Builds, command: List, stderr: *std.I
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
-    var context = builds.context(init, config, &stdout.interface, stderr);
+    var context = try builds.context(init, config, &stdout.interface, stderr) orelse return 1;
     context.show_build_output = true;
     list_command.list(context, command.kosmos, command.kinds) catch |err| switch (err) {
         error.Failed => return 1,
@@ -324,7 +331,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
-    var context = builds.context(init, config, &stdout.interface, stderr);
+    var context = try builds.context(init, config, &stdout.interface, stderr) orelse return 1;
     context.show_build_output = true;
     const result = switch (command) {
         .add => package_commands.add(context, config_command.argument.?),
@@ -362,7 +369,8 @@ fn runComplete(init: std.process.Init, builds: Builds, words: []const []const u8
     const config = try configPath(init, given, &discarded.writer) orelse "";
     var stdout_buffer: [4096]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
-    try complete_command.complete(builds.context(init, config, &stdout.interface, &discarded.writer), words);
+    const context = try builds.context(init, config, &stdout.interface, &discarded.writer) orelse return 0;
+    try complete_command.complete(context, words);
     try stdout.interface.flush();
     return 0;
 }
@@ -638,7 +646,7 @@ fn runBuildCommand(init: std.process.Init, builds: Builds, command: Build, stder
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
-    var context = builds.context(init, config, &stdout.interface, stderr);
+    var context = try builds.context(init, config, &stdout.interface, stderr) orelse return 1;
     context.show_build_output = true;
     build_command.build(context, command.selection) catch |err| switch (err) {
         error.Failed => return 1,
@@ -709,6 +717,7 @@ test {
     std.testing.refAllDecls(new_command);
     std.testing.refAllDecls(Sources);
     std.testing.refAllDecls(Settings);
+    std.testing.refAllDecls(Context);
 }
 
 const testing = std.testing;

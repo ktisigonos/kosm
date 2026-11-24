@@ -4,6 +4,7 @@ const Context = @This();
 
 const std = @import("std");
 const Sources = @import("Sources.zig");
+const Settings = @import("Settings.zig");
 
 io: std.Io,
 /// Holds everything a command allocates; freed by the caller.
@@ -14,6 +15,9 @@ config: []const u8,
 environ_map: ?*const std.process.Environ.Map = null,
 /// The kosm sources `zig build` uses in place of the config's pinned kosm; null for the pinned one.
 sources: ?Sources = null,
+/// How `zig build` optimizes the config, passed as `-Doptimize`; null leaves the build's own
+/// default, debug, which compiles fastest.
+optimize: ?std.builtin.Optimize = null,
 /// Whether `runBuild` lets `zig build` draw its progress and print its errors on the
 /// terminal; otherwise its output is collected, as tests need.
 show_build_output: bool = false,
@@ -42,15 +46,39 @@ pub fn runZig(context: Context, arguments: []const []const u8) RunError!std.proc
     return context.run(try context.zigArguments(arguments));
 }
 
-/// `zig` and `arguments`, with `--fork` after `build` when `runZig` adds one.
+/// `zig` and `arguments`, with `--fork` and `-Doptimize` after `build` when `runZig` adds them.
 pub fn zigArguments(context: Context, arguments: []const []const u8) std.mem.Allocator.Error![]const []const u8 {
-    const fork = try context.forkArgument(arguments) orelse return std.mem.concat(context.arena, []const u8, &.{ &.{"zig"}, arguments });
-    return std.mem.concat(context.arena, []const u8, &.{ &.{ "zig", "build", fork }, arguments[1..] });
+    if (!isBuild(arguments)) return std.mem.concat(context.arena, []const u8, &.{ &.{"zig"}, arguments });
+    var argv: std.ArrayList([]const u8) = .empty;
+    try argv.appendSlice(context.arena, &.{ "zig", "build" });
+    if (try context.forkArgument(arguments)) |fork| try argv.append(context.arena, fork);
+    if (context.optimize) |mode| try argv.append(context.arena, try std.fmt.allocPrint(context.arena, "-Doptimize={t}", .{mode}));
+    try argv.appendSlice(context.arena, arguments[1..]);
+    return argv.items;
+}
+
+fn isBuild(arguments: []const []const u8) bool {
+    return arguments.len != 0 and std.mem.eql(u8, arguments[0], "build");
+}
+
+/// The config's `kosm.zon`, with defaults for a missing file or field. A file that cannot be
+/// read or parsed fails, saying why on stderr.
+pub fn loadSettings(context: Context) (Failed || std.mem.Allocator.Error || std.Io.Writer.Error)!Settings {
+    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, Settings.file_name });
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    return Settings.load(context.arena, context.io, path, &diagnostics) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.ParseZon => {
+            try context.stderr.print("{f}\n", .{diagnostics.fmt(path)});
+            return context.fail("cannot read {s}", .{path});
+        },
+        else => return context.fail("cannot read {s}: {s}", .{ path, @errorName(err) }),
+    };
 }
 
 fn forkArgument(context: Context, arguments: []const []const u8) std.mem.Allocator.Error!?[]const u8 {
     const sources = context.sources orelse return null;
-    if (arguments.len == 0 or !std.mem.eql(u8, arguments[0], "build")) return null;
+    if (!isBuild(arguments)) return null;
     return sources.forkArgument(context.io, context.arena, context.config);
 }
 
@@ -136,4 +164,24 @@ pub fn run(context: Context, argv: []const []const u8) RunError!std.process.RunR
         error.OutOfMemory => error.OutOfMemory,
         else => context.fail("cannot run {s}: {s}", .{ argv[0], @errorName(err) }),
     };
+}
+
+const testing = std.testing;
+
+test "only a build is given the optimize mode, after the fork" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    var discarded: std.Io.Writer.Discarding = .init(&.{});
+    var context: Context = .{ .io = testing.io, .arena = arena.allocator(), .config = "/c", .stdout = &discarded.writer, .stderr = &discarded.writer };
+    const debug = try context.zigArguments(&.{ "build", "-Dscripts" });
+    try testing.expectEqual(3, debug.len);
+    try testing.expectEqualStrings("-Dscripts", debug[2]);
+
+    context.optimize = .safe;
+    const safe = try context.zigArguments(&.{ "build", "-Dscripts" });
+    try testing.expectEqual(4, safe.len);
+    try testing.expectEqualStrings("build", safe[1]);
+    try testing.expectEqualStrings("-Doptimize=safe", safe[2]);
+    try testing.expectEqualStrings("-Dscripts", safe[3]);
+    try testing.expectEqual(2, (try context.zigArguments(&.{"env"})).len);
 }

@@ -140,17 +140,7 @@ fn isInKosmoiDirectory(kosmos: Listed) bool {
 
 /// `kosm.zon`'s `build`, or `.all` when the file is missing.
 fn loadSelection(context: Context) Error!Settings.Selection {
-    const path = try std.Io.Dir.path.join(context.arena, &.{ context.config, Settings.file_name });
-    var diagnostics: std.zon.parse.Diagnostics = undefined;
-    const settings = Settings.load(context.arena, context.io, path, &diagnostics) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.ParseZon => {
-            try context.stderr.print("{f}\n", .{diagnostics.fmt(path)});
-            return context.fail("cannot read {s}", .{path});
-        },
-        else => return context.fail("cannot read {s}: {s}", .{ path, @errorName(err) }),
-    };
-    return settings.build;
+    return (try context.loadSettings()).build;
 }
 
 /// Whether any of the Zig kosmoi `names` builds on another kosmos, as the lister built by
