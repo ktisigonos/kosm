@@ -781,13 +781,16 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
     const lock = if (arguments.diff) null else try lockApply(init, diagnostics, streams.stderr);
     defer if (lock) |file| file.close(init.io);
     if (latest) |mark| if (!mark.isNewest(init.io)) return report.superseded(streams.stderr);
-    var plan: kosm.Plan = .init(init.gpa, init.io);
+    // Every memory check stays; recording a stack trace per allocation doubled a debug apply.
+    var plan_allocator: std.heap.SafeAllocator = .init(std.heap.page_allocator, .{ .stack_trace_frames = 0 });
+    defer _ = plan_allocator.deinit();
+    var plan: kosm.Plan = .init(plan_allocator.allocator(), init.io);
     defer plan.deinit();
     var warnings: kosm.Warnings = .init(arena);
     const context: walk.Context = .{ .allocator = arena, .home = home, .adapters = adapters.list, .adapter_clashes = adapters.clashes, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings };
     try planWarning(tree.*, context, streams.stderr);
     try deliver(tree.*, &plan, .{
-        .gpa = init.gpa,
+        .gpa = plan_allocator.allocator(),
         .arena = arena,
         .io = init.io,
         .home = home,
