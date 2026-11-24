@@ -11,9 +11,11 @@ pub const Failure = struct {
 };
 
 /// Writes every changed file of `plan`. A failure before the renames leaves the disk as it was.
-/// A rename failing halfway (rare: same directory, already created) can leave earlier files
-/// replaced. Symlinked files are written through to their target, and a replaced file keeps
-/// its permissions. A planned link replaces the link at its path, never a file.
+/// A file or link that is no longer what the plan read (a program saved it meanwhile) is
+/// `error.ChangedSinceRead`, before anything is renamed. A rename failing halfway (rare: same
+/// directory, already created) can leave earlier files replaced. Symlinked files are written
+/// through to their target, and a replaced file keeps its permissions. A planned link
+/// replaces the link at its path, never a file.
 pub fn writePlan(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, failure: *Failure) !void {
     var arena: std.heap.ArenaAllocator = .init(allocator);
     defer arena.deinit();
@@ -33,12 +35,50 @@ pub fn writePlan(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, fa
         try pending.ensureUnusedCapacity(arena.allocator(), 1);
         pending.appendAssumeCapacity(try createTempLink(arena.allocator(), io, link));
     }
+    try checkUnchanged(allocator, io, plan, failure);
     for (pending.items) |*item| {
         failure.path = item.display_path;
         try std.Io.Dir.renameAbsolute(item.temp_path, item.path, io);
         item.renamed = true;
     }
     failure.path = "";
+}
+
+/// Fails with `error.ChangedSinceRead`, naming the path in `failure`, when a file or link the
+/// plan replaces is no longer what the plan read.
+fn checkUnchanged(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, failure: *Failure) !void {
+    for (plan.files.items) |file| {
+        if (!file.changed()) continue;
+        failure.path = file.display_path;
+        if (!try fileUnchanged(allocator, io, file)) return error.ChangedSinceRead;
+    }
+    for (plan.links.items) |link| {
+        if (!link.changed()) continue;
+        failure.path = link.display_path;
+        if (!try linkUnchanged(io, link)) return error.ChangedSinceRead;
+    }
+}
+
+fn fileUnchanged(allocator: std.mem.Allocator, io: std.Io, file: Plan.File) !bool {
+    const now = std.Io.Dir.cwd().readFileAlloc(io, file.path, allocator, .limited(Plan.max_file_size)) catch |err| switch (err) {
+        error.FileNotFound => return file.old == null,
+        error.StreamTooLong => return false,
+        else => return err,
+    };
+    defer allocator.free(now);
+    const old = file.old orelse return false;
+    return std.mem.eql(u8, old, now);
+}
+
+fn linkUnchanged(io: std.Io, link: Plan.Link) !bool {
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const length = std.Io.Dir.readLinkAbsolute(io, link.path, &buffer) catch |err| switch (err) {
+        error.FileNotFound => return link.old_target == null,
+        error.NotLink => return false,
+        else => return err,
+    };
+    const old_target = link.old_target orelse return false;
+    return std.mem.eql(u8, old_target, buffer[0..length]);
 }
 
 /// A file or link written under a temp name next to its final path, waiting to be renamed there.
@@ -211,6 +251,75 @@ test "a failing plan writes nothing" {
     var count: usize = 0;
     while (try iterator.next(testing.io)) |_| count += 1;
     try testing.expectEqual(2, count); // no temp files left behind
+}
+
+fn countEntries(tmp: *testing.TmpDir) !usize {
+    var directory = try tmp.dir.openDir(testing.io, ".", .{ .iterate = true });
+    defer directory.close(testing.io);
+    var iterator = directory.iterate();
+    var count: usize = 0;
+    while (try iterator.next(testing.io)) |_| count += 1;
+    return count;
+}
+
+test "a file a program saved after kosm read it fails the commit, writing nothing" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "first.conf", .data = "old\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "settings.json", .data = "{}\n" });
+    var root_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try tmpPath(&tmp, &root_buffer);
+
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    const first = try std.Io.Dir.path.join(testing.allocator, &.{ root, "first.conf" });
+    defer testing.allocator.free(first);
+    const settings = try std.Io.Dir.path.join(testing.allocator, &.{ root, "settings.json" });
+    defer testing.allocator.free(settings);
+    try plan.add(first, "~/first.conf", "one", "new\n");
+    try plan.add(settings, "~/settings.json", "launcher", "{ \"kosm\": 1 }\n");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "settings.json", .data = "{ \"saved\": 1 }\n" });
+
+    var failure: Failure = .{};
+    try testing.expectError(error.ChangedSinceRead, writePlan(testing.allocator, testing.io, &plan, &failure));
+    try testing.expectEqualStrings("~/settings.json", failure.path);
+
+    const first_contents = try readTmp(&tmp, "first.conf");
+    defer testing.allocator.free(first_contents);
+    try testing.expectEqualStrings("old\n", first_contents);
+    const settings_contents = try readTmp(&tmp, "settings.json");
+    defer testing.allocator.free(settings_contents);
+    try testing.expectEqualStrings("{ \"saved\": 1 }\n", settings_contents);
+    try testing.expectEqual(2, try countEntries(&tmp)); // no temp files left behind
+}
+
+test "a file or link appearing after kosm looked fails the commit" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var root_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try tmpPath(&tmp, &root_buffer);
+    const created = try std.Io.Dir.path.join(testing.allocator, &.{ root, "created.conf" });
+    defer testing.allocator.free(created);
+    const icon = try std.Io.Dir.path.join(testing.allocator, &.{ root, "icon.svg" });
+    defer testing.allocator.free(icon);
+
+    var file_plan: Plan = .init(testing.allocator, testing.io);
+    defer file_plan.deinit();
+    try file_plan.add(created, "~/created.conf", "terminal", "new\n");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "created.conf", .data = "made meanwhile\n" });
+    var failure: Failure = .{};
+    try testing.expectError(error.ChangedSinceRead, writePlan(testing.allocator, testing.io, &file_plan, &failure));
+    try testing.expectEqualStrings("~/created.conf", failure.path);
+
+    var link_plan: Plan = .init(testing.allocator, testing.io);
+    defer link_plan.deinit();
+    try link_plan.addLink(icon, "~/icon.svg", "icons", "planned.svg", null);
+    try tmp.dir.symLink(testing.io, "other.svg", "icon.svg", .{});
+    try testing.expectError(error.ChangedSinceRead, writePlan(testing.allocator, testing.io, &link_plan, &failure));
+    try testing.expectEqualStrings("~/icon.svg", failure.path);
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    try testing.expectEqualStrings("other.svg", try readTmpLink(&tmp, "icon.svg", &buffer));
+    try testing.expectEqual(2, try countEntries(&tmp));
 }
 
 test "unchanged files are not rewritten" {

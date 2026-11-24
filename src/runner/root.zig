@@ -8,6 +8,7 @@ const Record = @import("kosm_current");
 const interface = @import("kosm_interface");
 const kosmos_names = @import("kosm_names");
 const Arguments = @import("Arguments.zig");
+const apply_lock = @import("apply_lock.zig");
 const bindings = @import("bindings.zig");
 const Runtime = @import("Runtime.zig");
 const colors = @import("colors.zig");
@@ -751,6 +752,8 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
     };
     if (init.environ_map.get(interface.colors_variable) != null) return showColors(tree.*, diagnostics, streams);
 
+    const lock = if (arguments.diff) null else try lockApply(init, diagnostics, streams.stderr);
+    defer if (lock) |file| file.close(init.io);
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
     var warnings: kosm.Warnings = .init(arena);
@@ -766,6 +769,17 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         .diagnostics = diagnostics,
         .streams = streams,
     });
+}
+
+/// Waits for any other apply to finish and holds the lock until the returned file is closed,
+/// so the files this one plans are not changed by it meanwhile. Null when there is no state
+/// directory to keep the lock in.
+fn lockApply(init: std.process.Init, diagnostics: *kosm.Diagnostics, stderr: *std.Io.Writer) !?std.Io.File {
+    const path = try Record.statePath(init.arena.allocator(), init.environ_map, apply_lock.file_name) orelse return null;
+    return apply_lock.acquire(init.io, path, stderr) catch |err| switch (err) {
+        error.WriteFailed => return error.WriteFailed,
+        else => return fail(diagnostics, "cannot lock {s} against another apply: {s}", .{ path, @errorName(err) }),
+    };
 }
 
 /// Prints every theme in `tree`, for `kosm colors`, or fails when it holds none.
@@ -885,7 +899,10 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
         kosm.commit.writePlan(delivery.gpa, delivery.io, plan, &failure) catch |err| {
             const app = try delivery.arena.dupe(u8, ownerOf(plan, failure.path));
             const file = try delivery.arena.dupe(u8, failure.path);
-            delivery.diagnostics.set(app, file, "cannot write it: {s}", .{@errorName(err)});
+            if (err == error.ChangedSinceRead)
+                delivery.diagnostics.set(app, file, "it changed since kosm read it, so nothing was written; apply again", .{})
+            else
+                delivery.diagnostics.set(app, file, "cannot write it: {s}", .{@errorName(err)});
             return error.Reported;
         };
         for (plan.files.items) |file| {
@@ -935,6 +952,7 @@ fn fail(diagnostics: *kosm.Diagnostics, comptime format: []const u8, arguments: 
 
 test {
     std.testing.refAllDecls(Arguments);
+    std.testing.refAllDecls(apply_lock);
     std.testing.refAllDecls(@import("app_modules.zig"));
     std.testing.refAllDecls(@import("adapter_modules.zig"));
     std.testing.refAllDecls(@import("frontend_modules.zig"));
