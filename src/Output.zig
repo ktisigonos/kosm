@@ -15,6 +15,7 @@ const block_writer = @import("block.zig");
 const value = @import("value.zig");
 const glob = @import("glob.zig");
 const planning = @import("Output/planning.zig");
+const parallel_work = @import("parallel_work.zig");
 
 /// Scratch memory for one apply; kosm frees it all afterwards (an arena).
 allocator: std.mem.Allocator,
@@ -33,6 +34,8 @@ app: []const u8,
 /// The name kosm applies the kosmos under (`krystallos`, `krystallos.dark`), set by kosm.
 /// Empty outside an apply, where `displayName` and `namedFile` fail when they need it.
 kosmos: []const u8 = "",
+/// Whether this is the copy `parallel` hands its work, through which nothing may be planned.
+in_parallel_work: bool = false,
 
 /// An adapter name two packages export.
 pub const AdapterClash = @import("Output/AdapterClash.zig");
@@ -92,6 +95,8 @@ pub const Error = error{
     NotALink,
     /// A template known only at run time names nothing, or a table, or leaves a brace open.
     InvalidTemplate,
+    /// Work given to `parallel` tried to plan a file or link.
+    PlannedInParallelWork,
     OutOfMemory,
 };
 
@@ -163,13 +168,150 @@ pub fn verbatim(output: *Output, options: VerbatimOptions) Error!void {
 /// Makes `options.file` a symbolic link to `options.target`. Only a link is ever replaced: a
 /// file or folder where the link goes is an error, and so is a path another call writes.
 pub fn link(output: *Output, options: LinkOptions) Error!void {
+    try output.checkPlanning(options.file);
     const path = try output.resolvePath(options.file);
-    output.plan.addLink(path, options.file, output.app, options.target, options.group) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        error.NotALink => return planning.fail(output, error.NotALink, options.file, "is not a link; kosm replaces only links, so move it away first", .{}),
-        error.AlreadyPlanned => return output.failPlannedTwice(options.file, path),
-        else => return planning.fail(output, error.ReadFailed, options.file, "cannot read the link: {s}", .{@errorName(err)}),
+    output.plan.addLink(path, options.file, output.app, options.target, options.group) catch |err|
+        return output.failLink(options.file, path, err);
+}
+
+fn failLink(output: *Output, file: []const u8, path: []const u8, err: Plan.LinkError) Error {
+    return switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.NotALink => planning.fail(output, error.NotALink, file, "is not a link; kosm replaces only links, so move it away first", .{}),
+        error.AlreadyPlanned => output.failPlannedTwice(file, path),
+        else => planning.fail(output, error.ReadFailed, file, "cannot read the link: {s}", .{@errorName(err)}),
     };
+}
+
+/// `verbatim` for many files: what is on disk now is read for all of them at once, spread over
+/// the machine's cores, then each is planned in order, as `verbatim` plans it.
+pub fn verbatimAll(output: *Output, files: []const VerbatimOptions) Error!void {
+    if (files.len == 0) return;
+    try output.checkPlanning(files[0].file);
+    const paths = try output.allocator.alloc([]const u8, files.len);
+    for (files, paths) |options, *path| path.* = try output.resolvePath(options.file);
+    const preloaded = try output.allocator.alloc(Plan.LoadError!Plan.Preloaded, files.len);
+    parallel_work.run(output.plan.io, files.len, Preloading{ .plan = output.plan, .paths = paths, .files = preloaded }, Preloading.file);
+    var next: usize = 0;
+    defer for (preloaded[next..]) |result| if (result) |on_disk| output.plan.freePreloaded(on_disk) else |_| {};
+    while (next < files.len) {
+        const index = next;
+        next += 1;
+        const options = files[index];
+        const on_disk = preloaded[index] catch |err| return output.failRead(options.file, err);
+        if (output.plan.findLink(paths[index]) != null) {
+            output.plan.freePreloaded(on_disk);
+            return output.failPlannedTwice(options.file, paths[index]);
+        }
+        const planned = output.plan.loadPreloaded(on_disk, options.file) catch |err| return output.failRead(options.file, err);
+        try output.addEdit(planned, .{ .target = .whole_file, .start = 0, .end = planned.current().len, .content = options.content, .owner = output.app });
+        if (options.executable) planned.executable = true;
+        if (options.group) |group| try output.plan.setGroup(planned, group);
+    }
+}
+
+/// `link` for many links: what is at their paths now is read for all of them at once, spread
+/// over the machine's cores, then each is planned in order, as `link` plans it.
+pub fn linkAll(output: *Output, links: []const LinkOptions) Error!void {
+    if (links.len == 0) return;
+    try output.checkPlanning(links[0].file);
+    const paths = try output.allocator.alloc([]const u8, links.len);
+    for (links, paths) |options, *path| path.* = try output.resolvePath(options.file);
+    const preloaded = try output.allocator.alloc(std.mem.Allocator.Error!Plan.PreloadedLink, links.len);
+    parallel_work.run(output.plan.io, links.len, Preloading{ .plan = output.plan, .paths = paths, .links = preloaded }, Preloading.link);
+    var next: usize = 0;
+    defer for (preloaded[next..]) |result| if (result) |on_disk| output.plan.freePreloadedLink(on_disk) else |_| {};
+    while (next < links.len) {
+        const index = next;
+        next += 1;
+        const options = links[index];
+        const on_disk = try preloaded[index];
+        output.plan.addPreloadedLink(on_disk, paths[index], options.file, output.app, options.target, options.group) catch |err|
+            return output.failLink(options.file, paths[index], err);
+    }
+}
+
+/// Reads ahead for `verbatimAll` and `linkAll`, one path an item.
+const Preloading = struct {
+    plan: *const Plan,
+    paths: []const []const u8,
+    files: []Plan.LoadError!Plan.Preloaded = &.{},
+    links: []std.mem.Allocator.Error!Plan.PreloadedLink = &.{},
+
+    fn file(preloading: Preloading, _: usize, index: usize) void {
+        preloading.files[index] = preloading.plan.preload(preloading.paths[index]);
+    }
+
+    fn link(preloading: Preloading, _: usize, index: usize) void {
+        preloading.links[index] = preloading.plan.preloadLink(preloading.paths[index]);
+    }
+};
+
+/// Runs `work(context, item_output, &item)` for every item of `items` at once, spread over the
+/// machine's cores: for reading and computing many files, such as recoloring an icon theme.
+/// Through `item_output`, `work` may `read`, `tree`, `warn`, `fail` and allocate, but not plan:
+/// plan its results once `parallel` returns, in order. The first item in order that fails
+/// fails the call, with its message, as if the items had run one after another; warnings keep
+/// the items' order.
+pub fn parallel(output: *Output, comptime Item: type, items: []Item, context: anytype, comptime work: fn (@TypeOf(context), *Output, *Item) Error!void) Error!void {
+    if (items.len == 0) return;
+    const failures = try output.allocator.alloc(ParallelFailure, parallel_work.workerCount(items.len));
+    @memset(failures, .{});
+    const warnings = try output.allocator.alloc(Warnings, items.len);
+    @memset(warnings, .init(output.warnings.allocator));
+    var first_failed: std.atomic.Value(usize) = .init(std.math.maxInt(usize));
+    const Run = struct {
+        output: *Output,
+        items: []Item,
+        context: @TypeOf(context),
+        failures: []ParallelFailure,
+        warnings: []Warnings,
+        first_failed: *std.atomic.Value(usize),
+
+        fn one(run: @This(), worker: usize, index: usize) void {
+            // Items after a failed one would not have run one after another.
+            if (index > run.first_failed.load(.monotonic)) return;
+            var item_output = run.output.*;
+            item_output.diagnostics = &run.failures[worker].diagnostics;
+            item_output.warnings = &run.warnings[index];
+            item_output.in_parallel_work = true;
+            work(run.context, &item_output, &run.items[index]) catch |err| {
+                run.failures[worker].failed = .{ .index = index, .err = err };
+                _ = run.first_failed.fetchMin(index, .monotonic);
+            };
+        }
+    };
+    parallel_work.run(output.plan.io, items.len, Run{
+        .output = output,
+        .items = items,
+        .context = context,
+        .failures = failures,
+        .warnings = warnings,
+        .first_failed = &first_failed,
+    }, Run.one);
+    const failed_index = first_failed.load(.monotonic);
+    for (warnings[0..@min(items.len, failed_index +| 1)]) |item_warnings|
+        try output.warnings.items.appendSlice(output.warnings.allocator, item_warnings.items.items);
+    for (failures) |failure| {
+        const failed = failure.failed orelse continue;
+        if (failed.index != failed_index) continue;
+        const recorded = failure.diagnostics;
+        output.diagnostics.set(recorded.app, recorded.file, "{s}", .{recorded.message()});
+        return failed.err;
+    }
+}
+
+/// What a worker of `parallel` records when an item fails. A worker takes items in order and
+/// stops after a failure, so it records at most one.
+const ParallelFailure = struct {
+    diagnostics: Diagnostics = .{},
+    failed: ?struct { index: usize, err: Error } = null,
+};
+
+/// Fails when planning through the copy of `Output` that `parallel` hands its work.
+fn checkPlanning(output: *Output, file: []const u8) Error!void {
+    if (output.in_parallel_work)
+        return planning.fail(output, error.PlannedInParallelWork, file, "work given to parallel cannot plan; plan its results once parallel returns", .{});
 }
 
 /// The contents of the existing file `file` (`~/...` or absolute) as it is on disk now, for
@@ -336,6 +478,7 @@ fn planBlock(output: *Output, options: BlockOptions, path: []const u8, comment: 
     var failure: block_writer.Failure = .{};
     block_writer.checkContent(content, comment, &failure) catch
         return planning.fail(output, error.InvalidBlock, options.file, "block '{s}', line {d} of its content: {s}", .{ options.id, failure.line, failure.problem.describe() });
+    try output.checkPlanning(options.file);
     const file = switch (options.missing) {
         .create => output.plan.load(path, options.file) catch |err| return output.failRead(options.file, err),
         .skip => output.plan.loadExisting(path, options.file) catch |err| return output.failRead(options.file, err),
@@ -376,6 +519,7 @@ pub fn edit(output: *Output, options: EditOptions) Error!Selection {
         return planning.fail(output, error.MissingCapability, options.files, "adapter '{s}' cannot edit files (it has no format)", .{adapter.name});
     const format = try output.checkFormat(options.files, options.format.orElse(adapter.default_format).resolve());
 
+    try output.checkPlanning(options.files);
     const found = try output.expand(options.files, options.exclude);
     if (found.len == 0) return planning.fail(output, error.NoFile, options.files, "matches no file; edit only changes files that exist", .{});
 
@@ -570,6 +714,7 @@ fn checkFormat(output: *Output, file: []const u8, format: Format.Resolved) Error
 
 /// Plans `content` as the whole file.
 fn addFile(output: *Output, file: []const u8, path: []const u8, content: []const u8) Error!void {
+    try output.checkPlanning(file);
     if (output.plan.findLink(path) != null) return output.failPlannedTwice(file, path);
     const planned = output.plan.load(path, file) catch |err| return output.failRead(file, err);
     try output.addEdit(planned, .{ .target = .whole_file, .start = 0, .end = planned.current().len, .content = content, .owner = output.app });
@@ -1081,4 +1226,122 @@ test "link plans a link, and a path written twice as link or file names the firs
     try testing.expectEqualStrings("app 'icons' writes this file; two apps cannot write the same path", fixture.diagnostics.message());
     try testing.expectError(error.NotALink, output.link(.{ .file = "~/taken.svg", .target = "a.svg" }));
     try testing.expectEqualStrings("~/taken.svg", fixture.diagnostics.file);
+}
+
+test "verbatimAll and linkAll plan what verbatim and link would, in order" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    try fixture.tmp.dir.createDirPath(testing.io, "icons");
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "icons/same.svg", .data = "<svg/>" });
+    try fixture.tmp.dir.symLink(testing.io, "old.svg", "icons/moved.svg", .{});
+    var output = try fixture.output("icons", &.{});
+
+    var files: [40]VerbatimOptions = undefined;
+    for (&files, 0..) |*options, index| options.* = .{ .file = try std.fmt.allocPrint(output.allocator, "~/icons/{d}.svg", .{index}), .content = "<new/>", .group = "~/icons" };
+    files[0] = .{ .file = "~/icons/same.svg", .content = "<svg/>", .executable = true, .group = "~/icons" };
+    try output.verbatimAll(&files);
+    try testing.expectEqual(files.len, fixture.plan.files.items.len);
+    for (files, fixture.plan.files.items) |options, planned| try testing.expectEqualStrings(options.file, planned.display_path);
+    try testing.expectEqualStrings("<svg/>", fixture.plan.files.items[0].old.?);
+    try testing.expect(fixture.plan.files.items[0].executable);
+    try testing.expectEqual(null, fixture.plan.files.items[1].old);
+    try testing.expectEqualStrings("~/icons", fixture.plan.files.items[1].group.?);
+
+    try output.linkAll(&.{
+        .{ .file = "~/icons/moved.svg", .target = "new.svg", .group = "~/icons" },
+        .{ .file = "~/icons/fresh.svg", .target = "new.svg" },
+    });
+    try testing.expectEqualStrings("old.svg", fixture.plan.links.items[0].old_target.?);
+    try testing.expectEqualStrings("~/icons", fixture.plan.links.items[0].group.?);
+    try testing.expectEqual(null, fixture.plan.links.items[1].old_target);
+}
+
+test "verbatimAll and linkAll fail on the first path in order that clashes, naming it" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    try fixture.tmp.dir.writeFile(testing.io, .{ .sub_path = "taken.svg", .data = "<svg/>" });
+    var output = try fixture.output("icons", &.{});
+    try output.link(.{ .file = "~/linked.svg", .target = "a.svg" });
+
+    try testing.expectError(error.EditsOverlap, output.verbatimAll(&.{
+        .{ .file = "~/a.svg", .content = "" },
+        .{ .file = "~/linked.svg", .content = "" },
+        .{ .file = "~/b.svg", .content = "" },
+    }));
+    try testing.expectEqualStrings("~/linked.svg", fixture.diagnostics.file);
+    try testing.expectError(error.NotALink, output.linkAll(&.{
+        .{ .file = "~/c.svg", .target = "a.svg" },
+        .{ .file = "~/taken.svg", .target = "a.svg" },
+        .{ .file = "~/linked.svg", .target = "a.svg" },
+    }));
+    try testing.expectEqualStrings("~/taken.svg", fixture.diagnostics.file);
+}
+
+/// Squares numbers in `parallel`, failing on and warning about the ones it is told to.
+const Squaring = struct {
+    fail_on: []const u64 = &.{},
+    warn_on: []const u64 = &.{},
+
+    const Item = struct { number: u64, square: u64 = 0 };
+
+    fn work(squaring: Squaring, output: *Output, item: *Item) Error!void {
+        const file = try std.fmt.allocPrint(output.allocator, "~/{d}", .{item.number});
+        if (std.mem.findScalar(u64, squaring.warn_on, item.number) != null) try output.warn(file, "warned", .{});
+        if (std.mem.findScalar(u64, squaring.fail_on, item.number) != null) return output.fail(file, "failed on {d}", .{item.number});
+        item.square = item.number * item.number;
+    }
+
+    fn plan(_: Squaring, output: *Output, _: *Item) Error!void {
+        try output.verbatim(.{ .file = "~/planned", .content = "" });
+    }
+};
+
+fn testSquares(allocator: std.mem.Allocator) ![]Squaring.Item {
+    const items = try allocator.alloc(Squaring.Item, 500);
+    for (items, 0..) |*item, index| item.* = .{ .number = index };
+    return items;
+}
+
+test "parallel runs work on every item, and keeps warnings in the items' order" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("icons", &.{});
+    const items = try testSquares(output.allocator);
+    try output.parallel(Squaring.Item, items, Squaring{ .warn_on = &.{ 400, 3, 77 } }, Squaring.work);
+    for (items) |item| try testing.expectEqual(item.number * item.number, item.square);
+    try testing.expectEqual(3, fixture.warnings.items.items.len);
+    for (fixture.warnings.items.items, [_][]const u8{ "~/3", "~/77", "~/400" }) |warning, file| {
+        try testing.expectEqualStrings(file, warning.file);
+        try testing.expectEqualStrings("icons", warning.app);
+    }
+}
+
+test "parallel fails as the first failing item in order would, with its message" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("icons", &.{});
+    for (0..20) |_| {
+        const items = try testSquares(output.allocator);
+        try testing.expectError(error.AppFailed, output.parallel(Squaring.Item, items, Squaring{ .fail_on = &.{ 490, 250, 251 }, .warn_on = &.{ 10, 260 } }, Squaring.work));
+        try testing.expectEqualStrings("failed on 250", fixture.diagnostics.message());
+        try testing.expectEqualStrings("~/250", fixture.diagnostics.file);
+        try testing.expectEqualStrings("icons", fixture.diagnostics.app);
+        try testing.expectEqualStrings("~/10", fixture.warnings.items.items[fixture.warnings.items.items.len - 1].file);
+    }
+}
+
+test "planning from work given to parallel fails, and plans nothing" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    var output = try fixture.output("icons", &.{});
+    const items = try testSquares(output.allocator);
+    try testing.expectError(error.PlannedInParallelWork, output.parallel(Squaring.Item, items, Squaring{}, Squaring.plan));
+    try testing.expectEqualStrings("~/planned", fixture.diagnostics.file);
+    try testing.expectEqual(0, fixture.plan.files.items.len);
+    try output.parallel(Squaring.Item, &.{}, Squaring{}, Squaring.plan);
 }

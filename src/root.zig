@@ -151,6 +151,7 @@ test {
     std.testing.refAllDecls(Warnings);
     std.testing.refAllDecls(Reloader);
     std.testing.refAllDecls(Plan);
+    std.testing.refAllDecls(@import("parallel_work.zig"));
     std.testing.refAllDecls(Plan.Edit);
     std.testing.refAllDecls(@import("block.zig"));
     std.testing.refAllDecls(commit);

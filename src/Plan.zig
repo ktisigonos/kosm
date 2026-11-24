@@ -58,7 +58,45 @@ pub fn load(plan: *Plan, path: []const u8, display_path: []const u8) LoadError!*
     var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const real_path = plan.resolve(path, &buffer);
     if (plan.findPlanned(real_path)) |file| return file;
-    return plan.append(real_path, display_path, try plan.read(real_path));
+    const old = try plan.read(real_path);
+    return plan.append(real_path, display_path, old, old != null and plan.isExecutable(real_path));
+}
+
+/// What `load` reads from disk for a file, read ahead of planning it so that many files can be
+/// read at once. Owned by the plan's allocator until `loadPreloaded` or `freePreloaded` takes it.
+pub const Preloaded = struct {
+    /// The file's real path, as the plan indexes it.
+    real_path: []u8,
+    /// What the file holds now; null when it does not exist.
+    old: ?[]u8,
+    was_executable: bool,
+};
+
+/// Reads what `load` would for absolute `path`, without touching the plan, so several threads
+/// may preload at once when the plan's allocator is thread-safe.
+pub fn preload(plan: *const Plan, path: []const u8) LoadError!Preloaded {
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const real_path = try plan.allocator.dupe(u8, plan.resolve(path, &buffer));
+    errdefer plan.allocator.free(real_path);
+    const old = try plan.read(real_path);
+    return .{ .real_path = real_path, .old = old, .was_executable = old != null and plan.isExecutable(real_path) };
+}
+
+/// `load` for a file `preload` read; takes `preloaded`, which a file already planned ignores.
+/// Copies `display_path`.
+pub fn loadPreloaded(plan: *Plan, preloaded: Preloaded, display_path: []const u8) LoadError!*File {
+    defer plan.allocator.free(preloaded.real_path);
+    if (plan.findPlanned(preloaded.real_path)) |file| {
+        if (preloaded.old) |old| plan.allocator.free(old);
+        return file;
+    }
+    return plan.append(preloaded.real_path, display_path, preloaded.old, preloaded.was_executable);
+}
+
+/// Frees a `Preloaded` that is not planned after all.
+pub fn freePreloaded(plan: *const Plan, preloaded: Preloaded) void {
+    plan.allocator.free(preloaded.real_path);
+    if (preloaded.old) |old| plan.allocator.free(old);
 }
 
 /// Like `load`, but a file that is neither on disk nor planned is null, and stays out of the
@@ -68,7 +106,7 @@ pub fn loadExisting(plan: *Plan, path: []const u8, display_path: []const u8) Loa
     const real_path = plan.resolve(path, &buffer);
     if (plan.findPlanned(real_path)) |file| return file;
     const old = try plan.read(real_path) orelse return null;
-    return try plan.append(real_path, display_path, old);
+    return try plan.append(real_path, display_path, old, plan.isExecutable(real_path));
 }
 
 /// `path` with its symbolic links resolved, so two paths reaching one file are planned as one:
@@ -96,7 +134,7 @@ fn findPlanned(plan: *Plan, path: []const u8) ?*File {
 }
 
 /// The file's contents, or null when it does not exist.
-fn read(plan: *Plan, path: []const u8) LoadError!?[]u8 {
+fn read(plan: *const Plan, path: []const u8) LoadError!?[]u8 {
     return std.Io.Dir.cwd().readFileAlloc(plan.io, path, plan.allocator, .limited(max_file_size)) catch |err| switch (err) {
         error.FileNotFound => null,
         else => err,
@@ -104,7 +142,7 @@ fn read(plan: *Plan, path: []const u8) LoadError!?[]u8 {
 }
 
 /// Whether the file at `path` has an execute bit; a file that can't be looked at has none.
-fn isExecutable(plan: *Plan, path: []const u8) bool {
+fn isExecutable(plan: *const Plan, path: []const u8) bool {
     const stat = std.Io.Dir.cwd().statFile(plan.io, path, .{}) catch return false;
     return stat.permissions.toMode() & executable_bits != 0;
 }
@@ -113,7 +151,7 @@ fn isExecutable(plan: *Plan, path: []const u8) bool {
 pub const executable_bits = 0o111;
 
 /// Adds a file to the plan, taking ownership of `old`.
-fn append(plan: *Plan, path: []const u8, display_path: []const u8, old: ?[]u8) LoadError!*File {
+fn append(plan: *Plan, path: []const u8, display_path: []const u8, old: ?[]u8, was_executable: bool) LoadError!*File {
     errdefer if (old) |bytes| plan.allocator.free(bytes);
     const owned_path = try plan.allocator.dupe(u8, path);
     errdefer plan.allocator.free(owned_path);
@@ -121,7 +159,6 @@ fn append(plan: *Plan, path: []const u8, display_path: []const u8, old: ?[]u8) L
     errdefer plan.allocator.free(owned_display_path);
     const new = try plan.allocator.dupe(u8, old orelse "");
     errdefer plan.allocator.free(new);
-    const was_executable = old != null and plan.isExecutable(path);
     try plan.file_index.ensureUnusedCapacity(plan.allocator, 1);
     try plan.files.append(plan.allocator, .{ .path = owned_path, .display_path = owned_display_path, .old = old, .new = new, .was_executable = was_executable });
     plan.file_index.putAssumeCapacity(owned_path, plan.files.items.len - 1);
@@ -136,10 +173,14 @@ pub fn setGroup(plan: *Plan, file: *File, group: []const u8) std.mem.Allocator.E
     file.group = owned;
 }
 
-/// Errors from `addLink`.
-pub const LinkError = std.mem.Allocator.Error || std.Io.Dir.ReadLinkError || error{
+/// Why what is at a link's path cannot be read, or is no link.
+pub const OldTargetError = std.Io.Dir.ReadLinkError || error{
     /// Something other than a link is at the path; kosm replaces only links.
     NotALink,
+};
+
+/// Errors from `addLink`.
+pub const LinkError = std.mem.Allocator.Error || OldTargetError || error{
     /// The path is already planned, as a file or as a link.
     AlreadyPlanned,
 };
@@ -147,25 +188,63 @@ pub const LinkError = std.mem.Allocator.Error || std.Io.Dir.ReadLinkError || err
 /// Plans a symbolic link at absolute `path` pointing to `target`, reading what is there now.
 /// A path planned before, as a link or a file, is `error.AlreadyPlanned`. Copies every argument.
 pub fn addLink(plan: *Plan, path: []const u8, display_path: []const u8, owner: []const u8, target: []const u8, group: ?[]const u8) LinkError!void {
+    return plan.addPreloadedLink(try plan.preloadLink(path), path, display_path, owner, target, group);
+}
+
+/// What `addLink` reads from disk for a link, read ahead of planning it so that many links can
+/// be read at once. Owned by the plan's allocator until `addPreloadedLink` or
+/// `freePreloadedLink` takes it.
+pub const PreloadedLink = struct {
+    /// The link's path with the links in its folder resolved, as planned files are indexed.
+    folder_resolved: []u8,
+    /// What the link points to now, null when nothing is at its path.
+    old_target: OldTargetError!?[]u8,
+};
+
+/// Reads what `addLink` would for absolute `path`, without touching the plan, so several
+/// threads may preload at once when the plan's allocator is thread-safe.
+pub fn preloadLink(plan: *const Plan, path: []const u8) std.mem.Allocator.Error!PreloadedLink {
     var real_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    // A link replaces what is at its path, so a file planned where the link points is no clash.
-    if (plan.file_index.contains(plan.resolveFolder(path, &real_buffer)) or plan.link_index.contains(path)) return error.AlreadyPlanned;
+    const folder_resolved = try plan.allocator.dupe(u8, plan.resolveFolder(path, &real_buffer));
+    errdefer plan.allocator.free(folder_resolved);
     var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const old_target: ?[]const u8 = if (std.Io.Dir.readLinkAbsolute(plan.io, path, &buffer)) |length|
-        buffer[0..length]
+    const old_target: OldTargetError!?[]u8 = if (std.Io.Dir.readLinkAbsolute(plan.io, path, &buffer)) |length|
+        try plan.allocator.dupe(u8, buffer[0..length])
     else |err| switch (err) {
         error.FileNotFound => null,
-        error.NotLink => return error.NotALink,
-        else => |other| return other,
+        error.NotLink => error.NotALink,
+        else => |other| other,
     };
+    return .{ .folder_resolved = folder_resolved, .old_target = old_target };
+}
 
-    var link: Link = .{ .path = "", .display_path = "", .target = "", .old_target = null, .owner = "", .group = null };
+/// Frees a `PreloadedLink` that is not planned after all.
+pub fn freePreloadedLink(plan: *const Plan, preloaded: PreloadedLink) void {
+    plan.allocator.free(preloaded.folder_resolved);
+    plan.freeOldTarget(preloaded.old_target);
+}
+
+fn freeOldTarget(plan: *const Plan, old_target: OldTargetError!?[]u8) void {
+    const bytes = (old_target catch return) orelse return;
+    plan.allocator.free(bytes);
+}
+
+/// `addLink` for a link `preloadLink` read at `path`; takes `preloaded`. Copies every other
+/// argument.
+pub fn addPreloadedLink(plan: *Plan, preloaded: PreloadedLink, path: []const u8, display_path: []const u8, owner: []const u8, target: []const u8, group: ?[]const u8) LinkError!void {
+    // A link replaces what is at its path, so a file planned where the link points is no clash.
+    const planned = plan.file_index.contains(preloaded.folder_resolved) or plan.link_index.contains(path);
+    plan.allocator.free(preloaded.folder_resolved);
+    if (planned) {
+        plan.freeOldTarget(preloaded.old_target);
+        return error.AlreadyPlanned;
+    }
+    var link: Link = .{ .path = "", .display_path = "", .target = "", .old_target = try preloaded.old_target, .owner = "", .group = null };
     errdefer plan.freeLink(link);
     link.path = try plan.allocator.dupe(u8, path);
     link.display_path = try plan.allocator.dupe(u8, display_path);
     link.target = try plan.allocator.dupe(u8, target);
     link.owner = try plan.allocator.dupe(u8, owner);
-    if (old_target) |bytes| link.old_target = try plan.allocator.dupe(u8, bytes);
     if (group) |bytes| link.group = try plan.allocator.dupe(u8, bytes);
     try plan.link_index.ensureUnusedCapacity(plan.allocator, 1);
     try plan.links.append(plan.allocator, link);
