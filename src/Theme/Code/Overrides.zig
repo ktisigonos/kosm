@@ -1,5 +1,5 @@
 //! The code colors a kosmos sets itself; every one left null takes its default from the
-//! palette or the foreground role.
+//! palette or the roles.
 
 const Color = @import("../../Color.zig");
 
@@ -15,7 +15,7 @@ number: ?Color = null,
 constant: ?Color = null,
 /// Functions and methods, called or defined. null: blue.
 function: ?Color = null,
-/// Types, classes and modules. null: yellow.
+/// Types, classes and modules. null: the secondary role.
 type: ?Color = null,
 /// Variables and parameters. null: the foreground role.
 variable: ?Color = null,
@@ -25,5 +25,5 @@ property: ?Color = null,
 operator: ?Color = null,
 /// Brackets, delimiters and separators. null: the foreground role.
 punctuation: ?Color = null,
-/// Markup tags (HTML, XML, JSX). null: red.
+/// Markup tags (HTML, XML, JSX). null: the accent role.
 tag: ?Color = null,

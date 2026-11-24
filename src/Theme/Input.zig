@@ -15,7 +15,7 @@ palette: Palette,
 mode: Mode,
 /// Roles set by the kosmos. Default: every role from the palette.
 roles: Roles.Overrides = .{},
-/// Code colors set by the kosmos. Default: every code color from the palette and foreground.
+/// Code colors set by the kosmos. Default: every code color from the palette and roles.
 code: Code.Overrides = .{},
 /// Diff colors set by the kosmos. Default: every diff color from the roles.
 diff: Diff.Overrides = .{},

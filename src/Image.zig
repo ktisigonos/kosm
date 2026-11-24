@@ -633,6 +633,24 @@ test "semantic mixes the other missing hues from the image's own hues, never the
     try testing.expect(semantic.orange.?.hue != semantic.red.?.mix(semantic.yellow.?, 0.5).hue);
 }
 
+test "a blue picture's types and tags take its own hues, its semantic roles the made-up ones" {
+    var pixels: [100]Color = @splat(gray(0.5));
+    for (pixels[0..30]) |*pixel| pixel.* = wheelPixel(8, 0.6, 0.12);
+    for (pixels[30..50]) |*pixel| pixel.* = wheelPixel(6, 0.6, 0.1);
+    var lightness: [100]f32 = undefined;
+    const image = loadedImage(&pixels, &lightness, 10);
+    const theme = Theme.from(try image.themeInput(.{ .style = .literal }));
+    const references = Analysis.referenceHues();
+    try testing.expectApproxEqAbs(references[8], theme.code.tag.hue, 1e-9);
+    try testing.expectApproxEqAbs(references[6], theme.code.type.hue, 1e-9);
+    try testing.expectEqual(theme.palette.red, theme.roles.@"error");
+    try testing.expectEqual(theme.palette.yellow, theme.roles.warning);
+    try testing.expectEqual(theme.palette.green, theme.roles.success);
+    try testing.expectApproxEqAbs(references[0], theme.roles.@"error".hue, 1e-9);
+    try testing.expectApproxEqAbs(references[2], theme.roles.warning.hue, 1e-9);
+    try testing.expectApproxEqAbs(references[4], theme.roles.success.hue, 1e-9);
+}
+
 test "complete makes up every hue from its neighbours by wheel position" {
     var pixels: [100]Color = @splat(gray(0.5));
     for (pixels[0..20]) |*pixel| pixel.* = wheelPixel(4, 0.5, 0.1);

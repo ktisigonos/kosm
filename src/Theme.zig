@@ -191,7 +191,7 @@ test "roles default from the palette and the mode flips background and foregroun
     try testing.expectEqual(dark.roles.accent, light.roles.accent);
 }
 
-test "code colors default from the palette and the foreground" {
+test "code colors default from the palette and the roles" {
     const theme = from(.{ .palette = test_palette, .mode = .light });
     const code = theme.code;
     const foreground = theme.palette.black;
@@ -201,12 +201,12 @@ test "code colors default from the palette and the foreground" {
     try testing.expectEqual(theme.palette.orange, code.number);
     try testing.expectEqual(theme.palette.orange, code.constant);
     try testing.expectEqual(theme.palette.blue, code.function);
-    try testing.expectEqual(theme.palette.yellow, code.type);
+    try testing.expectEqual(theme.roles.secondary, code.type);
     try testing.expectEqual(foreground, code.variable);
     try testing.expectEqual(foreground, code.property);
     try testing.expectEqual(foreground, code.operator);
     try testing.expectEqual(foreground, code.punctuation);
-    try testing.expectEqual(theme.palette.red, code.tag);
+    try testing.expectEqual(theme.roles.accent, code.tag);
 }
 
 test "an overridden role wins and flows into the link and code colors" {
@@ -218,6 +218,7 @@ test "an overridden role wins and flows into the link and code colors" {
     try testing.expectEqual(test_pink, theme.roles.accent);
     try testing.expectEqual(test_pink, theme.roles.link);
     try testing.expectEqual(test_pink, theme.code.variable);
+    try testing.expectEqual(test_pink, theme.code.tag);
     try testing.expectEqual(theme.variations.emphasis.muted.apply(test_pink), theme.code.comment);
 }
 

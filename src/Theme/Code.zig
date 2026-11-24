@@ -21,7 +21,7 @@ number: Color,
 constant: Color,
 /// Functions and methods, called or defined. Default: blue.
 function: Color,
-/// Types, classes and modules. Default: yellow.
+/// Types, classes and modules. Default: the secondary role.
 type: Color,
 /// Variables and parameters. Default: the foreground role.
 variable: Color,
@@ -31,14 +31,13 @@ property: Color,
 operator: Color,
 /// Brackets, delimiters and separators. Default: the foreground role.
 punctuation: Color,
-/// Markup tags (HTML, XML, JSX). Default: red.
+/// Markup tags (HTML, XML, JSX). Default: the accent role.
 tag: Color,
 
 /// The code colors a kosmos sets itself, each optional.
 pub const Overrides = @import("Code/Overrides.zig");
 
-/// Every code color `overrides` leaves null from `palette`, the `roles`' foreground and
-/// `variations`.
+/// Every code color `overrides` leaves null from `palette`, the `roles` and `variations`.
 pub fn from(palette: Palette.Resolved, roles: Roles, variations: Variations, overrides: Overrides) Code {
     return .{
         .comment = overrides.comment orelse variations.emphasis.muted.apply(roles.foreground),
@@ -47,12 +46,12 @@ pub fn from(palette: Palette.Resolved, roles: Roles, variations: Variations, ove
         .number = overrides.number orelse palette.orange,
         .constant = overrides.constant orelse palette.orange,
         .function = overrides.function orelse palette.blue,
-        .type = overrides.type orelse palette.yellow,
+        .type = overrides.type orelse roles.secondary,
         .variable = overrides.variable orelse roles.foreground,
         .property = overrides.property orelse roles.foreground,
         .operator = overrides.operator orelse roles.foreground,
         .punctuation = overrides.punctuation orelse roles.foreground,
-        .tag = overrides.tag orelse palette.red,
+        .tag = overrides.tag orelse roles.accent,
     };
 }
 
