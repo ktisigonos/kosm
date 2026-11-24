@@ -19,9 +19,9 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 
 Steps 23a-23k come from a review of kosm with the human (2026-11-24), in the order to take them.
 
-- **23a. Reload only what changed** `PLAN FIRST`
-  - Do: an apply reloads every app even when nothing changed (`hyprctl reload` resets runtime `hyprctl keyword` state, `vicinae server --replace` closes an open launcher, the icon cache is rebuilt), and warns for every program that isn't running. Reload an app only when one of its planned files or links changed (each edit and link has its owner), with `--reload` forcing every one. What a program keeps outside files (gsettings, hyprpaper's wallpaper, `hyprctl setcursor`) still has to be set on every apply, so propose how an app says which part of its reload is that (a second optional function, or a flag on the reloader), and how an app says that a program not running is no failure (`pkill` exiting 1). Changing the test that says a commit reloads every app is agreed.
-  - Done when: an apply changing nothing runs only the always-run part, an apply changing one app's file reloads only that app, `--reload` reloads all, a program that isn't running gives no warning, and tests cover each.
+- **23a. Re-pin the packages that reload only while their program runs** (waits on the human)
+  - Do: kosm_kitty, kosm_ghostty, kosm_dunst, kosm_hyprland, kosm_hyprpaper and kosm_cursor call `Reloader.runIfRunning`, which their pinned kosm lacks, so on their own they build only with `--fork` to a local kosm. Once the human has pushed kosm and the six packages, pin each to that kosm, then `kosm_base` and the config to the new package commits.
+  - Done when: each package's `zig build test` passes without `--fork`, and an apply with kitty closed prints no warning.
 
 - **23b. `kosm doctor`** `PLAN FIRST`
   - Do: a program that never includes kosm's file shows no change and no error, the likeliest first-day failure. Propose how an app declares how its file is reached (which file of the program includes it, and the line that does) and how its program is found (a command, a Flatpak id), then add `kosm doctor [kosmos]` printing one line per app: fine, not included (with the exact line to add), or program not found.
