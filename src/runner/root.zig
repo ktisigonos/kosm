@@ -110,7 +110,7 @@ fn onRunnerStack(init: std.process.Init, comptime body: anytype) !u8 {
     var result: Result = undefined;
     const thread = std.Thread.spawn(.{ .stack_size = kosmos_call.kosmos_stack_size }, Call.run, .{ init, &result }) catch |err| {
         var buffer: [256]u8 = undefined;
-        var stderr = std.Io.File.stderr().writer(init.io, &buffer);
+        var stderr = std.Io.File.stderr().writerStreaming(init.io, &buffer);
         try stderr.interface.print("error: cannot start the thread kosm runs on: {s}\n", .{@errorName(err)});
         try stderr.interface.flush();
         return 1;
@@ -441,8 +441,8 @@ const Terminal = struct {
     stderr: std.Io.File.Writer = undefined,
 
     fn open(terminal: *Terminal, init: std.process.Init) !Streams {
-        terminal.stdout = std.Io.File.stdout().writer(init.io, &terminal.stdout_buffer);
-        terminal.stderr = std.Io.File.stderr().writer(init.io, &terminal.stderr_buffer);
+        terminal.stdout = std.Io.File.stdout().writerStreaming(init.io, &terminal.stdout_buffer);
+        terminal.stderr = std.Io.File.stderr().writerStreaming(init.io, &terminal.stderr_buffer);
         return .{
             .stdout = &terminal.stdout.interface,
             .stderr = &terminal.stderr.interface,

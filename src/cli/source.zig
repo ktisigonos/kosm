@@ -9,7 +9,7 @@ const Sources = @import("Sources.zig");
 pub fn source(init: std.process.Init, argument: ?[]const u8, stderr: *std.Io.Writer) !u8 {
     const arena = init.arena.allocator();
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     const path = try Sources.overridePath(arena, init.environ_map) orelse {
         try stderr.writeAll("error: neither XDG_STATE_HOME nor HOME is set, so there is no state directory\n");

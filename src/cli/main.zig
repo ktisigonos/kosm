@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) !u8 {
     const arena = init.arena.allocator();
     const arguments = try init.minimal.args.toSlice(arena);
     var stderr_buffer: [1024]u8 = undefined;
-    var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
+    var stderr = std.Io.File.stderr().writerStreaming(init.io, &stderr_buffer);
     // A failing stderr has nowhere left to be reported.
     defer stderr.interface.flush() catch {};
 
@@ -173,7 +173,7 @@ fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stder
     };
     const config = try configPath(init, given, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     const context = builds.context(init, config, &stdout.interface, stderr);
     init_command.init(context, init_command.official) catch |err| switch (err) {
@@ -188,7 +188,7 @@ fn runInit(init: std.process.Init, builds: Builds, command: ConfigCommand, stder
 fn runNew(init: std.process.Init, builds: Builds, command: New, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     var context = builds.context(init, config, &stdout.interface, stderr);
     context.show_build_output = true;
@@ -276,7 +276,7 @@ fn scriptRunnerArguments(arena: std.mem.Allocator, config: []const u8, command: 
 /// would change. Returns whether the apply can go on.
 fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, kosmos: []const u8, diff: bool, stderr: *std.Io.Writer) !bool {
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     const context = builds.context(init, config, &stdout.interface, stderr);
     directory_package.refreshApplied(context, kosmos, if (diff) .report else .write) catch |err| switch (err) {
         error.Failed => return false,
@@ -292,7 +292,7 @@ fn refreshManifest(init: std.process.Init, builds: Builds, config: []const u8, k
 fn runList(init: std.process.Init, builds: Builds, command: List, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     var context = builds.context(init, config, &stdout.interface, stderr);
     context.show_build_output = true;
@@ -307,7 +307,7 @@ fn runList(init: std.process.Init, builds: Builds, command: List, stderr: *std.I
 fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, config_command: ConfigCommand, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, config_command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     var context = builds.context(init, config, &stdout.interface, stderr);
     context.show_build_output = true;
@@ -330,7 +330,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
 /// Prints the completion script of `shell`.
 fn printCompletions(init: std.process.Init, shell: completions.Shell) !u8 {
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     try stdout.interface.writeAll(shell.script());
     try stdout.interface.flush();
     return 0;
@@ -346,7 +346,7 @@ fn runComplete(init: std.process.Init, builds: Builds, words: []const []const u8
     var discarded: std.Io.Writer.Discarding = .init(&.{});
     const config = try configPath(init, given, &discarded.writer) orelse "";
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     try complete_command.complete(builds.context(init, config, &stdout.interface, &discarded.writer), words);
     try stdout.interface.flush();
     return 0;
@@ -372,7 +372,7 @@ fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
         return 1;
     };
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     try record.writeCommand(try defaultConfig(init.io, arena, init.environ_map), &stdout.interface);
     try stdout.interface.flush();
     return 0;
@@ -621,7 +621,7 @@ const Build = struct {
 fn runBuildCommand(init: std.process.Init, builds: Builds, command: Build, stderr: *std.Io.Writer) !u8 {
     const config = try configPath(init, command.config, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     defer stdout.interface.flush() catch {};
     var context = builds.context(init, config, &stdout.interface, stderr);
     context.show_build_output = true;

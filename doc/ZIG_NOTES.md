@@ -73,6 +73,7 @@ When unsure about any std function, grep the std source for its definition befor
 - **`std.posix.getenv` is gone:** use `std.c.getenv` (or the environ from `std.process.Init`).
 - **`std.Options.debug_io` works in all build modes:** it is std.debug's own single-threaded `Io`. The program's real `Io` comes from `init.io`; tests use `std.testing.io`.
 - **Two `Io`s, two stderr locks:** `std.debug.print` locks `debug_io`'s mutex, while `io.lockStderr` locks that `Io`'s own, so a stray `std.debug.print` can interleave with real output.
+- **`File.writer` is positional:** `std.Io.File.stdout().writer(io, &buffer)` writes at its own offset from 0, so when stdout or stderr is redirected to a regular file, each writer (and each process sharing the file) overwrites the others' lines. Use `writerStreaming` for stdout and stderr.
 - **Stderr is Io-mediated:** plain `File.writeAll` is gone; use `std.debug.lockStderr(&buf)`, write via `stderr.file_writer.interface`, then `std.debug.unlockStderr()` (which flushes).
 - **No clock functions in `std.time`:** monotonic time is `std.Io.Timestamp.now(io, .awake)`. The `Clock` enum is `real`, `awake`, `boot`, `cpu_process`, `cpu_thread`.
 - **`std.Thread.Mutex` is gone:** the blocking lock is `std.Io.Mutex` (`.init`, `lock(io)` which can return `error.Canceled`, `lockUncancelable(io)`, `unlock(io)`).

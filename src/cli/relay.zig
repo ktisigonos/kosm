@@ -13,7 +13,7 @@ const message_limit = 1024 * 1024;
 /// a host's stderr in its console.
 pub fn relay(init: std.process.Init, path: []const u8, stderr: *std.Io.Writer) !u8 {
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     var file: Watched = .{ .path = path };
     while (true) {
         file.sendIfChanged(init.io, init.gpa, &stdout.interface) catch |err| switch (err) {

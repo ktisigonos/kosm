@@ -330,9 +330,9 @@ pub fn fail(diagnostics: *kosm.Diagnostics, script: Script, line: usize, comptim
 pub fn run(init: std.process.Init, comptime sources: []const Target.AdapterSource) !u8 {
     const arena = init.arena.allocator();
     var stderr_buffer: [1024]u8 = undefined;
-    var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
+    var stderr = std.Io.File.stderr().writerStreaming(init.io, &stderr_buffer);
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     var diagnostics: kosm.Diagnostics = .{};
     writeAll(init, arena, comptime discovery.frontends(sources), &stdout.interface, &diagnostics) catch |err| switch (err) {
         error.InvalidDeclaration => {

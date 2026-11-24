@@ -39,9 +39,9 @@ pub fn list(init: std.process.Init, comptime sources: []const Source, comptime s
     const arena = init.arena.allocator();
     const arguments = try init.minimal.args.toSlice(arena);
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     var stderr_buffer: [1024]u8 = undefined;
-    var stderr = std.Io.File.stderr().writer(init.io, &stderr_buffer);
+    var stderr = std.Io.File.stderr().writerStreaming(init.io, &stderr_buffer);
     if (!try interface.check(init.environ_map, &stderr.interface)) {
         try stderr.interface.flush();
         return 1;
