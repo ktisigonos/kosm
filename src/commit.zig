@@ -8,14 +8,17 @@ const Plan = @import("Plan.zig");
 /// Which file a failed `writePlan` was working on, as the app wrote it.
 pub const Failure = struct {
     path: []const u8 = "",
+    /// How many of the files and links renamed into place before a rename failed could not be
+    /// put back as they were.
+    not_restored: usize = 0,
 };
 
-/// Writes every changed file of `plan`. A failure before the renames leaves the disk as it was.
-/// A file or link that is no longer what the plan read (a program saved it meanwhile) is
-/// `error.ChangedSinceRead`, before anything is renamed. A rename failing halfway (rare: same
-/// directory, already created) can leave earlier files replaced. Symlinked files are written
-/// through to their target, and a replaced file keeps its permissions. A planned link
-/// replaces the link at its path, never a file.
+/// Writes every changed file of `plan`, all or nothing. A file or link that is no longer what
+/// the plan read (a program saved it meanwhile) is `error.ChangedSinceRead`, before anything is
+/// renamed. A rename failing halfway (rare: same directory, already created) puts back the
+/// files renamed before it, counting those it cannot in `failure`. Symlinked files are written
+/// through to their target, and a replaced file keeps its permissions. A planned link replaces
+/// the link at its path, never a file.
 pub fn writePlan(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, failure: *Failure) !void {
     var arena: std.heap.ArenaAllocator = .init(allocator);
     defer arena.deinit();
@@ -36,11 +39,7 @@ pub fn writePlan(allocator: std.mem.Allocator, io: std.Io, plan: *const Plan, fa
         pending.appendAssumeCapacity(try createTempLink(arena.allocator(), io, link));
     }
     try checkUnchanged(allocator, io, plan, failure);
-    for (pending.items) |*item| {
-        failure.path = item.display_path;
-        try std.Io.Dir.renameAbsolute(item.temp_path, item.path, io);
-        item.renamed = true;
-    }
+    try renameAll(arena.allocator(), io, pending.items, failure);
     failure.path = "";
 }
 
@@ -81,16 +80,50 @@ fn linkUnchanged(io: std.Io, link: Plan.Link) !bool {
     return std.mem.eql(u8, old_target, buffer[0..length]);
 }
 
+/// Renames every item into place. When one fails, puts back the ones renamed before it,
+/// counting in `failure` those it cannot.
+fn renameAll(allocator: std.mem.Allocator, io: std.Io, pending: []Pending, failure: *Failure) !void {
+    for (pending, 0..) |*item, index| {
+        failure.path = item.display_path;
+        std.Io.Dir.renameAbsolute(item.temp_path, item.path, io) catch |err| {
+            for (pending[0..index]) |renamed| renamed.putBack(allocator, io) catch {
+                failure.not_restored += 1;
+            };
+            return err;
+        };
+        item.renamed = true;
+    }
+}
+
 /// A file or link written under a temp name next to its final path, waiting to be renamed there.
 const Pending = struct {
     path: []const u8,
     display_path: []const u8,
     temp_path: []const u8,
+    /// What is at `path` until the rename, to put back when a later rename fails.
+    previous: Previous,
     renamed: bool = false,
+
+    const Previous = union(enum) {
+        nothing,
+        file: struct { contents: []const u8, permissions: std.Io.File.Permissions },
+        link: []const u8,
+    };
 
     /// Deletes the temp file or link unless it was renamed into place.
     fn discard(item: Pending, io: std.Io) void {
         if (!item.renamed) std.Io.Dir.deleteFileAbsolute(io, item.temp_path) catch {};
+    }
+
+    /// Makes `path` what it was before the rename: the old file or link, or nothing.
+    fn putBack(item: Pending, allocator: std.mem.Allocator, io: std.Io) !void {
+        const temp_path = switch (item.previous) {
+            .nothing => return std.Io.Dir.deleteFileAbsolute(io, item.path),
+            .file => |file| try writeTempFile(allocator, io, item.path, file.contents, file.permissions, true),
+            .link => |target| try makeTempLink(allocator, io, item.path, target),
+        };
+        errdefer std.Io.Dir.deleteFileAbsolute(io, temp_path) catch {};
+        try std.Io.Dir.renameAbsolute(temp_path, item.path, io);
     }
 };
 
@@ -103,10 +136,20 @@ fn tempPath(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]const
 fn createTempLink(allocator: std.mem.Allocator, io: std.Io, link: *const Plan.Link) !Pending {
     const folder = std.Io.Dir.path.dirname(link.path) orelse return error.FileNotFound;
     try std.Io.Dir.cwd().createDirPath(io, folder);
+    return .{
+        .path = link.path,
+        .display_path = link.display_path,
+        .temp_path = try makeTempLink(allocator, io, link.path, link.target),
+        .previous = if (link.old_target) |old_target| .{ .link = old_target } else .nothing,
+    };
+}
+
+/// Makes a link to `target` under a free temp name next to `path`, and gives that name.
+fn makeTempLink(allocator: std.mem.Allocator, io: std.Io, path: []const u8, target: []const u8) ![]const u8 {
     while (true) {
-        const temp_path = try tempPath(allocator, io, link.path);
-        if (std.Io.Dir.cwd().symLink(io, link.target, temp_path, .{})) {
-            return .{ .path = link.path, .display_path = link.display_path, .temp_path = temp_path };
+        const temp_path = try tempPath(allocator, io, path);
+        if (std.Io.Dir.cwd().symLink(io, target, temp_path, .{})) {
+            return temp_path;
         } else |err| switch (err) {
             error.PathAlreadyExists => continue,
             else => return err,
@@ -118,30 +161,44 @@ fn createTempFile(allocator: std.mem.Allocator, io: std.Io, file: *const Plan.Fi
     const cwd = std.Io.Dir.cwd();
     var target = file.path;
     var permissions: std.Io.File.Permissions = .default_file;
-    if (file.old != null) {
+    var previous: Pending.Previous = .nothing;
+    if (file.old) |old| {
         // Replacing a symlink with a file would cut it loose from the dotfiles it points into.
         target = try cwd.realPathFileAlloc(io, file.path, allocator);
         permissions = (try cwd.statFile(io, target, .{})).permissions;
+        previous = .{ .file = .{ .contents = old, .permissions = permissions } };
     }
     // Whoever may read the file may run it, as `chmod +x` under a umask does.
     if (file.executable) permissions = .fromMode(permissions.toMode() | ((permissions.toMode() & 0o444) >> 2));
     const folder = std.Io.Dir.path.dirname(target) orelse return error.FileNotFound;
     try cwd.createDirPath(io, folder);
+    // An icon in a folder of thousands is cheap to lose in a crash, but slow to sync one by one.
+    const durable = file.group == null;
+    return .{
+        .path = target,
+        .display_path = file.display_path,
+        .temp_path = try writeTempFile(allocator, io, target, file.new, permissions, durable),
+        .previous = previous,
+    };
+}
+
+/// Writes `contents` to a file under a free temp name next to `path`, and gives that name. A
+/// `durable` file is synced to disk, so renaming it over `path` cannot leave an empty file
+/// after a crash.
+fn writeTempFile(allocator: std.mem.Allocator, io: std.Io, path: []const u8, contents: []const u8, permissions: std.Io.File.Permissions, durable: bool) ![]const u8 {
+    const cwd = std.Io.Dir.cwd();
     while (true) {
-        const temp_path = try tempPath(allocator, io, target);
+        const temp_path = try tempPath(allocator, io, path);
         const flags: std.Io.Dir.CreateFileOptions = .{ .exclusive = true, .permissions = permissions };
         var temp = cwd.createFile(io, temp_path, flags) catch |err| switch (err) {
             error.PathAlreadyExists => continue,
             else => return err,
         };
-        const pending: Pending = .{ .path = target, .display_path = file.display_path, .temp_path = temp_path };
-        writeContents(io, temp, file.new) catch |err| {
-            temp.close(io);
-            pending.discard(io);
-            return err;
-        };
-        temp.close(io);
-        return pending;
+        defer temp.close(io);
+        errdefer std.Io.Dir.deleteFileAbsolute(io, temp_path) catch {};
+        try writeContents(io, temp, contents);
+        if (durable) try temp.sync(io);
+        return temp_path;
     }
 }
 
@@ -320,6 +377,46 @@ test "a file or link appearing after kosm looked fails the commit" {
     var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
     try testing.expectEqualStrings("other.svg", try readTmpLink(&tmp, "icon.svg", &buffer));
     try testing.expectEqual(2, try countEntries(&tmp));
+}
+
+test "a rename failing halfway puts back the files and links renamed before it" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "edited.conf", .data = "old\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "edited.conf.kosm-1", .data = "new\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "created.conf.kosm-1", .data = "made\n" });
+    try tmp.dir.symLink(testing.io, "old.svg", "icon.svg", .{});
+    try tmp.dir.symLink(testing.io, "new.svg", "icon.svg.kosm-1", .{});
+    var root_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root = try tmpPath(&tmp, &root_buffer);
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const at = struct {
+        fn path(allocator: std.mem.Allocator, folder: []const u8, name: []const u8) ![]const u8 {
+            return std.Io.Dir.path.join(allocator, &.{ folder, name });
+        }
+    };
+
+    var pending = [_]Pending{
+        .{ .path = try at.path(arena, root, "edited.conf"), .display_path = "~/edited.conf", .temp_path = try at.path(arena, root, "edited.conf.kosm-1"), .previous = .{ .file = .{ .contents = "old\n", .permissions = .default_file } } },
+        .{ .path = try at.path(arena, root, "created.conf"), .display_path = "~/created.conf", .temp_path = try at.path(arena, root, "created.conf.kosm-1"), .previous = .nothing },
+        .{ .path = try at.path(arena, root, "icon.svg"), .display_path = "~/icon.svg", .temp_path = try at.path(arena, root, "icon.svg.kosm-1"), .previous = .{ .link = "old.svg" } },
+        // Its temp file is gone, so its rename fails.
+        .{ .path = try at.path(arena, root, "missing.conf"), .display_path = "~/missing.conf", .temp_path = try at.path(arena, root, "missing.conf.kosm-1"), .previous = .nothing },
+    };
+    var failure: Failure = .{};
+    try testing.expectError(error.FileNotFound, renameAll(arena, testing.io, &pending, &failure));
+    try testing.expectEqualStrings("~/missing.conf", failure.path);
+    try testing.expectEqual(0, failure.not_restored);
+
+    const edited = try readTmp(&tmp, "edited.conf");
+    defer testing.allocator.free(edited);
+    try testing.expectEqualStrings("old\n", edited);
+    try testing.expectError(error.FileNotFound, tmp.dir.statFile(testing.io, "created.conf", .{}));
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    try testing.expectEqualStrings("old.svg", try readTmpLink(&tmp, "icon.svg", &buffer));
+    try testing.expectEqual(2, try countEntries(&tmp)); // no temp files left behind
 }
 
 test "unchanged files are not rewritten" {

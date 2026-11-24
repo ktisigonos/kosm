@@ -901,6 +901,8 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
             const file = try delivery.arena.dupe(u8, failure.path);
             if (err == error.ChangedSinceRead)
                 delivery.diagnostics.set(app, file, "it changed since kosm read it, so nothing was written; apply again", .{})
+            else if (failure.not_restored != 0)
+                delivery.diagnostics.set(app, file, "cannot write it: {s}; {d} of the files written before it could not be put back as they were", .{ @errorName(err), failure.not_restored })
             else
                 delivery.diagnostics.set(app, file, "cannot write it: {s}", .{@errorName(err)});
             return error.Reported;
