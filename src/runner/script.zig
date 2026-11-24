@@ -6,6 +6,7 @@ const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
 const kosmos_call = @import("kosmos_call.zig");
+const lifetime = @import("lifetime.zig");
 
 /// Where script kosmoi live, in the config's root.
 pub const directory = "kosmoi";
@@ -353,7 +354,13 @@ fn readScript(context: Context, shown: []const u8) Error![]const u8 {
 /// kosmos trees by value through its calls, which outgrows a process' usual stack as a kosmos
 /// does, so it runs on a stack as large as a kosmos'.
 fn runOnKosmosStack(context: Context, shown: []const u8, comptime function: anytype, arguments: anytype) Error!void {
-    const thread = std.Thread.spawn(.{ .stack_size = kosmos_call.kosmos_stack_size }, function, arguments) catch |err|
+    const Entry = struct {
+        fn run(entry_arguments: @TypeOf(arguments)) void {
+            lifetime.enterThread(@frameAddress(), kosmos_call.kosmos_stack_size);
+            @call(.auto, function, entry_arguments);
+        }
+    };
+    const thread = std.Thread.spawn(.{ .stack_size = kosmos_call.kosmos_stack_size }, Entry.run, .{arguments}) catch |err|
         return fail(context, "{s}: cannot start the thread the script runs on: {s}", .{ shown, @errorName(err) });
     thread.join();
 }

@@ -11,15 +11,38 @@ pub const Stack = struct {
     low: usize,
     high: usize,
 
-    /// The stack below `high`, as deep as the process' stack may grow.
+    /// The stack below `high`, down to the bottom of the stack of the calling thread: the one
+    /// `enterThread` recorded, or as deep as the process' stack may grow.
     pub fn below(high: usize) Stack {
-        return .{ .low = high -| stackLimit(), .high = high };
+        return .{ .low = thread_stack_low orelse high -| stackLimit(), .high = high };
+    }
+
+    /// The stack of a thread kosm started with `size` bytes, below `top`, a frame on it.
+    pub fn ofThread(top: usize, size: usize) Stack {
+        return .{ .low = top -| (size - unchecked_stack_bottom), .high = top };
     }
 
     fn holds(stack: Stack, address: usize) bool {
         return address >= stack.low and address < stack.high;
     }
 };
+
+/// How much of a started thread's stack bottom the checks leave out. The thread's entry and the
+/// copies of its arguments sit above the frame its stack is measured from, so the full size
+/// measured down from there reaches past the stack into other memory, such as a list kosm
+/// allocated; only a kosmos nesting deeper than all the rest of the stack loses the check.
+const unchecked_stack_bottom = 1024 * 1024;
+
+/// The bottom of the calling thread's stack when kosm started that thread, else null. Thread
+/// local, because each thread kosm starts has a stack of its own, unlike the process' limit.
+threadlocal var thread_stack_low: ?usize = null;
+
+/// Records that the calling thread is one kosm started with a stack of `size` bytes, so
+/// `Stack.below` on it reaches its real bottom. Called first on the thread, from a frame at
+/// `top`.
+pub fn enterThread(top: usize, size: usize) void {
+    thread_stack_low = Stack.ofThread(top, size).low;
+}
 
 /// How deep the stack may grow when its limit is unlimited or cannot be read: Linux' default.
 const default_stack_limit = 8 * 1024 * 1024;
@@ -191,4 +214,22 @@ test "constants, kept lists and live memory are no dead lists" {
         .reload = reloadNothing,
     };
     try testing.expectEqual(null, try findDeadList(arena, tree, &.{stack}));
+}
+
+test "the stack below a frame reaches the bottom of a thread kosm started, past the process' limit" {
+    const size = 64 * 1024 * 1024;
+    const Check = struct {
+        fn run(depth: *usize) void {
+            var marker: u8 = 0;
+            std.mem.doNotOptimizeAway(&marker);
+            enterThread(@frameAddress(), size);
+            const stack: Stack = .below(@intFromPtr(&marker));
+            depth.* = stack.high - stack.low;
+        }
+    };
+    var depth: usize = 0;
+    const thread = try std.Thread.spawn(.{ .stack_size = size }, Check.run, .{&depth});
+    thread.join();
+    try testing.expect(depth > stackLimit());
+    try testing.expect(depth < size);
 }
