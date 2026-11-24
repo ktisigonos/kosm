@@ -766,6 +766,7 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         .io = init.io,
         .home = home,
         .diff = arguments.diff,
+        .reload_all = arguments.reload,
         .recording = try recording(arena, init.environ_map, diagnostics.kosmos, arguments),
         .latest = if (lock) |held| held.latest else null,
         .diagnostics = diagnostics,
@@ -893,6 +894,8 @@ const Delivery = struct {
     /// The home directory a reload's `~/` arguments expand to.
     home: []const u8,
     diff: bool,
+    /// Reload every app, not only those whose files changed.
+    reload_all: bool = false,
     /// Saved after a successful commit; null records nothing.
     recording: ?Recording,
     /// Tells whether a newer apply started, which makes this one write nothing; null never does.
@@ -901,8 +904,9 @@ const Delivery = struct {
     streams: Streams,
 };
 
-/// Prints the plan as a diff, or commits it, records the apply and then reloads every app in
-/// `tree`, also when nothing changed. A failed commit records and reloads nothing.
+/// Prints the plan as a diff, or commits it, records the apply and then reloads the apps in
+/// `tree` whose files changed (every app with `reload_all`). A failed commit records and
+/// reloads nothing.
 fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
     const stdout = delivery.streams.stdout;
     if (delivery.diff) {
@@ -939,7 +943,8 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
     }
     // The written files are reported before any reload's own output or warning.
     try stdout.flush();
-    try walk.reloadTree(tree, delivery.io, delivery.home, delivery.diagnostics.kosmos, delivery.streams.stderr);
+    const reloads: walk.Reloads = if (delivery.reload_all) .all else .{ .changed = plan };
+    try walk.reloadTree(tree, reloads, delivery.io, delivery.home, delivery.diagnostics.kosmos, delivery.streams.stderr);
 }
 
 /// The app planning the file shown as `display_path`, or empty.
@@ -1024,8 +1029,17 @@ fn planAndDeliver(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const 
     return planAndRecord(arena, tree, home, diff, null, diagnostics, output);
 }
 
+/// `planAndDeliver` committing, then reloading every app as `--reload` asks.
+fn planAndReloadAll(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u8, diagnostics: *kosm.Diagnostics, output: *std.Io.Writer.Allocating) !void {
+    return planAndDeliverWith(arena, tree, home, false, true, null, diagnostics, output);
+}
+
 /// `planAndDeliver`, saving `recorded` after a commit.
 fn planAndRecord(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u8, diff: bool, recorded: ?Recording, diagnostics: *kosm.Diagnostics, output: *std.Io.Writer.Allocating) !void {
+    return planAndDeliverWith(arena, tree, home, diff, false, recorded, diagnostics, output);
+}
+
+fn planAndDeliverWith(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u8, diff: bool, reload_all: bool, recorded: ?Recording, diagnostics: *kosm.Diagnostics, output: *std.Io.Writer.Allocating) !void {
     var plan: kosm.Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();
     var warning_buffer: [256]u8 = undefined;
@@ -1038,6 +1052,7 @@ fn planAndRecord(arena: *std.heap.ArenaAllocator, tree: anytype, home: []const u
         .io = testing.io,
         .home = home,
         .diff = diff,
+        .reload_all = reload_all,
         .recording = recorded,
         .diagnostics = diagnostics,
         .streams = .{ .stdout = &output.writer, .stderr = &warnings, .stdout_mode = .no_color },
@@ -1067,7 +1082,7 @@ test "a diff writes and reloads nothing" {
     try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "a.lines", .{}));
 }
 
-test "a commit reloads every app, also when nothing changed" {
+test "a commit reloads an app only when its files changed, or every app with --reload" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
     var home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
@@ -1087,8 +1102,13 @@ test "a commit reloads every app, also when nothing changed" {
     var second: std.Io.Writer.Allocating = .init(testing.allocator);
     defer second.deinit();
     try planAndDeliver(&arena, tree, home, false, &diagnostics, &second);
-    try testing.expectEqual(2, reloads);
+    try testing.expectEqual(1, reloads);
     try testing.expectEqualStrings("nothing to change\n", second.written());
+
+    var forced: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer forced.deinit();
+    try planAndReloadAll(&arena, tree, home, &diagnostics, &forced);
+    try testing.expectEqual(2, reloads);
 }
 
 test "an apply that a newer one started after writes and reloads nothing" {

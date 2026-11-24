@@ -69,14 +69,45 @@ fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void
     }
 }
 
-/// Calls `reload` on every app in `tree` that has one, in field order. A failure is a warning
-/// on `warnings` naming `kosmos` and the app, and the rest still reload.
+/// Which apps an apply reloads.
+pub const Reloads = union(enum) {
+    /// Every app, as `--reload` asks.
+    all,
+    /// The apps that changed a file or link of this plan, and those planning none, whose
+    /// program keeps everything kosm sets outside files.
+    changed: *const kosm.Plan,
+
+    fn wants(reloads: Reloads, app: []const u8) bool {
+        const plan = switch (reloads) {
+            .all => return true,
+            .changed => |plan| plan,
+        };
+        var plans_any = false;
+        for (plan.files.items) |file| {
+            for (file.edits.items) |edit| {
+                if (!std.mem.eql(u8, edit.owner, app)) continue;
+                if (file.changed()) return true;
+                plans_any = true;
+            }
+        }
+        for (plan.links.items) |link| {
+            if (!std.mem.eql(u8, link.owner, app)) continue;
+            if (link.changed()) return true;
+            plans_any = true;
+        }
+        return !plans_any;
+    }
+};
+
+/// Calls `reload` on every app in `tree` that has one and that `reloads` picks, in field order.
+/// A failure is a warning on `warnings` naming `kosmos` and the app, and the rest still reload.
 /// `home` is what `~/` in a reload command's arguments expands to.
-pub fn reloadTree(tree: anytype, io: std.Io, home: []const u8, kosmos: []const u8, warnings: *std.Io.Writer) std.Io.Writer.Error!void {
-    try reloadNode(tree, "", .{ .io = io, .home = home, .kosmos = kosmos, .warnings = warnings });
+pub fn reloadTree(tree: anytype, reloads: Reloads, io: std.Io, home: []const u8, kosmos: []const u8, warnings: *std.Io.Writer) std.Io.Writer.Error!void {
+    try reloadNode(tree, "", .{ .reloads = reloads, .io = io, .home = home, .kosmos = kosmos, .warnings = warnings });
 }
 
 const ReloadContext = struct {
+    reloads: Reloads,
     io: std.Io,
     home: []const u8,
     kosmos: []const u8,
@@ -92,6 +123,7 @@ fn reloadNode(node: anytype, comptime path: []const u8, context: ReloadContext) 
     }
     if (comptime discovery.isApp(Node)) {
         if (comptime !discovery.hasReload(Node)) return;
+        if (!context.reloads.wants(path)) return;
         var reloader: kosm.Reloader = .{ .io = context.io, .home = context.home };
         node.reload(&reloader) catch |err| {
             const reason = if (reloader.failure().len != 0) reloader.failure() else @errorName(err);
@@ -235,9 +267,19 @@ test "every app with reload reloads, and a failing one is a warning while the re
     };
     var buffer: [256]u8 = undefined;
     var warnings: std.Io.Writer = .fixed(&buffer);
-    try reloadTree(tree, testing.io, "/home/test", "frost", &warnings);
+    try reloadTree(tree, .all, testing.io, "/home/test", "frost", &warnings);
     try testing.expectEqual(2, reloads);
     try testing.expectEqualStrings("warning: kosmos 'frost', app 'terminal.kitty': reload failed: 'false' exited with code 1\n", warnings.buffered());
+}
+
+test "an app planning no file reloads on every apply, since its program keeps everything outside files" {
+    var reloads: usize = 0;
+    var plan: kosm.Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    var buffer: [256]u8 = undefined;
+    var warnings: std.Io.Writer = .fixed(&buffer);
+    try reloadTree(.{ .wallpaper = ReloadingApp{ .command = &.{"true"}, .reloads = &reloads } }, .{ .changed = &plan }, testing.io, "/home/test", "frost", &warnings);
+    try testing.expectEqual(1, reloads);
 }
 
 test "an Output error keeps the message Output wrote" {

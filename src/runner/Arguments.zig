@@ -1,4 +1,4 @@
-//! A runner's arguments, sorted into kosm's own (`--diff`, `--set`, `--config`) and the kosmos'
+//! A runner's arguments, sorted into kosm's own (`--diff`, `--reload`, `--set`, `--config`) and the kosmos'
 //! parameters.
 
 const Arguments = @This();
@@ -7,6 +7,8 @@ const std = @import("std");
 
 /// Print the plan as a diff instead of committing it.
 diff: bool = false,
+/// Reload every app after the commit, not only those whose files changed.
+reload: bool = false,
 /// The config project's absolute path, which `kosm apply` passes on for the record.
 config: ?[]const u8 = null,
 /// The `path=value` text of every `--set`, in order.
@@ -18,11 +20,12 @@ recorded: []const []const u8 = &.{},
 
 pub const Error = error{ SetWithoutAssignment, ConfigWithoutDirectory, OutOfMemory };
 
-/// Sorts `arguments` (without the program name); `--diff`, `--set path=value` and
+/// Sorts `arguments` (without the program name); `--diff`, `--reload`, `--set path=value` and
 /// `--config dir` may appear anywhere. The slices point into `arguments` and are allocated in
 /// `arena`.
 pub fn split(arena: std.mem.Allocator, arguments: []const []const u8) Error!Arguments {
     var diff = false;
+    var reload = false;
     var config: ?[]const u8 = null;
     var assignments: std.ArrayList([]const u8) = .empty;
     var parameters: std.ArrayList([]const u8) = .empty;
@@ -32,6 +35,8 @@ pub fn split(arena: std.mem.Allocator, arguments: []const []const u8) Error!Argu
         const argument = arguments[index];
         if (std.mem.eql(u8, argument, "--diff")) {
             diff = true;
+        } else if (std.mem.eql(u8, argument, "--reload")) {
+            reload = true;
         } else if (std.mem.eql(u8, argument, "--config")) {
             index += 1;
             if (index == arguments.len) return error.ConfigWithoutDirectory;
@@ -46,7 +51,7 @@ pub fn split(arena: std.mem.Allocator, arguments: []const []const u8) Error!Argu
             try recorded.append(arena, argument);
         }
     }
-    return .{ .diff = diff, .config = config, .assignments = assignments.items, .parameters = parameters.items, .recorded = recorded.items };
+    return .{ .diff = diff, .reload = reload, .config = config, .assignments = assignments.items, .parameters = parameters.items, .recorded = recorded.items };
 }
 
 /// These arguments with `parameters` in place of the kosmos' parameters (as many, in the same

@@ -29,7 +29,7 @@ const interface = @import("kosm_interface");
 const usage =
     \\usage: kosm init [--config dir]
     \\       kosm new kosmos|app|adapter|frontend|modifier|style|family|package <name> [--language <frontend>] [--config dir]
-    \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--config dir]
+    \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--reload] [--config dir]
     \\       kosm list [<kosmos> | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]
     \\       kosm colors <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]
     \\       kosm current

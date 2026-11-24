@@ -60,6 +60,7 @@ const config_flag: Candidate = .{ .text = "--config", .description = "the config
 const language_flag: Candidate = .{ .text = "--language", .description = "the frontend to write it in; Zig without it" };
 const apply_flags = [_]Candidate{
     .{ .text = "--diff", .description = "print what would change and write nothing" },
+    .{ .text = "--reload", .description = "reload every app, also those whose files did not change" },
     .{ .text = "--set", .description = "set one value of the kosmos: path=value" },
     config_flag,
 };
