@@ -17,6 +17,52 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
+Steps 23a-23k come from a review of kosm with the human (2026-11-24), in the order to take them.
+
+- **23a. Reload only what changed** `PLAN FIRST`
+  - Do: an apply reloads every app even when nothing changed (`hyprctl reload` resets runtime `hyprctl keyword` state, `vicinae server --replace` closes an open launcher, the icon cache is rebuilt), and warns for every program that isn't running. Reload an app only when one of its planned files or links changed (each edit and link has its owner), with `--reload` forcing every one. What a program keeps outside files (gsettings, hyprpaper's wallpaper, `hyprctl setcursor`) still has to be set on every apply, so propose how an app says which part of its reload is that (a second optional function, or a flag on the reloader), and how an app says that a program not running is no failure (`pkill` exiting 1). Changing the test that says a commit reloads every app is agreed.
+  - Done when: an apply changing nothing runs only the always-run part, an apply changing one app's file reloads only that app, `--reload` reloads all, a program that isn't running gives no warning, and tests cover each.
+
+- **23b. `kosm doctor`** `PLAN FIRST`
+  - Do: a program that never includes kosm's file shows no change and no error, the likeliest first-day failure. Propose how an app declares how its file is reached (which file of the program includes it, and the line that does) and how its program is found (a command, a Flatpak id), then add `kosm doctor [kosmos]` printing one line per app: fine, not included (with the exact line to add), or program not found.
+  - Done when: the human agreed on the declaration, doctor reports each case, and a test covers each.
+
+- **23c. Seed files for configs that don't exist yet** `ASK`
+  - Do: a fresh install fails on apps editing a program's main config the machine lacks (qtct, tuios, hyprmouse, wlr-which-key, Vicinae), so the starting kosmos leaves them out by hand. Propose a seed, the least content an app starts such a file from only when it does not exist at all, which goes against the non-goal on inserting keys, so it needs the human's word.
+  - Done when: the human decided, and if agreed, those apps apply on a machine without their configs.
+
+- **23d. Leave out apps whose program is missing** `ASK`
+  - Do: propose a way (a flag, or a per-app choice) to leave out an app whose program isn't installed with a one-line notice, so choosing apps is about what is riced, not what is installed. It builds on how 20a finds installs.
+  - Done when: the human decided, and if agreed, it works and is tested.
+
+- **23e. Suggestions for misspelled fields, tags and parameters**
+  - Do: `--set base.kity.x=1` lists all of `Base`'s fields, while a misspelled kosmos gets "did you mean". Give every "no field", "no tag", "none of" and unknown-parameter message the closest names, falling back to the list when none is close, from tables (`kosm.assign`, `--set`) and script calls alike. Use one edit distance for all of them: `names.zig` and `template.zig` each have their own.
+  - Done when: `--set base.kity.x=1` suggests `kitty`, a far-off name still lists the fields, and tests cover fields, tags and parameters.
+
+- **23f. Lua helpers for writing a kosmos** `ASK`
+  - Do: propose names and forms for: printing a value while writing a kosmos (`kosm.trace(...)`, kosm prints it to stderr with the script's file and line, so the script still does no IO), showing a handle's fields (`kosm.inspect`), copying a handle (`:copy()`, today `color:mix(color, 0)`), a color with some components changed (`color:with({ lightness = 0.7 })`), and reading an optional chain without nil checks at every level.
+  - Done when: the human agreed on the names, each works from Lua, completes, and is tested.
+
+- **23g. `kosm --help`, `kosm help <command>` and `kosm --version`**
+  - Do: `--help` prints "unknown command '--help'". Add the three, `help <command>` printing that command's usage and flags.
+  - Done when: each prints what it should, and the CLI tests cover them.
+
+- **23h. A summary of the diff**
+  - Do: with thousands of files a whole diff is too long to read. Add `--diff --stat`: per app, the files and lines changed, groups as one line as now.
+  - Done when: it prints per app counts that match the full diff, and a test covers it.
+
+- **23i. Review the diff, then commit it** `ASK`
+  - Do: propose `kosm apply -i`: print the diff, ask y/N, then commit the same plan without planning again, so what is committed is what was shown (a program saving a file meanwhile already fails the commit).
+  - Done when: the human agreed, it works, and saying no writes nothing.
+
+- **23j. Completion without waiting for a build**
+  - Do: the first Tab after a change builds the runner, which takes seconds to half a minute. Keep the last completion answer per kosmos in the config's `zig-out` and answer from it while a rebuild runs.
+  - Done when: Tab answers at once after an edit, the answer catches up once the build finished, and a test covers a stale answer being replaced.
+
+- **23k. Say which kosm a build uses once**
+  - Do: "building with the kosm at ..." and Zig's own "info: fork ... matched N kosm packages" print on every command, and may print twice when one command runs two builds (check whether a script kosmos whose base needs its manifest refreshed does). Print them once per command, and only with `-v` or when the kosm used changed since the last command.
+  - Done when: a command running two builds prints them at most once, an unchanged override prints nothing without `-v`, and a CLI test covers it.
+
 - **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
   - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.
   - Done when: the human has agreed on the prompt, and picking a suggestion applies that kosmos, under a test.
