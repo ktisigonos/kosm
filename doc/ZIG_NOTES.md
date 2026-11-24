@@ -77,6 +77,9 @@ When unsure about any std function, grep the std source for its definition befor
 - **Stderr is Io-mediated:** plain `File.writeAll` is gone; use `std.debug.lockStderr(&buf)`, write via `stderr.file_writer.interface`, then `std.debug.unlockStderr()` (which flushes).
 - **No clock functions in `std.time`:** monotonic time is `std.Io.Timestamp.now(io, .awake)`. The `Clock` enum is `real`, `awake`, `boot`, `cpu_process`, `cpu_thread`.
 - **`std.Thread.Mutex` is gone:** the blocking lock is `std.Io.Mutex` (`.init`, `lock(io)` which can return `error.Canceled`, `lockUncancelable(io)`, `unlock(io)`).
+- **`init.gpa` is `std.heap.SafeAllocator` in debug and safe builds:** it never reuses memory, so every large allocation is its own `mmap` and every free a `munmap`; fast and small builds get `c_allocator` (with libc) or `smp_allocator`. Profile release work in `.safe` expecting that cost.
+- **Spreading work over cores is `std.Io.Group`:** `group.async(io, function, args)` per worker, then `group.await(io)`; `Io.Threaded` runs at most cores - 1 tasks on its pool and the rest inline, so one task per core uses them all. `kosm.Output.parallel` wraps it for apps.
+- **`zig build --fork=<path>` panics ("reached unreachable code") when the fork matches two copies of a package** (a config pinning one `kosm_icons` and `kosm_cursor` pinning another). Point the config at the checkout with a relative `.path` dependency in a copy instead.
 - **`std.Io.Writer.Error` is only `error{WriteFailed}`:** helpers that both write and allocate need a combined error set.
 - **`std.Io.Writer.Allocating`:** `Allocating.init(allocator)`, pass `&allocating.writer`, finish with `toOwnedSlice()` (and `deinit` on error paths).
 - **`Reader.takeDelimiterExclusive` leaves stream state unmodified on `error.StreamTooLong`:** retrying immediately loops forever. Drain the line or read bytewise.
