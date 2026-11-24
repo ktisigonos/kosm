@@ -19,6 +19,11 @@ pub const completions_variable = "KOSM_COMPLETIONS";
 /// for `kosm colors`, instead of planning and applying it.
 pub const colors_variable = "KOSM_COLORS";
 
+/// Set by the command line to the token it announced in the state directory's latest-apply
+/// file when `kosm apply` started, so the apply typed last wins, not the one built last. A
+/// runner without it announces one itself.
+pub const apply_token_variable = "KOSM_APPLY_TOKEN";
+
 /// Set by the command line to ask a kosmos' runner which runner applies it: the runner prints
 /// `script_runner` when the kosmos builds on another kosmos, which only the runner of scripts
 /// can build, and nothing otherwise, and applies nothing. The lister prints the name of every

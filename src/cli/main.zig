@@ -205,6 +205,10 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
     const arena = init.arena.allocator();
     // The runner records this path for `kosm current`, which may run from anywhere.
     const config = try configPath(init, command.config, stderr) orelse return 1;
+    const latest = announceApply(init, command, stderr) catch |err| switch (err) {
+        error.Failed => return 1,
+        else => |other| return other,
+    };
     try stderr.flush();
 
     var context = builds.context(init, config, stderr, stderr);
@@ -244,15 +248,26 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
         break :zig try std.mem.concat(arena, []const u8, &.{ &.{runner}, command.runner_arguments, &.{ "--config", config } });
     };
     const runner = runner_arguments[0];
-    const environ = if (command.colors) colors: {
-        const with_colors = try arena.create(std.process.Environ.Map);
-        with_colors.* = try builds.environ.clone(arena);
-        try with_colors.put(interface.colors_variable, "1");
-        break :colors with_colors;
-    } else builds.environ;
+    const environ = try arena.create(std.process.Environ.Map);
+    environ.* = try builds.environ.clone(arena);
+    if (command.colors) try environ.put(interface.colors_variable, "1");
+    if (latest) |mark| try environ.put(interface.apply_token_variable, &mark.token);
     const err = std.process.replace(init.io, .{ .argv = runner_arguments, .environ_map = environ });
     try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
     return 1;
+}
+
+/// Says an apply starts now, before anything is built, so that of two `kosm apply`s the one
+/// typed last wins however long each takes to build. Null when there is nothing to announce:
+/// on `--diff`, for `kosm colors`, and when there is no state directory. `error.Failed` after
+/// saying why on `stderr`.
+fn announceApply(init: std.process.Init, command: Apply, stderr: *std.Io.Writer) !?Record.Latest {
+    if (command.diff or command.colors) return null;
+    const path = try Record.statePath(init.arena.allocator(), init.environ_map, Record.Latest.file_name) orelse return null;
+    return Record.Latest.announce(init.io, path) catch |err| {
+        try stderr.print("error: cannot write {s}, which tells an older apply that this one is newer: {s}\n", .{ path, @errorName(err) });
+        return error.Failed;
+    };
 }
 
 /// Builds the runner of scripts when it is stale; returns whether it is ready. A script is read

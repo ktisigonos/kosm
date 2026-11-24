@@ -9,6 +9,7 @@ const interface = @import("kosm_interface");
 const kosmos_names = @import("kosm_names");
 const Arguments = @import("Arguments.zig");
 const apply_lock = @import("apply_lock.zig");
+const Latest = Record.Latest;
 const bindings = @import("bindings.zig");
 const Runtime = @import("Runtime.zig");
 const colors = @import("colors.zig");
@@ -83,7 +84,7 @@ fn runHere(init: std.process.Init, comptime target: Target) !u8 {
 
     const all_arguments = try init.minimal.args.toSlice(init.arena.allocator());
     const folders: Folders = .{ .config = target.config, .kosmos = target.folder, .named = target.folders };
-    return finishRun(apply(init, kosmos, all_arguments[1..], folders, adapters, &diagnostics, streams, .{}, null), &diagnostics, streams);
+    return finishRun(applyAnnounced(init, kosmos, all_arguments[1..], folders, adapters, &diagnostics, streams), &diagnostics, streams);
 }
 
 /// Runs the script kosmos named by the first process argument, with the rest as `run` takes
@@ -505,10 +506,33 @@ const Layers = struct {
     }
 };
 
+/// `apply` for a kosmos alone in its runner, once it has said it is the newest apply.
+fn applyAnnounced(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []const []const u8, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+    const latest = try announceApply(init, raw_arguments, diagnostics);
+    return apply(init, kosmos, raw_arguments, folders, adapters, diagnostics, streams, .{}, null, latest);
+}
+
+/// Says this apply is the newest before anything is built, so a later apply wins over this one
+/// even when this one takes longer to build: takes the token the command line announced, else
+/// announces one. Null on `--diff`, for `kosm colors`, and when there is no state directory.
+fn announceApply(init: std.process.Init, raw_arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !?Latest {
+    if (init.environ_map.get(interface.colors_variable) != null) return null;
+    // Arguments that do not split are reported once they are read for the apply.
+    const typed = Arguments.split(init.arena.allocator(), raw_arguments) catch return null;
+    if (typed.diff) return null;
+    const path = try Record.statePath(init.arena.allocator(), init.environ_map, Latest.file_name) orelse return null;
+    if (init.environ_map.get(interface.apply_token_variable)) |token| {
+        return Latest.adopt(path, token) orelse
+            fail(diagnostics, "{s} is '{s}', which is no token the command line announced; it is {d} hex digits", .{ interface.apply_token_variable, token, Latest.token_length });
+    }
+    return Latest.announce(init.io, path) catch |err|
+        fail(diagnostics, "cannot write {s}, which tells an older apply that this one is newer: {s}", .{ path, @errorName(err) });
+}
+
 /// Calls `kosmos` with the command line's parameters on top of `layers.params`, assigns
 /// `layers.overrides`, then the `--set`s, and plans and delivers the tree.
 /// `kosmoi` builds the kosmoi its `Params` name, in the runner of scripts.
-fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []const []const u8, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, layers: Layers, kosmoi: ?kosmos_call.Builder) !void {
+fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []const []const u8, folders: Folders, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, layers: Layers, kosmoi: ?kosmos_call.Builder, latest: ?Latest) !void {
     const arena = init.arena.allocator();
     const arguments = try readArguments(init, ParamsOf(kosmos), raw_arguments, diagnostics);
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
@@ -525,7 +549,7 @@ fn apply(init: std.process.Init, comptime kosmos: anytype, raw_arguments: []cons
     // are dead now that it returned.
     try kosmos_call.refuseDeadLists(arena, tree, &.{ .below(@intFromPtr(&tree)), kosmos_stack }, diagnostics);
     try assignOverrides(arena, &tree, layers.overrides, diagnostics);
-    try finish(init, &tree, arguments, home, adapters, diagnostics, streams);
+    try finish(init, &tree, arguments, home, adapters, diagnostics, streams, latest);
 }
 
 /// Assigns each of `overrides` in `tree`, the lowest script's first.
@@ -539,6 +563,7 @@ fn assignOverrides(arena: std.mem.Allocator, tree: anytype, overrides: []const k
 /// Reads the script kosmos `diagnostics.kosmos` and applies it on what it builds on.
 fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_arguments: []const []const u8, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const arena = init.arena.allocator();
+    const latest = try announceApply(init, raw_arguments, diagnostics);
     const adapters = comptime discovery.adapters(target.adapter_sources);
     var runtime = try scriptRuntime(init, target, raw_arguments, streams.stderr, diagnostics);
     runtime.kosmoi = KosmosBuilder(target).of(&runtime);
@@ -553,23 +578,23 @@ fn applyScript(init: std.process.Init, comptime target: ScriptTarget, raw_argume
         if (!is_script and std.mem.eql(u8, diagnostics.kosmos, entry.name)) {
             try runtime.building.enter(arena, entry.name, diagnostics);
             const folders: Folders = .{ .config = target.config, .kosmos = entry.folder, .named = target.folders };
-            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, .{}, runtime.kosmoi);
+            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, .{}, runtime.kosmoi, latest);
         }
     }
     const chain = try resolveScript(target, &runtime, diagnostics.kosmos, diagnostics);
     if (chain.tree) |tree| {
         inline for (comptime treeTypes(target.kosmoi)) |Tree| {
-            if (tree.as(Tree)) |built| return applyBuilt(init, built.*, raw_arguments, adapters, diagnostics, streams, chain.scripts);
+            if (tree.as(Tree)) |built| return applyBuilt(init, built.*, raw_arguments, adapters, diagnostics, streams, chain.scripts, latest);
         }
         return notATree(diagnostics, chain.scripts[0].path, tree);
     }
-    const base = chain.base orelse return applyStandalone(init, target, raw_arguments, adapters, diagnostics, streams, chain.scripts);
+    const base = chain.base orelse return applyStandalone(init, target, raw_arguments, adapters, diagnostics, streams, chain.scripts, latest);
     const layers = try Layers.of(arena, chain.scripts);
     inline for (comptime kosmos_call.zigKosmoi(target.kosmoi)) |entry| {
         if (std.mem.eql(u8, base, entry.name)) {
             try runtime.building.enter(arena, entry.name, diagnostics);
             const folders: Folders = .{ .config = target.config, .kosmos = entry.folder, .named = target.folders };
-            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, layers, runtime.kosmoi);
+            return apply(init, @field(entry.Namespace, entry.function), raw_arguments, folders, adapters, diagnostics, streams, layers, runtime.kosmoi, latest);
         }
     }
     return unknownBase(target, &runtime, chain.scripts, base, diagnostics);
@@ -689,7 +714,7 @@ fn notATree(diagnostics: *kosm.Diagnostics, path: []const u8, tree: kosm.Fronten
 
 /// Applies `tree`, which the lowest of `scripts` built by calling Zig code, with the overrides
 /// of the scripts above it and the command line's `--set`s.
-fn applyBuilt(init: std.process.Init, tree: anytype, raw_arguments: []const []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, scripts: []const script.Loaded) !void {
+fn applyBuilt(init: std.process.Init, tree: anytype, raw_arguments: []const []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, scripts: []const script.Loaded, latest: ?Latest) !void {
     const arena = init.arena.allocator();
     const arguments = try readArguments(init, struct {}, raw_arguments, diagnostics);
     if (arguments.parameters.len != 0)
@@ -702,12 +727,12 @@ fn applyBuilt(init: std.process.Init, tree: anytype, raw_arguments: []const []co
     var built = tree;
     try assignOverrides(arena, &built, layers.overrides, diagnostics);
     const home = init.environ_map.get("HOME") orelse return fail(diagnostics, "HOME is not set, so ~ cannot be expanded", .{});
-    try finish(init, &built, arguments, home, adapters, diagnostics, streams);
+    try finish(init, &built, arguments, home, adapters, diagnostics, streams, latest);
 }
 
 /// Builds the tree of a kosmos with no Zig kosmos below it from its scripts alone, then
 /// plans and delivers it.
-fn applyStandalone(init: std.process.Init, comptime target: ScriptTarget, raw_arguments: []const []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, scripts: []const script.Loaded) !void {
+fn applyStandalone(init: std.process.Init, comptime target: ScriptTarget, raw_arguments: []const []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, scripts: []const script.Loaded, latest: ?Latest) !void {
     const Tree = discovery.Standalone(target.apps);
     const Build = struct {
         fn build(arena: std.mem.Allocator, given: []const script.Loaded, build_diagnostics: *kosm.Diagnostics) script.Error!Tree {
@@ -726,7 +751,7 @@ fn applyStandalone(init: std.process.Init, comptime target: ScriptTarget, raw_ar
         error.OutOfMemory => return error.OutOfMemory,
     };
     try kosmos_call.refuseDeadLists(arena, tree, &.{stack}, diagnostics);
-    try finish(init, &tree, arguments, home, adapters, diagnostics, streams);
+    try finish(init, &tree, arguments, home, adapters, diagnostics, streams, latest);
 }
 
 /// Sorts the runner's arguments, with the relative paths of `Params`' files and images made
@@ -743,8 +768,9 @@ fn readArguments(init: std.process.Init, comptime Params: type, raw_arguments: [
     return typed.withParameters(arena, try params.absolutePaths(Params, arena, working_directory, typed.parameters));
 }
 
-/// Assigns the `--set`s inside `tree`, a pointer to the built tree, then plans and delivers it.
-fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+/// Assigns the `--set`s inside `tree`, a pointer to the built tree, then plans and delivers it,
+/// unless an apply newer than `latest` started.
+fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams, latest: ?Latest) !void {
     const arena = init.arena.allocator();
     for (arguments.assignments) |assignment| set.assign(arena, tree, assignment, diagnostics) catch |err| switch (err) {
         error.InvalidAssignment => return error.Reported,
@@ -753,8 +779,8 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
     if (init.environ_map.get(interface.colors_variable) != null) return showColors(tree.*, diagnostics, streams);
 
     const lock = if (arguments.diff) null else try lockApply(init, diagnostics, streams.stderr);
-    defer if (lock) |held| held.file.close(init.io);
-    if (lock) |held| if (!held.latest.isNewest(init.io)) return report.superseded(streams.stderr);
+    defer if (lock) |file| file.close(init.io);
+    if (latest) |mark| if (!mark.isNewest(init.io)) return report.superseded(streams.stderr);
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
     var warnings: kosm.Warnings = .init(arena);
@@ -768,32 +794,21 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         .diff = arguments.diff,
         .reload_all = arguments.reload,
         .recording = try recording(arena, init.environ_map, diagnostics.kosmos, arguments),
-        .latest = if (lock) |held| held.latest else null,
+        .latest = latest,
         .diagnostics = diagnostics,
         .streams = streams,
     });
 }
 
-/// The lock an apply holds, and the mark telling whether a newer apply started since.
-const HeldLock = struct {
-    file: std.Io.File,
-    latest: apply_lock.Latest,
-};
-
-/// Says this apply is the newest, then waits for any other apply to finish and holds the lock
-/// until its file is closed, so the files this one plans are not changed by it meanwhile. Null
-/// when there is no state directory to keep the lock in.
-fn lockApply(init: std.process.Init, diagnostics: *kosm.Diagnostics, stderr: *std.Io.Writer) !?HeldLock {
-    const arena = init.arena.allocator();
-    const latest_path = try Record.statePath(arena, init.environ_map, apply_lock.latest_file_name) orelse return null;
-    const latest = apply_lock.Latest.announce(init.io, latest_path) catch |err|
-        return fail(diagnostics, "cannot write {s}, which tells an older apply that this one is newer: {s}", .{ latest_path, @errorName(err) });
-    const path = try Record.statePath(arena, init.environ_map, apply_lock.file_name) orelse return null;
-    const file = apply_lock.acquire(init.io, path, stderr) catch |err| switch (err) {
+/// Waits for any other apply to finish and holds the lock until the returned file is closed,
+/// so the files this one plans are not changed by it meanwhile. Null when there is no state
+/// directory to keep the lock in.
+fn lockApply(init: std.process.Init, diagnostics: *kosm.Diagnostics, stderr: *std.Io.Writer) !?std.Io.File {
+    const path = try Record.statePath(init.arena.allocator(), init.environ_map, apply_lock.file_name) orelse return null;
+    return apply_lock.acquire(init.io, path, stderr) catch |err| switch (err) {
         error.WriteFailed => return error.WriteFailed,
         else => return fail(diagnostics, "cannot lock {s} against another apply: {s}", .{ path, @errorName(err) }),
     };
-    return .{ .file = file, .latest = latest };
 }
 
 /// Prints every theme in `tree`, for `kosm colors`, or fails when it holds none.
@@ -899,7 +914,7 @@ const Delivery = struct {
     /// Saved after a successful commit; null records nothing.
     recording: ?Recording,
     /// Tells whether a newer apply started, which makes this one write nothing; null never does.
-    latest: ?apply_lock.Latest = null,
+    latest: ?Latest = null,
     diagnostics: *kosm.Diagnostics,
     streams: Streams,
 };
@@ -1121,9 +1136,9 @@ test "an apply that a newer one started after writes and reloads nothing" {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
     const tree = .{ .kitty = ReloadingApp{ .file = "~/a.lines", .reloads = &reloads } };
-    const latest_path = try std.Io.Dir.path.join(arena.allocator(), &.{ home, "state", apply_lock.latest_file_name });
-    const nord = try apply_lock.Latest.announce(testing.io, latest_path);
-    _ = try apply_lock.Latest.announce(testing.io, latest_path);
+    const latest_path = try std.Io.Dir.path.join(arena.allocator(), &.{ home, "state", Latest.file_name });
+    const nord = try Latest.announce(testing.io, latest_path);
+    _ = try Latest.announce(testing.io, latest_path);
 
     var plan: kosm.Plan = .init(testing.allocator, testing.io);
     defer plan.deinit();

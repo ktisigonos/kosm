@@ -4,6 +4,9 @@ const Record = @This();
 
 const std = @import("std");
 
+/// The mark telling an apply whether a newer one started since.
+pub const Latest = @import("Latest.zig");
+
 /// The kosmos as typed: "frost" or "frost.iced".
 kosmos: []const u8,
 /// Its parameters and `--set`s, in the order typed; never `--diff` or `--config`.
@@ -100,6 +103,10 @@ fn isPlainShellCharacter(character: u8) bool {
 }
 
 const testing = std.testing;
+
+test {
+    _ = Latest;
+}
 
 test "path prefers an absolute XDG_STATE_HOME and falls back to HOME" {
     var environ: std.process.Environ.Map = .init(testing.allocator);
