@@ -124,6 +124,28 @@ pub fn withAlpha(color: Color, alpha: f64) Color {
     return result;
 }
 
+/// The components `with` changes; each left null keeps the color's own.
+pub const Changes = struct {
+    /// OKLCH lightness, 0 (black) to 1 (white).
+    lightness: ?f64 = null,
+    /// OKLCH chroma, 0 for a gray.
+    chroma: ?f64 = null,
+    /// Hue in degrees; any angle, wrapped into 0..360.
+    hue: ?f64 = null,
+    /// Opacity, 0 (transparent) to 1 (opaque).
+    alpha: ?f64 = null,
+};
+
+/// The same color with the components `changes` gives: `color.with(.{ .lightness = 0.7 })`.
+pub fn with(color: Color, changes: Changes) Color {
+    return .{
+        .lightness = changes.lightness orelse color.lightness,
+        .chroma = changes.chroma orelse color.chroma,
+        .hue = if (changes.hue) |hue| wrapHue(hue) else color.hue,
+        .alpha = changes.alpha orelse color.alpha,
+    };
+}
+
 /// WCAG 2 relative luminance, 0..1, from the color clipped to sRGB. Ignores alpha.
 pub fn luminance(color: Color) f64 {
     const rgb = color.toRgb();
@@ -544,6 +566,14 @@ test "mix with a gray keeps the colored side's hue" {
     try testing.expectEqual(250.0, gray.mix(blue, 0.5).hue);
     try testing.expectEqual(250.0, blue.mix(gray, 0.5).hue);
     try testing.expectApproxEqAbs(0.05, blue.mix(gray, 0.5).chroma, 1e-12);
+}
+
+test "with changes only the components it is given, and wraps the hue" {
+    const color: Color = .{ .lightness = 0.5, .chroma = 0.1, .hue = 200, .alpha = 0.8 };
+    try std.testing.expectEqual(color, color.with(.{}));
+    try std.testing.expectEqual(Color{ .lightness = 0.7, .chroma = 0.1, .hue = 200, .alpha = 0.8 }, color.with(.{ .lightness = 0.7 }));
+    try std.testing.expectEqual(Color{ .lightness = 0.5, .chroma = 0, .hue = 10, .alpha = 1 }, color.with(.{ .chroma = 0, .hue = 370, .alpha = 1 }));
+    try std.testing.expectEqual(350, color.with(.{ .hue = -10 }).hue);
 }
 
 test "contrast ratio of black on white is 21" {

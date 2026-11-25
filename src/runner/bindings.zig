@@ -118,7 +118,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                 if (try builder.sources.module(module)) |root| try builder.sources.containerDoc(root) else null
             else if (try builder.sources.declarationPath(module, path)) |found| found.doc else null;
             try described.append(arena, .{ .name = name, .doc = doc, .functions = functions.items, .values = values.items });
-            if (record) |record_name| builder.addMethods(record_name, methods.items);
+            if (record) |record_name| try builder.addMethods(record_name, methods.items);
         }
 
         fn NamespaceOf(comptime Space: type, comptime name: []const u8, comptime depth: usize) type {
@@ -493,11 +493,16 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
             return names;
         }
 
-        /// The functions declared in `T` taking a `T` (or a pointer to one) first.
+        /// The functions declared in `T` taking a `T` (or a pointer to one) first, and `copy`
+        /// for a value that is not a service, unless `T` declares its own.
         fn methodsOf(comptime T: type) []const Function {
             @setEvalBranchQuota(branch_quota);
-            if (comptime !hasDecls(T)) return &.{};
-            comptime var methods: []const Function = &.{};
+            const copies = comptime !isService(T) and !(hasDecls(T) and @hasDecl(T, copy_name));
+            comptime var methods: []const Function = if (copies) &.{copyMethod(T)} else &.{};
+            if (comptime !hasDecls(T)) {
+                const final = methods[0..methods.len].*;
+                return &final;
+            }
             inline for (comptime declNames(T)) |decl_name| {
                 const decl = @field(T, decl_name);
                 const Declared = @TypeOf(decl);
@@ -507,6 +512,20 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
             }
             const final = methods[0..methods.len].*;
             return &final;
+        }
+
+        /// `value:copy()`: a deep copy of a value a script holds, which it may change without
+        /// changing the original.
+        fn copyMethod(comptime T: type) Function {
+            const full = nameOf(T) ++ "." ++ copy_name;
+            const Wrapper = struct {
+                fn call(given: *Call, arguments: []const Loose) Call.Error!Loose {
+                    if (arguments.len != 1) return given.fail("{s} takes no arguments, got {d}", .{ full, arguments.len -| 1 });
+                    const value = try argument(*T, given, arguments[0], full, 1);
+                    return owned(T, given, value.*);
+                }
+            };
+            return .{ .name = copy_name, .call = Wrapper.call };
         }
 
         /// "has no field", suggesting the fields close to `name`, or else listing them all.
@@ -595,6 +614,9 @@ fn isRunByKosm(comptime T: type, comptime name: []const u8) bool {
 fn isColorScript(comptime T: type) bool {
     return T == kosm.Frontend.ScriptModifier or T == kosm.Frontend.ScriptStyle or T == kosm.Frontend.ScriptFamily;
 }
+
+/// The method every value a script holds has, but a service: a deep copy of it.
+pub const copy_name = "copy";
 
 /// Values a script holds only to call their methods (an app's output, the files it edits, its
 /// reloader): kosm's own writers, which hold an allocator or `Io` and so are no data.
@@ -962,6 +984,40 @@ test "a declared value is a fresh copy each time, whose lists change apart from 
     try testing.expectEqualStrings("de", first.value.handle.as(test_package.App).?.layouts[0].layout);
 }
 
+test "copy gives a value whose fields and lists change apart from the original" {
+    var script: Script = undefined;
+    script.init();
+    defer script.deinit();
+    const original = try script.callAt(&.{ "test_package", "default" }, &.{});
+    const copy = try script.run(original.value.handle.type.method("copy").?, &.{original});
+    try script.set(copy, .{ .field = "size" }, .{ .integer = 9 });
+    try script.set(try script.get(try script.get(copy, .{ .field = "layouts" }), .{ .item = 0 }), .{ .field = "layout" }, .{ .string = "rs" });
+    const kept = original.value.handle.as(test_package.App).?;
+    try testing.expectEqual(3, kept.size);
+    try testing.expectEqualStrings("us", kept.layouts[0].layout);
+    try testing.expectEqualStrings("rs", copy.value.handle.as(test_package.App).?.layouts[0].layout);
+    const layouts = try script.get(original, .{ .field = "layouts" });
+    const layouts_copy = try script.run(layouts.value.handle.type.method("copy").?, &.{layouts});
+    try testing.expectEqual(1, layouts_copy.value.handle.type.length(layouts_copy.value.handle.pointer));
+    try script.expectFailure(script.run(original.value.handle.type.method("copy").?, &.{ original, original }), "test_package.App.copy takes no arguments, got 1");
+}
+
+test "a color's with changes the components it is given" {
+    var script: Script = undefined;
+    script.init();
+    defer script.deinit();
+    const app = try script.callAt(&.{ "test_package", "from" }, &.{try script.theme()});
+    const background = try script.get(app, .{ .field = "background" });
+    const with = background.value.handle.type.method("with").?;
+    const changes: Loose = .{ .value = .{ .table = &.{.{ .key = "lightness", .value = .{ .value = .{ .float = 0.7 } } }} } };
+    const lighter = try script.run(with, &.{ background, changes });
+    const color = lighter.value.handle.as(kosm.Color).?;
+    try testing.expectEqual(0.7, color.lightness);
+    try testing.expectEqual(background.value.handle.as(kosm.Color).?.hue, color.hue);
+    const typo: Loose = .{ .value = .{ .table = &.{.{ .key = "lightnes", .value = .{ .value = .{ .float = 0.7 } } }} } };
+    try script.expectFailure(script.run(with, &.{ background, typo }), "kosm.Color.with: argument 2: no field 'lightnes'; did you mean 'lightness'?");
+}
+
 test "a handle given as an argument or a field's value is copied" {
     var script: Script = undefined;
     script.init();
@@ -1000,11 +1056,14 @@ test "completion describes the namespaces, their functions and values, and recor
     try testing.expectEqualStrings("test_package.App", package.values[0].type.?.namespace);
     const completion: kosm.Frontend.Completion = .{ .records = builder.records.items, .kosmoi = &.{}, .standalone = "", .theme = "" };
     const app = completion.find("test_package.App").?;
-    try testing.expectEqual(2, app.methods.len);
-    try testing.expectEqualStrings("grown", app.methods[0].name);
+    try testing.expectEqual(3, app.methods.len);
+    try testing.expectEqualStrings("copy", app.methods[0].name);
+    try testing.expectEqualStrings("test_package.App", app.methods[0].result.?.record);
+    try testing.expectEqualStrings("grown", app.methods[1].name);
     // Named by its declaration though a function declared before it takes one.
     const output = completion.find("kosm.Output").?;
     try testing.expect(for (output.methods) |method| {
         if (std.mem.eql(u8, method.name, "generateValue")) break true;
     } else false);
+    for (output.methods) |method| try testing.expect(!std.mem.eql(u8, method.name, "copy"));
 }

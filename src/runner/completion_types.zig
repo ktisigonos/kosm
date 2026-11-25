@@ -4,6 +4,7 @@
 const std = @import("std");
 const kosm = @import("kosm");
 const Sources = @import("Sources.zig");
+const bindings = @import("bindings.zig");
 
 const Completion = kosm.Frontend.Completion;
 pub const Error = std.mem.Allocator.Error;
@@ -18,6 +19,13 @@ pub const Kosmos = struct {
     path: []const []const u8,
     function: type,
 };
+
+fn declares(methods: []const Completion.Function, name: []const u8) bool {
+    for (methods) |method| {
+        if (std.mem.eql(u8, method.name, name)) return true;
+    }
+    return false;
+}
 
 /// Builds the records of every type below the given ones, each once.
 pub const Builder = struct {
@@ -40,6 +48,7 @@ pub const Builder = struct {
             .name = name,
             .doc = if (container) |known| try builder.sources.containerDoc(known) else null,
             .fields = &.{},
+            .methods = if (bindings.isService(T)) &.{} else try builder.copyMethod(name),
         });
         // Fields are described after the record is known, so a type holding itself ends.
         const fields = try builder.fieldsOf(T, name, container);
@@ -61,7 +70,7 @@ pub const Builder = struct {
             }
         }
         const unique_name = try builder.unique(name);
-        try builder.records.append(builder.arena, .{ .name = unique_name, .fields = fields.items });
+        try builder.records.append(builder.arena, .{ .name = unique_name, .fields = fields.items, .methods = try builder.copyMethod(unique_name) });
         return unique_name;
     }
 
@@ -130,11 +139,29 @@ pub const Builder = struct {
         return .{ .name = name, .doc = if (declared) |found| found.doc else null, .parameters = parameters.items, .result = result };
     }
 
-    /// Gives the record named `name` `methods`.
-    pub fn addMethods(builder: *Builder, name: []const u8, methods: []const Completion.Function) void {
+    /// Gives the record named `name` `methods` too, after the `copy` it may have; one of them
+    /// named `copy` replaces that one, as a type's own `copy` does.
+    pub fn addMethods(builder: *Builder, name: []const u8, methods: []const Completion.Function) Error!void {
         for (builder.records.items) |*described| {
-            if (std.mem.eql(u8, described.name, name)) described.methods = methods;
+            if (!std.mem.eql(u8, described.name, name)) continue;
+            var combined: std.ArrayList(Completion.Function) = .empty;
+            for (described.methods) |method| {
+                if (!std.mem.eql(u8, method.name, bindings.copy_name) or !declares(methods, bindings.copy_name)) try combined.append(builder.arena, method);
+            }
+            try combined.appendSlice(builder.arena, methods);
+            described.methods = combined.items;
         }
+    }
+
+    /// `value:copy()`, as the record named `name` gives it.
+    fn copyMethod(builder: *Builder, name: []const u8) Error![]const Completion.Function {
+        const parameters = try builder.arena.dupe(Completion.Field, &.{.{ .name = "self", .type = .{ .record = name } }});
+        return builder.arena.dupe(Completion.Function, &.{.{
+            .name = bindings.copy_name,
+            .doc = "A copy of this value, which can be changed without changing the original.",
+            .parameters = parameters,
+            .result = .{ .record = name },
+        }});
     }
 
     /// What a field of type `T` takes; null for a type a script cannot set, which is left out.
