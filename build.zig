@@ -113,7 +113,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     // The command line only drives zig build and the runner; it imports nothing but kosm_current,
-    // kosm_interface, kosm_names and what kosm init writes.
+    // kosm_interface, kosm_names, kosm_suggestion and what kosm init writes.
     const cli_module = b.createModule(.{
         .root_source_file = b.path("src/cli/main.zig"),
         .target = target,
@@ -122,6 +122,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "kosm_current", .module = current_module },
             .{ .name = "kosm_interface", .module = interface_module },
             .{ .name = "kosm_names", .module = names_module },
+            .{ .name = "kosm_suggestion", .module = suggestion_module },
             .{ .name = "kosm_package", .module = packageOptions(b, network_tests).createModule() },
         },
     });
@@ -151,13 +152,14 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&cli_tests.step);
 }
 
-/// What the command line knows about kosm as a package: what `kosm init` fetches and writes,
-/// the fingerprint tests give a stub kosm, and whether tests may use the network.
+/// What the command line knows about kosm as a package: its version, what `kosm init` fetches
+/// and writes, the fingerprint tests give a stub kosm, and whether tests may use the network.
 fn packageOptions(b: *std.Build, network_tests: bool) *std.Build.Step.Options {
     const options = b.addOptions();
     options.addOption(bool, "network_tests", network_tests);
     options.addOption([]const u8, "repositories", repositories);
     options.addOption([]const []const u8, "official_packages", &official_packages);
+    options.addOption([]const u8, "version", @import("build.zig.zon").version);
     options.addOption([]const u8, "minimum_zig_version", @import("build.zig.zon").minimum_zig_version);
     options.addOption(u64, "fingerprint", @import("build.zig.zon").fingerprint);
     return options;

@@ -9,6 +9,7 @@ const manifest = @import("manifest.zig");
 const interface = @import("kosm_interface");
 const scripts = @import("scripts.zig");
 const known_kosmoi = @import("known_kosmoi.zig");
+const help = @import("help.zig");
 
 pub const Error = std.mem.Allocator.Error || std.Io.Writer.Error;
 
@@ -18,29 +19,8 @@ const Candidate = struct {
     description: []const u8,
 };
 
-const commands = [_]Candidate{
-    .{ .text = "init", .description = "create what a config project is missing" },
-    .{ .text = "new", .description = "scaffold a kosmos, app, adapter, frontend, color script or package" },
-    .{ .text = "apply", .description = "apply a kosmos" },
-    .{ .text = "list", .description = "list kosmoi and packages" },
-    .{ .text = "colors", .description = "show the colors a kosmos wears" },
-    .{ .text = "current", .description = "print the last apply as a command" },
-    .{ .text = "source", .description = "choose the kosm sources builds use" },
-    .{ .text = "add", .description = "install a package from a url" },
-    .{ .text = "remove", .description = "remove a package" },
-    .{ .text = "update", .description = "fetch packages again" },
-    .{ .text = "clean", .description = "delete caches and unused package versions" },
-    .{ .text = "build", .description = "compile every kosmos, so applies start at once" },
-    .{ .text = "completions", .description = "print a shell's completion script" },
-    .{ .text = "relay", .description = "forward a file to a browser extension" },
-};
-const list_flags = [_]Candidate{
-    .{ .text = "--kosmoi", .description = "list only kosmoi" },
-    .{ .text = "--apps", .description = "list only apps" },
-    .{ .text = "--adapters", .description = "list only adapters" },
-    .{ .text = "--frontends", .description = "list only frontends" },
-    .{ .text = "--packages", .description = "list only packages" },
-};
+const commands = candidatesOf(&help.commands);
+const list_flags = flagCandidates(&help.list_flags);
 const kinds = [_]Candidate{
     .{ .text = "kosmos", .description = "a rice" },
     .{ .text = "app", .description = "support for one program" },
@@ -56,19 +36,23 @@ const shells = [_]Candidate{
     .{ .text = "bash", .description = "completions for bash" },
     .{ .text = "zsh", .description = "completions for zsh" },
 };
-const config_flag: Candidate = .{ .text = "--config", .description = "the config project's directory" };
-const language_flag: Candidate = .{ .text = "--language", .description = "the frontend to write it in; Zig without it" };
-const apply_flags = [_]Candidate{
-    .{ .text = "--diff", .description = "print what would change and write nothing" },
-    .{ .text = "--reload", .description = "reload every app, also those whose files did not change" },
-    .{ .text = "--set", .description = "set one value of the kosmos: path=value" },
-    config_flag,
-};
+const config_flag = flagCandidates(&.{help.config_flag})[0];
+const language_flag = flagCandidates(&.{help.language_flag})[0];
+const default_flag = flagCandidates(&.{help.default_flag})[0];
+const apply_flags = flagCandidates(&help.apply_flags);
+const build_flags = flagCandidates(&help.build_flags);
 
-const build_flags = [_]Candidate{
-    .{ .text = "--except", .description = "build every kosmos but the ones named after it" },
-    .{ .text = "--all", .description = "build every kosmos in kosmoi/, whatever kosm.zon says" },
-};
+fn candidatesOf(comptime from: []const help.Command) [from.len]Candidate {
+    var made: [from.len]Candidate = undefined;
+    for (from, &made) |command, *candidate| candidate.* = .{ .text = command.name, .description = command.summary };
+    return made;
+}
+
+fn flagCandidates(comptime from: []const help.Flag) [from.len]Candidate {
+    var made: [from.len]Candidate = undefined;
+    for (from, &made) |flag, *candidate| candidate.* = .{ .text = flag.name, .description = flag.meaning };
+    return made;
+}
 
 /// What `addConfigProject` installs for `-Dkosmos=...`.
 const runner_path = "zig-out/bin/kosmos";
@@ -86,7 +70,8 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
 
     if (std.mem.eql(u8, command, "new")) return completeNew(context, before, previous, current);
     if (std.mem.eql(u8, command, "completions")) return if (before.len == 0) writeAll(context.stdout, &shells);
-    if (std.mem.eql(u8, command, "source")) return if (before.len == 0) writeAll(context.stdout, &.{.{ .text = "--default", .description = "use the installed sources again" }});
+    if (std.mem.eql(u8, command, "source")) return if (before.len == 0) writeAll(context.stdout, &.{default_flag});
+    if (std.mem.eql(u8, command, "help")) return if (before.len == 0) writeAll(context.stdout, &commands);
     if (std.mem.eql(u8, command, "current")) return;
     // A file, which each shell completes itself.
     if (std.mem.eql(u8, command, "relay")) return;
@@ -321,6 +306,8 @@ test "the first word completes to the commands, and new, completions and source 
     try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "completions", "f" }), "fish\t");
     try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "source", "" }), "--default\t");
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "current", "" }));
+    try testing.expectEqualStrings(first, try testComplete(arena.allocator(), config, &.{ "help", "" }));
+    try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "help", "apply", "" }));
 }
 
 test "a directory after --config is left to the shell, and a flag being typed gets --config" {

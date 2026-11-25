@@ -31,11 +31,6 @@ Steps 23b-23k come from a review of kosm with the human (2026-11-24), in the ord
   - Do: propose a way (a flag, or a per-app choice) to leave out an app whose program isn't installed with a one-line notice, so choosing apps is about what is riced, not what is installed. It builds on how 20a finds installs.
   - Done when: the human decided, and if agreed, it works and is tested.
 
-- **23g. `kosm --help`, `kosm help <command>` and `kosm --version`**
-  - Do: `--help` prints "unknown command '--help'". Add the three, `help <command>` printing that command's usage and flags.
-  - Do: a misspelled command (`kosm updae`) fails in one line suggesting the closest commands through `suggestion.zig` (`unknown command 'updae'; did you mean 'update'?`), instead of printing the whole usage; with nothing close it names `kosm help`.
-  - Done when: each prints what it should, a misspelled command suggests the right one, and the CLI tests cover them.
-
 - **23h. A summary of the diff**
   - Do: with thousands of files a whole diff is too long to read. Add `--diff --stat`: per app, the files and lines changed, groups as one line as now.
   - Done when: it prints per app counts that match the full diff, and a test covers it.
@@ -53,7 +48,7 @@ Steps 23b-23k come from a review of kosm with the human (2026-11-24), in the ord
   - Done when: a command running two builds prints them at most once, an unchanged override prints nothing without `-v`, and a CLI test covers it.
 
 - **21l. Pick a suggestion for a misspelled command or kosmos** `ASK` (later)
-  - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered, picked by typing its number (the human prefers 1/2/3 over letters), and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too. A misspelled command (23g's suggestion) offers its fix through the same prompt, so `kosm appy pesonal` can offer `apply`, then `personal`, and run it.
+  - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered, picked by typing its number (the human prefers 1/2/3 over letters), and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too. A misspelled command, which suggests the closest commands, offers its fix through the same prompt, so `kosm appy pesonal` can offer `apply`, then `personal`, and run it.
   - Done when: the human has agreed on the prompt, and picking a suggestion applies that kosmos, under a test.
 
 - **18h. Equibop theme** (waits on the human)

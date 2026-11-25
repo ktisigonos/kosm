@@ -25,24 +25,8 @@ const relay_command = @import("relay.zig");
 const Sources = @import("Sources.zig");
 const Settings = @import("Settings.zig");
 const interface = @import("kosm_interface");
-
-const usage =
-    \\usage: kosm init [--config dir]
-    \\       kosm new kosmos|app|adapter|frontend|modifier|style|family|package <name> [--language <frontend>] [--config dir]
-    \\       kosm apply <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--reload] [--config dir]
-    \\       kosm list [<kosmos> | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]
-    \\       kosm colors <kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]
-    \\       kosm current
-    \\       kosm source [<dir> | --default]
-    \\       kosm add <url>[#ref] [--config dir]
-    \\       kosm remove <name> [--config dir]
-    \\       kosm update [name] [--config dir]
-    \\       kosm clean [--config dir]
-    \\       kosm build [<kosmos>... | --except <kosmos>... | --all] [--config dir]
-    \\       kosm completions fish|bash|zsh
-    \\       kosm relay <file>
-    \\
-;
+const help = @import("help.zig");
+const kosm_package = @import("kosm_package");
 
 /// Where the config project lives unless `--config` says otherwise, under $HOME.
 const default_config = ".config/kosm";
@@ -60,7 +44,11 @@ pub fn main(init: std.process.Init) !u8 {
     const command = Command.parse(arena, arguments[1..]) catch |err| {
         switch (err) {
             error.NoCommand => {},
-            error.UnknownCommand => try stderr.interface.print("error: unknown command '{s}'\n", .{arguments[1]}),
+            error.UnknownCommand => {
+                try stderr.interface.writeAll("error: ");
+                try help.writeUnknown(&stderr.interface, arguments[1]);
+                return 1;
+            },
             error.MissingKosmos => try stderr.interface.print("error: kosm {s} needs a kosmos, e.g. kosm {s} frost\n", .{ arguments[1], arguments[1] }),
             error.MissingConfigDirectory => try stderr.interface.writeAll("error: --config needs a directory\n"),
             error.MissingArgument, error.UnexpectedArgument => try stderr.interface.print("error: kosm {s} takes {s}\n", .{ arguments[1], expectedArguments(arguments[1]) }),
@@ -69,10 +57,12 @@ pub fn main(init: std.process.Init) !u8 {
             error.ConfigNotRead => try stderr.interface.print("error: kosm {s} reads no config project, so it takes no --config\n", .{arguments[1]}),
             error.OutOfMemory => return error.OutOfMemory,
         }
-        try stderr.interface.writeAll(usage);
+        try help.writeUsage(&stderr.interface);
         return 1;
     };
     switch (command) {
+        .help => |name| return printHelp(init, name, &stderr.interface),
+        .version => return printVersion(init),
         .current => return printCurrent(init, &stderr.interface),
         .source => |directory| return source_command.source(init, directory, &stderr.interface),
         .completions => |shell| return printCompletions(init, shell),
@@ -88,7 +78,7 @@ pub fn main(init: std.process.Init) !u8 {
         .add, .remove, .update, .clean => |config_command| return runConfigCommand(init, builds, command, config_command, &stderr.interface),
         .list => |list| return runList(init, builds, list, &stderr.interface),
         .complete => |words| return runComplete(init, builds, words),
-        .current, .source, .completions, .relay => unreachable, // Handled above.
+        .help, .version, .current, .source, .completions, .relay => unreachable, // Handled above.
     }
 }
 
@@ -144,6 +134,7 @@ fn expectedArguments(command: []const u8) []const u8 {
     if (std.mem.eql(u8, command, "new")) return "a kind and a name, e.g. kosm new app my_bar";
     if (std.mem.eql(u8, command, "source")) return "at most one directory, or --default";
     if (std.mem.eql(u8, command, "relay")) return "one file, e.g. kosm relay ~/.local/share/kosm/firefox/values.json";
+    if (isAny(command, &.{ "help", "--help", "-h" })) return "at most one command, e.g. kosm help apply";
     return "no arguments";
 }
 
@@ -338,7 +329,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .remove => package_commands.remove(context, config_command.argument.?),
         .update => package_commands.update(context, config_command.argument),
         .clean => clean_command.clean(context),
-        .apply, .colors, .list, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the four above.
+        .help, .version, .apply, .colors, .list, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the four above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -371,6 +362,33 @@ fn runComplete(init: std.process.Init, builds: Builds, words: []const []const u8
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     const context = try builds.context(init, config, &stdout.interface, &discarded.writer) orelse return 0;
     try complete_command.complete(context, words);
+    try stdout.interface.flush();
+    return 0;
+}
+
+/// `kosm help [command]`: the usage, or one command's help, on stdout.
+fn printHelp(init: std.process.Init, name: ?[]const u8, stderr: *std.Io.Writer) !u8 {
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
+    const given = name orelse {
+        try help.writeOverview(&stdout.interface);
+        try stdout.interface.flush();
+        return 0;
+    };
+    const command = help.find(given) orelse {
+        try stderr.writeAll("error: ");
+        try help.writeUnknown(stderr, given);
+        return 1;
+    };
+    try help.writeCommand(&stdout.interface, command.*);
+    try stdout.interface.flush();
+    return 0;
+}
+
+fn printVersion(init: std.process.Init) !u8 {
+    var stdout_buffer: [64]u8 = undefined;
+    var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
+    try stdout.interface.print("kosm {s}\n", .{kosm_package.version});
     try stdout.interface.flush();
     return 0;
 }
@@ -422,6 +440,9 @@ fn defaultConfig(io: std.Io, arena: std.mem.Allocator, environ: *const std.proce
 
 /// A command line, read.
 const Command = union(enum) {
+    /// The command to show the help of, or null for the usage.
+    help: ?[]const u8,
+    version,
     init: ConfigCommand,
     apply: Apply,
     current,
@@ -448,6 +469,14 @@ const Command = union(enum) {
     /// Reads the arguments without the program name.
     fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Command {
         if (arguments.len == 0) return error.NoCommand;
+        if (isAny(arguments[0], &.{ "help", "--help", "-h" })) {
+            if (arguments.len > 2) return error.UnexpectedArgument;
+            return .{ .help = if (arguments.len == 2) arguments[1] else null };
+        }
+        if (std.mem.eql(u8, arguments[0], "--version")) {
+            if (arguments.len != 1) return error.UnexpectedArgument;
+            return .version;
+        }
         if (std.mem.eql(u8, arguments[0], "current")) {
             for (arguments[1..]) |argument| {
                 if (std.mem.eql(u8, argument, "--config")) return error.ConfigNotRead;
@@ -488,6 +517,13 @@ const Command = union(enum) {
         return .{ .apply = try Apply.parse(arena, arguments) };
     }
 };
+
+fn isAny(word: []const u8, choices: []const []const u8) bool {
+    for (choices) |choice| {
+        if (std.mem.eql(u8, word, choice)) return true;
+    }
+    return false;
+}
 
 /// `kosm list` read: at most one kosmos, or the kinds to list alone.
 const List = struct {
@@ -718,6 +754,7 @@ test {
     std.testing.refAllDecls(Sources);
     std.testing.refAllDecls(Settings);
     std.testing.refAllDecls(Context);
+    std.testing.refAllDecls(help);
 }
 
 const testing = std.testing;
@@ -748,6 +785,18 @@ test "relay takes exactly one file" {
     try testing.expectEqualStrings("/v.json", (try Command.parse(arena.allocator(), &.{ "relay", "/v.json" })).relay);
     try testing.expectError(error.MissingArgument, Command.parse(arena.allocator(), &.{"relay"}));
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "relay", "/v.json", "x" }));
+}
+
+test "help takes at most one command, and --version none" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try testing.expectEqual(null, (try Command.parse(arena.allocator(), &.{"help"})).help);
+    try testing.expectEqual(null, (try Command.parse(arena.allocator(), &.{"--help"})).help);
+    try testing.expectEqualStrings("apply", (try Command.parse(arena.allocator(), &.{ "-h", "apply" })).help.?);
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "help", "apply", "list" }));
+    try testing.expectEqual(.version, try Command.parse(arena.allocator(), &.{"--version"}));
+    try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "--version", "x" }));
+    try testing.expectError(error.UnknownCommand, Command.parse(arena.allocator(), &.{ "updae", "x" }));
 }
 
 test "current takes no arguments" {
