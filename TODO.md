@@ -17,7 +17,7 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 - Completion is generated at build time, when types change: `kosm build` (and `add`, `update`) writes completion files for every app, base, look, Zig kosmos and its `Params`, with their doc comments. A Zig kosmos thus shows up in Lua completion after a build.
 - Every step updates `DESIGN.md` in the same commit as the code relying on it: the vocabulary (frontend), the `kosm_<language>` layout, and kosmoi written through a frontend.
 
-Steps 23b-23k come from a review of kosm with the human (2026-11-24), in the order to take them.
+Steps 23b-23l come from a review of kosm with the human (2026-11-24), in the order to take them.
 
 - **23b. `kosm doctor`** `PLAN FIRST`
   - Do: a program that never includes kosm's file shows no change and no error, the likeliest first-day failure. Propose how an app declares how its file is reached (which file of the program includes it, and the line that does) and how its program is found (a command, a Flatpak id), then add `kosm doctor [kosmos]` printing one line per app: fine, not included (with the exact line to add), or program not found.
@@ -46,6 +46,10 @@ Steps 23b-23k come from a review of kosm with the human (2026-11-24), in the ord
 - **23k. Say which kosm a build uses once**
   - Do: "building with the kosm at ..." and Zig's own "info: fork ... matched N kosm packages" print on every command, and may print twice when one command runs two builds (check whether a script kosmos whose base needs its manifest refreshed does). Print them once per command, and only with `-v` or when the kosm used changed since the last command.
   - Done when: a command running two builds prints them at most once, an unchanged override prints nothing without `-v`, and a CLI test covers it.
+
+- **23l. `--help` after any command**
+  - Do: `kosm apply --help` fails with "needs a kosmos". Make `--help` (and `-h`) anywhere after a command print that command's help, as `kosm help <command>` does, before its arguments are checked. A `--set` value or a parameter's value that is `--help` stays a value, as the runner reads it.
+  - Done when: `kosm apply --help`, `kosm apply frost --help` and `kosm list --apps --help` print the command's help and exit 0, `kosm apply frost --set x=--help` does not, and the CLI tests cover them.
 
 - **21l. Pick a suggestion for a misspelled command or kosmos** `ASK` (later)
   - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered, picked by typing its number (the human prefers 1/2/3 over letters), and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too. A misspelled command, which suggests the closest commands, offers its fix through the same prompt, so `kosm appy pesonal` can offer `apply`, then `personal`, and run it.
