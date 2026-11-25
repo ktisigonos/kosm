@@ -36,7 +36,7 @@ pub fn parseOnto(comptime Params: type, start: Params, host_set: bool, arguments
         if (!std.mem.startsWith(u8, flag, "--") or flag.len == 2)
             return fail(diagnostics, "expected --<parameter> <value>, got '{s}'", .{flag});
         const field_index = fieldIndex(Params, flag[2..]) orelse
-            return fail(diagnostics, "'{s}' is not a parameter; parameters are {s}", .{ flag, comptime flagList(Params) });
+            return unknownParameter(Params, flag, diagnostics);
         if (given[field_index]) return fail(diagnostics, "{s} is given twice", .{flag});
         given[field_index] = true;
         if (index + 1 >= arguments.len) return fail(diagnostics, "{s} needs a value", .{flag});
@@ -49,7 +49,7 @@ pub fn parseOnto(comptime Params: type, start: Params, host_set: bool, arguments
                     .{ .name = text }
                 else
                     parseValue(Field, text) catch
-                        return fail(diagnostics, "{s} '{s}' is not {s}", .{ flag, text, comptime describe(Field) });
+                        return notValue(Field, flag, text, diagnostics);
             }
         }
     }
@@ -175,6 +175,37 @@ fn Unwrapped(comptime T: type) type {
     };
 }
 
+/// "is not a parameter", suggesting the flags close to `flag`, or else listing them all.
+fn unknownParameter(comptime Params: type, flag: []const u8, diagnostics: *kosm.Diagnostics) Error {
+    const flags = comptime flagNames(Params);
+    const hint: kosm.suggestion.Hint = .{
+        .name = flag,
+        .known = flags,
+        .otherwise = "parameters are " ++ comptime flagList(Params),
+        .allowed = kosm.suggestion.allowedEdits(flag.len - "--".len),
+    };
+    return fail(diagnostics, "'{s}' is not a parameter; {f}", .{ flag, hint });
+}
+
+/// "is not ...", suggesting the names close to `text` when the value is named (an enum, a hue).
+fn notValue(comptime Field: type, flag: []const u8, text: []const u8, diagnostics: *kosm.Diagnostics) Error {
+    const tags = comptime kosm.assignment.text.nameTags(Unwrapped(Field));
+    if (kosm.suggestion.hasClose(text, tags, kosm.suggestion.allowedEdits(text.len)))
+        return fail(diagnostics, "{s} '{s}' is not {s}; {f}", .{ flag, text, comptime describe(Field), kosm.suggestion.hint(text, tags, "") });
+    return fail(diagnostics, "{s} '{s}' is not {s}", .{ flag, text, comptime describe(Field) });
+}
+
+/// Every flag `Params` takes, dashed (`--border-size`).
+fn flagNames(comptime Params: type) []const []const u8 {
+    comptime {
+        const field_names = @typeInfo(Params).@"struct".field_names;
+        var flags: [field_names.len][]const u8 = undefined;
+        for (field_names, 0..) |name, index| flags[index] = "--" ++ dashed(name);
+        const final = flags;
+        return &final;
+    }
+}
+
 fn flagList(comptime Params: type) []const u8 {
     comptime var list: []const u8 = "";
     inline for (@typeInfo(Params).@"struct".field_names, 0..) |name, index| {
@@ -256,12 +287,16 @@ test "bad flags name the flag and what it expects" {
     try expectFailure(TestParams, &.{ "--border-size", "-1" }, "--border-size '-1' is not an integer that fits u16");
     try expectFailure(TestParams, &.{ "--opacity", "inf" }, "--opacity 'inf' is not a number");
     try expectFailure(TestParams, &.{ "--mode", "dim" }, "--mode 'dim' is not one of dark, light");
+    try expectFailure(TestParams, &.{ "--mode", "drak" }, "--mode 'drak' is not one of dark, light; did you mean 'dark'?");
     try expectFailure(TestParams, &.{ "--background", "sky" }, "--background 'sky' is not a color (#rrggbb, rgb(...), hsl(...) or oklch(...))");
-    try expectFailure(TestParams, &.{ "--accent", "skyy" }, "--accent 'skyy' is not a color (#rrggbb, rgb(...), hsl(...) or oklch(...)) or a hue (red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink)");
+    try expectFailure(TestParams, &.{ "--accent", "skyy" }, "--accent 'skyy' is not a color (#rrggbb, rgb(...), hsl(...) or oklch(...)) or a hue (red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink); did you mean 'sky'?");
+    try expectFailure(TestParams, &.{ "--accent", "violet" }, "--accent 'violet' is not a color (#rrggbb, rgb(...), hsl(...) or oklch(...)) or a hue (red, orange, yellow, lime, green, teal, cyan, sky, blue, purple, magenta, pink)");
 }
 
 test "unknown, repeated, valueless and stray arguments are errors" {
     try expectFailure(TestParams, &.{ "--glow", "1" }, "'--glow' is not a parameter; parameters are --blur, --border-size, --opacity, --mode, --font, --background, --accent");
+    try expectFailure(TestParams, &.{ "--blr", "1" }, "'--blr' is not a parameter; did you mean '--blur'?");
+    try expectFailure(TestParams, &.{ "--border_sise", "1" }, "'--border_sise' is not a parameter; did you mean '--border-size'?");
     try expectFailure(TestParams, &.{ "--blur", "true", "--blur", "false" }, "--blur is given twice");
     try expectFailure(TestParams, &.{"--blur"}, "--blur needs a value");
     try expectFailure(TestParams, &.{"blur"}, "expected --<parameter> <value>, got 'blur'");

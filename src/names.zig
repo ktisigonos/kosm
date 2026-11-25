@@ -3,11 +3,7 @@
 //! The command line and the runner share it, so a misspelled kosmos reads the same everywhere.
 
 const std = @import("std");
-
-/// Names suggested for a misspelling are at most one edit away per this many bytes of its last
-/// segment, rounded up (`frost` takes `frozen`, three edits), so a short name gets no wild
-/// guesses and a long file name allows no more than a short one.
-const bytes_per_allowed_edit = 2;
+const suggestion = @import("kosm_suggestion");
 
 /// Whether `name` picks any of `known`: is one of them, or a file or group holding one
 /// (`frost` picks `frost.iced`).
@@ -38,9 +34,10 @@ pub fn picks(name: []const u8, kosmos: []const u8) bool {
 /// the kosmoi of the longest file or group `name` starts with, or else every kosmos.
 pub fn writeUnknown(writer: *std.Io.Writer, name: []const u8, known: []const []const u8) std.Io.Writer.Error!void {
     try writer.print("there is no kosmos '{s}'; ", .{name});
-    const closest = closestDistance(name, known);
-    if (closest <= allowedEdits(name)) return writeSuggestions(writer, name, known, .{ .edits = closest });
-    if (countSuggestions(name, known, .completion) != 0) return writeSuggestions(writer, name, known, .completion);
+    const closest = suggestion.closestDistance(name, known);
+    if (closest <= allowedEdits(name)) return suggestion.writeChoices(writer, known, Suggestion{ .name = name, .kind = .{ .edits = closest } });
+    const completion: Suggestion = .{ .name = name, .kind = .completion };
+    if (countSuggestions(known, completion) != 0) return suggestion.writeChoices(writer, known, completion);
     const holder = longestHolder(name, known);
     if (holder.len != 0) {
         try writer.print("kosmoi of {s}: ", .{holder});
@@ -59,17 +56,11 @@ pub fn unknownMessage(allocator: std.mem.Allocator, name: []const u8, known: []c
     return message.toOwnedSlice();
 }
 
+/// The edits allowed for `name` count only its last segment, so a long file name allows no
+/// more than a short one.
 fn allowedEdits(name: []const u8) usize {
     const segment_start = if (std.mem.findScalarLast(u8, name, '.')) |dot| dot + 1 else 0;
-    const segment = name.len - segment_start;
-    return @max(1, (segment + bytes_per_allowed_edit - 1) / bytes_per_allowed_edit);
-}
-
-/// The fewest edits from `name` to any of `known`; `maxInt` when `known` is empty.
-fn closestDistance(name: []const u8, known: []const []const u8) usize {
-    var closest: usize = std.math.maxInt(usize);
-    for (known) |kosmos| closest = @min(closest, distance(name, kosmos));
-    return closest;
+    return suggestion.allowedEdits(name.len - segment_start);
 }
 
 /// Whether `kosmos` is as deep as `name` (as many dots) and starts with it.
@@ -77,41 +68,30 @@ fn completes(name: []const u8, kosmos: []const u8) bool {
     return std.mem.startsWith(u8, kosmos, name) and std.mem.countScalar(u8, kosmos, '.') == std.mem.countScalar(u8, name, '.');
 }
 
-/// Which names of a config are suggested for a misspelled one.
-const Suggestion = union(enum) {
-    /// Those this many edits away.
-    edits: usize,
-    /// Those that `completes` it.
-    completion,
+/// Which names of a config are suggested for a misspelled `name`.
+const Suggestion = struct {
+    name: []const u8,
+    kind: union(enum) {
+        /// Those this many edits away.
+        edits: usize,
+        /// Those that `completes` it.
+        completion,
+    },
 
-    fn picks(suggestion: Suggestion, name: []const u8, kosmos: []const u8) bool {
-        return switch (suggestion) {
-            .edits => |edits| distance(name, kosmos) == edits,
-            .completion => completes(name, kosmos),
+    pub fn picks(picked: Suggestion, kosmos: []const u8) bool {
+        return switch (picked.kind) {
+            .edits => |edits| suggestion.closeness(picked.name, kosmos) == edits,
+            .completion => completes(picked.name, kosmos),
         };
     }
 };
 
-fn countSuggestions(name: []const u8, known: []const []const u8, suggestion: Suggestion) usize {
+fn countSuggestions(known: []const []const u8, picked: Suggestion) usize {
     var total: usize = 0;
     for (known) |kosmos| {
-        if (suggestion.picks(name, kosmos)) total += 1;
+        if (picked.picks(kosmos)) total += 1;
     }
     return total;
-}
-
-/// `did you mean 'a'?`, `'a' or 'b'`, `'a', 'b' or 'c'`: every name `suggestion` picks.
-fn writeSuggestions(writer: *std.Io.Writer, name: []const u8, known: []const []const u8, suggestion: Suggestion) std.Io.Writer.Error!void {
-    try writer.writeAll("did you mean ");
-    const total = countSuggestions(name, known, suggestion);
-    var written: usize = 0;
-    for (known) |kosmos| {
-        if (!suggestion.picks(name, kosmos)) continue;
-        if (written != 0) try writer.writeAll(if (written + 1 == total) " or " else ", ");
-        try writer.print("'{s}'", .{kosmos});
-        written += 1;
-    }
-    try writer.writeAll("?");
 }
 
 /// The longest file or group (`personal`, `personal.catppuccin`) `name` starts with that holds
@@ -136,32 +116,6 @@ fn writeList(writer: *std.Io.Writer, holder: []const u8, known: []const []const 
     }
 }
 
-/// The edits (insert, delete, substitute or swap two neighbours) turning `left` into `right`.
-fn distance(left: []const u8, right: []const u8) usize {
-    // Three rows of the optimal string alignment table; names are short, so a fixed bound
-    // keeps this allocation-free and longer names simply count as far apart.
-    const max_length = 128;
-    if (left.len > max_length or right.len > max_length) return std.math.maxInt(usize);
-    var before_previous: [max_length + 1]usize = undefined;
-    var previous: [max_length + 1]usize = undefined;
-    var current: [max_length + 1]usize = undefined;
-    for (0..right.len + 1) |column| previous[column] = column;
-    for (left, 1..) |left_byte, row| {
-        current[0] = row;
-        for (right, 1..) |right_byte, column| {
-            const substitution: usize = if (left_byte == right_byte) 0 else 1;
-            var best = @min(previous[column] + 1, current[column - 1] + 1, previous[column - 1] + substitution);
-            if (row > 1 and column > 1 and left_byte == right[column - 2] and left[row - 2] == right_byte) {
-                best = @min(best, before_previous[column - 2] + 1);
-            }
-            current[column] = best;
-        }
-        before_previous = previous;
-        previous = current;
-    }
-    return previous[right.len];
-}
-
 const testing = std.testing;
 
 const test_known: []const []const u8 = &.{ "kyanos", "personal", "personal.frozen", "personal.nord", "personal.catppuccin.latte", "personal.catppuccin.mocha" };
@@ -174,14 +128,6 @@ test "a misspelled variant suggests the closest name" {
     const message = try testUnknown("personal.frost");
     defer testing.allocator.free(message);
     try testing.expectEqualStrings("there is no kosmos 'personal.frost'; did you mean 'personal.frozen'?", message);
-}
-
-test "swapped neighbours count as one edit" {
-    try testing.expectEqual(1, distance("kyanso", "kyanos"));
-    try testing.expectEqual(2, distance("kyanso", "kyanxx"));
-    try testing.expectEqual(3, distance("frost", "frozen"));
-    try testing.expectEqual(0, distance("", ""));
-    try testing.expectEqual(5, distance("", "frost"));
 }
 
 test "names equally close are all suggested" {

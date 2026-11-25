@@ -13,6 +13,7 @@ const Handle = @import("Frontend/Handle.zig");
 const Image = @import("Image.zig");
 const File = @import("File.zig");
 const kosmos = @import("kosmos.zig");
+const suggestion = @import("kosm_suggestion");
 
 /// Deep copies, so a value copied from a handle owns its lists.
 pub const copy = @import("assignment/copy.zig");
@@ -283,7 +284,7 @@ const Walker = struct {
                         return;
                     }
                 }
-                return walker.expected(T, loose);
+                return walker.unknownTag(T, loose, entry.key);
             },
             else => return walker.expected(T, loose),
         }
@@ -393,7 +394,15 @@ const Walker = struct {
 
     fn unknownField(walker: *Walker, comptime T: type, entry: Loose.Entry) Error {
         _ = walker.enter(entry.value);
-        return walker.fail("no field '{s}'; its fields are {s}", .{ entry.key, comptime text.fieldList(T) });
+        const fallback = "its fields are " ++ comptime text.fieldList(T);
+        return walker.fail("no field '{s}'; {f}", .{ entry.key, suggestion.hint(entry.key, comptime text.fieldNames(T), fallback) });
+    }
+
+    /// "expected ...", suggesting the tags close to the one a table of one tag gave.
+    fn unknownTag(walker: *Walker, comptime T: type, loose: Loose, key: []const u8) Error {
+        const tags = comptime std.meta.fieldNames(T);
+        if (!suggestion.hasClose(key, tags, suggestion.allowedEdits(key.len))) return walker.expected(T, loose);
+        return walker.fail("expected {s}, got a table of '{s}'; {f}", .{ comptime text.describe(T), key, suggestion.hint(key, tags, "") });
     }
 
     fn unsupported(walker: *Walker, comptime T: type) Error {
@@ -402,7 +411,13 @@ const Walker = struct {
 
     fn expected(walker: *Walker, comptime T: type, loose: Loose) Error {
         var buffer: [96]u8 = undefined;
-        return walker.fail("expected {s}, got {s}", .{ comptime text.describe(T), describeGiven(&buffer, loose) });
+        const given = describeGiven(&buffer, loose);
+        const tags = comptime text.nameTags(T);
+        if (pathOf(loose)) |name| {
+            if (tags.len != 0 and suggestion.hasClose(name, tags, suggestion.allowedEdits(name.len)))
+                return walker.fail("expected {s}, got {s}; {f}", .{ comptime text.describe(T), given, suggestion.hint(name, tags, "") });
+        }
+        return walker.fail("expected {s}, got {s}", .{ comptime text.describe(T), given });
     }
 
     fn fail(walker: *Walker, comptime format: []const u8, arguments: anytype) Error {
@@ -632,7 +647,7 @@ test "an app that is not chosen checks its values, then drops them" {
     try fixture.assignLoose(foot);
     try testing.expectEqual(null, fixture.tree.terminal.foot);
     const typo = looseOf(.{ .table = &.{entryOf("terminal", .{ .table = &.{entryOf("foot", .{ .table = &.{entryOf("opacty", .{ .float = 0.5 })} })} })} });
-    try fixture.expectFailure(typo, "terminal.foot: no field 'opacty'; its fields are opacity, size, border, accent, mode, font, blur, cursor, style, layouts, corners, extra, pointer");
+    try fixture.expectFailure(typo, "terminal.foot: no field 'opacty'; did you mean 'opacity'?");
 }
 
 test "a null group of settings starts from its defaults" {
@@ -656,6 +671,9 @@ test "a union takes a tag's name or a table of one tag, keeping its value when t
     try testing.expectEqual(700, fixture.kittyApp().style.font.weight);
     const union_message = "terminal.kitty.style: expected one of disabled, bold, or a table holding one of size, font, got ";
     try fixture.expectFailure(fixture.kitty("style", .{ .string = "size" }), union_message ++ "the string 'size'");
+    try fixture.expectFailure(fixture.kitty("style", .{ .string = "blod" }), union_message ++ "the string 'blod'; did you mean 'bold'?");
+    try fixture.expectFailure(fixture.kitty("style", .{ .table = &.{entryOf("sise", .{ .integer = 1 })} }), "terminal.kitty.style: expected one of disabled, bold, or a table holding one of size, font, got a table of 'sise'; did you mean 'size'?");
+    try fixture.expectFailure(fixture.kitty("style", .{ .table = &.{entryOf("weight", .{ .integer = 1 })} }), union_message ++ "a table");
     try fixture.expectFailure(fixture.kitty("style", .{ .table = &.{ entryOf("size", .{ .integer = 1 }), entryOf("bold", .null) } }), union_message ++ "a table");
     try fixture.assignLoose(fixture.kitty("style", .{ .string = "bold" }));
     try fixture.expectFailure(fixture.kitty("style", .{ .table = &.{entryOf("font", .{ .table = &.{entryOf("weight", .{ .integer = 700 })} })} }), "terminal.kitty.style.font: missing 'family', which has no default");
@@ -744,6 +762,8 @@ test "wrong kinds of values name the path and what was expected" {
     try fixture.expectFailure(fixture.kitty("opacity", .null), "terminal.kitty.opacity: expected a number, got null");
     try fixture.expectFailure(fixture.kitty("border", .{ .string = "sky" }), "terminal.kitty.border: expected a color (#rrggbb, rgb(...), hsl(...) or oklch(...)), got the string 'sky'");
     try fixture.expectFailure(fixture.kitty("mode", .{ .string = "dim" }), "terminal.kitty.mode: expected one of dark, light, got the string 'dim'");
+    try fixture.expectFailure(fixture.kitty("mode", .{ .string = "drak" }), "terminal.kitty.mode: expected one of dark, light, got the string 'drak'; did you mean 'dark'?");
+    try fixture.expectFailure(fixture.kitty("mode", .{ .text = "ligth" }), "terminal.kitty.mode: expected one of dark, light, got 'ligth'; did you mean 'light'?");
     try fixture.expectFailure(fixture.kitty("blur", .{ .boolean = false }), "terminal.kitty.blur: expected a table of its fields (enabled, passes), got false");
     try fixture.expectFailure(fixture.kitty("pointer", .{ .integer = 1 }), "terminal.kitty.pointer: a *const u8 cannot be set this way");
     try fixture.expectFailure(looseOf(.{ .integer = 1 }), "the kosmos: expected a table of its fields (terminal), got the integer 1");
@@ -752,8 +772,9 @@ test "wrong kinds of values name the path and what was expected" {
 test "unknown fields name their parent's path and list its fields" {
     var fixture: Fixture = .init();
     defer fixture.deinit();
-    try fixture.expectFailure(looseOf(.{ .table = &.{entryOf("termnal", .null)} }), "the kosmos: no field 'termnal'; its fields are terminal");
-    try fixture.expectFailure(looseOf(.{ .table = &.{entryOf("terminal", .{ .table = &.{entryOf("kity", .null)} })} }), "terminal: no field 'kity'; its fields are kitty, foot");
+    try fixture.expectFailure(looseOf(.{ .table = &.{entryOf("termnal", .null)} }), "the kosmos: no field 'termnal'; did you mean 'terminal'?");
+    try fixture.expectFailure(looseOf(.{ .table = &.{entryOf("terminal", .{ .table = &.{entryOf("kity", .null)} })} }), "terminal: no field 'kity'; did you mean 'kitty'?");
+    try fixture.expectFailure(looseOf(.{ .table = &.{entryOf("terminal", .{ .table = &.{entryOf("alacritty", .null)} })} }), "terminal: no field 'alacritty'; its fields are kitty, foot");
 }
 
 test "messages start with the innermost origin" {
@@ -763,7 +784,7 @@ test "messages start with the innermost origin" {
     const tree: Loose = .{ .value = .{ .table = &.{entryOf("terminal", .{ .table = &.{entryOf("kitty", .{ .table = &.{.{ .key = "blur", .value = blur }} })} })} }, .origin = "personal.lua" };
     try fixture.expectFailure(tree, "personal.lua:9: terminal.kitty.blur.passes: expected an integer that fits u16, got the string 'many'");
     const unknown: Loose = .{ .value = .{ .table = &.{entryOf("terminal", .{ .table = &.{.{ .key = "foo", .value = .{ .value = .null, .origin = "personal.lua:3" } }} })} }, .origin = "personal.lua" };
-    try fixture.expectFailure(unknown, "personal.lua:3: terminal: no field 'foo'; its fields are kitty, foot");
+    try fixture.expectFailure(unknown, "personal.lua:3: terminal: no field 'foo'; did you mean 'foot'?");
 }
 
 test "a failure half way leaves the whole tree as it was" {

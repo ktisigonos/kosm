@@ -31,10 +31,6 @@ Steps 23b-23k come from a review of kosm with the human (2026-11-24), in the ord
   - Do: propose a way (a flag, or a per-app choice) to leave out an app whose program isn't installed with a one-line notice, so choosing apps is about what is riced, not what is installed. It builds on how 20a finds installs.
   - Done when: the human decided, and if agreed, it works and is tested.
 
-- **23e. Suggestions for misspelled fields, tags and parameters**
-  - Do: `--set base.kity.x=1` lists all of `Base`'s fields, while a misspelled kosmos gets "did you mean". Give every "no field", "no tag", "none of" and unknown-parameter message the closest names, falling back to the list when none is close, from tables (`kosm.assign`, `--set`) and script calls alike. Use one edit distance for all of them: `names.zig` and `template.zig` each have their own.
-  - Done when: `--set base.kity.x=1` suggests `kitty`, a far-off name still lists the fields, and tests cover fields, tags and parameters.
-
 - **23f. Lua helpers for writing a kosmos** `ASK`
   - Do: propose names and forms for: printing a value while writing a kosmos (`kosm.trace(...)`, kosm prints it to stderr with the script's file and line, so the script still does no IO), showing a handle's fields (`kosm.inspect`), copying a handle (`:copy()`, today `color:mix(color, 0)`), a color with some components changed (`color:with({ lightness = 0.7 })`), and reading an optional chain without nil checks at every level.
   - Done when: the human agreed on the names, each works from Lua, completes, and is tested.

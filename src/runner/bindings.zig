@@ -366,7 +366,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                                     return read(Field, given, &@field(value.*, field_name)) catch |err| fieldFailed(given, err, field_name);
                                 }
                             }
-                            return given.fail("{s} has no field '{s}'; its fields are {s}", .{ nameOf(T), name, comptime kosm.assignment.text.fieldList(T) });
+                            return noField(T, given, name);
                         },
                         .@"union" => |info| {
                             const name = try fieldKey(given, key);
@@ -377,7 +377,7 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                                     return read(Payload, given, &@field(value.*, tag_name));
                                 }
                             }
-                            return given.fail("{s} has no tag '{s}'; its tags are {s}", .{ nameOf(T), name, comptime tagList(T) });
+                            return noTag(T, given, name);
                         },
                         else => {
                             const items = itemsOf(value);
@@ -420,14 +420,14 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
                             if (!attributes.@"comptime" and std.mem.eql(u8, field_name, name)) {
                                 break kosm.assignment.assignNamed(Field, given.arena, &@field(value.*, field_name), loose, &diagnostics, field_name);
                             }
-                        } else return given.fail("{s} has no field '{s}'; its fields are {s}", .{ nameOf(T), name, comptime kosm.assignment.text.fieldList(T) }),
+                        } else return noField(T, given, name),
                         .@"union" => |info| inline for (info.field_names, info.field_types) |tag_name, Payload| {
                             if (std.mem.eql(u8, tag_name, name)) {
                                 break if (kosm.assignment.build(Payload, given.arena, loose, &diagnostics, tag_name)) |payload| {
                                     value.* = @unionInit(T, tag_name, payload);
                                 } else |err| err;
                             }
-                        } else return given.fail("{s} has no tag '{s}'; its tags are {s}", .{ nameOf(T), name, comptime tagList(T) }),
+                        } else return noTag(T, given, name),
                         else => comptime unreachable,
                     };
                     result catch |err| switch (err) {
@@ -507,6 +507,18 @@ pub fn Library(comptime roots: []const Root, comptime kosmoi: []const kosmos_cal
             }
             const final = methods[0..methods.len].*;
             return &final;
+        }
+
+        /// "has no field", suggesting the fields close to `name`, or else listing them all.
+        fn noField(comptime T: type, given: *Call, name: []const u8) Call.Error {
+            const fallback = "its fields are " ++ comptime kosm.assignment.text.fieldList(T);
+            return given.fail("{s} has no field '{s}'; {f}", .{ nameOf(T), name, kosm.suggestion.hint(name, comptime kosm.assignment.text.fieldNames(T), fallback) });
+        }
+
+        /// "has no tag", suggesting the tags close to `name`, or else listing them all.
+        fn noTag(comptime T: type, given: *Call, name: []const u8) Call.Error {
+            const fallback = "its tags are " ++ comptime tagList(T);
+            return given.fail("{s} has no tag '{s}'; {f}", .{ nameOf(T), name, kosm.suggestion.hint(name, comptime std.meta.fieldNames(T), fallback) });
         }
 
         /// The name of `T` as a script reaches it (`kosm.Theme.Input`), or its Zig name.
@@ -889,7 +901,8 @@ test "a value built by calls is a handle whose fields read and set like the Zig 
     try script.set(app, .{ .field = "background" }, .{ .string = "#ff0000" });
     try testing.expectEqualStrings("#ff0000", app.value.handle.as(test_package.App).?.background.?.hex().slice());
     try script.expectFailure(script.set(app, .{ .field = "size" }, .{ .string = "big" }), "size: expected an integer that fits u8, got the string 'big'");
-    try script.expectFailure(script.get(app, .{ .field = "sise" }), "test_package.App has no field 'sise'; its fields are size, background, layouts, style, accent");
+    try script.expectFailure(script.get(app, .{ .field = "sise" }), "test_package.App has no field 'sise'; did you mean 'size'?");
+    try script.expectFailure(script.get(app, .{ .field = "opacity" }), "test_package.App has no field 'opacity'; its fields are size, background, layouts, style, accent");
     try testing.expectEqualStrings("plain", (try script.get(app, .{ .field = "style" })).value.handle.type.fields[0]);
     try testing.expectEqual(true, (try script.get(try script.get(app, .{ .field = "style" }), .{ .field = "plain" })).value.boolean);
     try testing.expectEqual(.null, std.meta.activeTag((try script.get(try script.get(app, .{ .field = "style" }), .{ .field = "size" })).value));
@@ -905,7 +918,8 @@ test "one field of a color, or a color choice's tag, is set like any struct's" {
     try script.set(background, .{ .field = "alpha" }, .{ .integer = 1 });
     try testing.expectEqual(0.5, background.value.handle.as(kosm.Color).?.lightness);
     try script.expectFailure(script.set(background, .{ .field = "lightness" }, .{ .string = "dark" }), "lightness: expected a number, got the string 'dark'");
-    try script.expectFailure(script.set(background, .{ .field = "brightness" }, .{ .float = 1 }), "kosm.Color has no field 'brightness'; its fields are lightness, chroma, hue, alpha");
+    try script.expectFailure(script.set(background, .{ .field = "brightness" }, .{ .float = 1 }), "kosm.Color has no field 'brightness'; did you mean 'lightness'?");
+    try script.expectFailure(script.set(background, .{ .field = "red" }, .{ .float = 1 }), "kosm.Color has no field 'red'; its fields are lightness, chroma, hue, alpha");
 
     const accent = try script.get(app, .{ .field = "accent" });
     try script.set(accent, .{ .field = "hue" }, .{ .string = "sky" });
@@ -913,6 +927,7 @@ test "one field of a color, or a color choice's tag, is set like any struct's" {
     try script.set(accent, .{ .field = "color" }, .{ .string = "#ff0000" });
     try testing.expectEqualStrings("#ff0000", app.value.handle.as(test_package.App).?.accent.color.hex().slice());
     try script.expectFailure(script.set(accent, .{ .field = "shade" }, .{ .string = "sky" }), "kosm.ColorChoice has no tag 'shade'; its tags are color, hue");
+    try script.expectFailure(script.set(accent, .{ .field = "hu" }, .{ .string = "sky" }), "kosm.ColorChoice has no tag 'hu'; did you mean 'hue'?");
 }
 
 test "methods take the handle first; one taking a pointer changes the script's value" {

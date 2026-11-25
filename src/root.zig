@@ -47,6 +47,8 @@ pub const app = @import("app.zig");
 pub const assign = assignment.assign;
 /// `assign` and the text reading it shares with `Params` flags.
 pub const assignment = @import("assignment.zig");
+/// The names closest to a misspelled one, and the `did you mean` naming them.
+pub const suggestion = @import("kosm_suggestion");
 
 /// A copy of a list of run-time values that outlives the function writing it, like
 /// `allocator.dupe`: `kosm.keep(kosm.Color, &.{ theme.palette.blue })`.

@@ -107,6 +107,41 @@ pub fn fieldList(comptime T: type) []const u8 {
     return list;
 }
 
+/// The names of a struct's fields that can be set, for suggesting one.
+pub fn fieldNames(comptime T: type) []const []const u8 {
+    comptime {
+        const info = @typeInfo(T).@"struct";
+        var names: []const []const u8 = &.{};
+        for (info.field_names, info.field_attrs) |name, attributes| {
+            if (!attributes.@"comptime") names = names ++ &[_][]const u8{name};
+        }
+        return names;
+    }
+}
+
+/// The names that alone give a `T`, for suggesting one: an enum's tags, a hue's for a
+/// `ColorChoice`, a union's tags holding no value. Empty for other types.
+pub fn nameTags(comptime T: type) []const []const u8 {
+    if (T == ColorChoice) return std.meta.fieldNames(Palette.Hue);
+    return switch (@typeInfo(T)) {
+        .@"enum" => std.meta.fieldNames(T),
+        .@"union" => |info| if (info.tag_type != null) plainTagNames(T) else &.{},
+        else => &.{},
+    };
+}
+
+/// The tags of union `T` that hold no value, which a name alone sets.
+fn plainTagNames(comptime T: type) []const []const u8 {
+    comptime {
+        const info = @typeInfo(T).@"union";
+        var names: []const []const u8 = &.{};
+        for (info.field_names, info.field_types) |name, Payload| {
+            if (Payload == void) names = names ++ &[_][]const u8{name};
+        }
+        return names;
+    }
+}
+
 const testing = std.testing;
 
 test "parse reads every kind of value and rejects what is not one" {

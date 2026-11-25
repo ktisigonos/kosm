@@ -110,9 +110,10 @@ test "a value for an app that is not chosen is checked, then dropped" {
     try expectFailure("terminal.foot.opacity=dim", "--set: terminal.foot.opacity: expected a number, got 'dim'");
 }
 
-test "unknown fields name their parent and list its fields" {
-    try expectFailure("termnal.kitty=null", "--set: the kosmos: no field 'termnal'; its fields are terminal");
-    try expectFailure("terminal.kity.opacity=1", "--set: terminal: no field 'kity'; its fields are kitty, foot");
+test "unknown fields name their parent and suggest the closest, or else list its fields" {
+    try expectFailure("termnal.kitty=null", "--set: the kosmos: no field 'termnal'; did you mean 'terminal'?");
+    try expectFailure("terminal.kity.opacity=1", "--set: terminal: no field 'kity'; did you mean 'kitty'?");
+    try expectFailure("terminal.alacritty.opacity=1", "--set: terminal: no field 'alacritty'; its fields are kitty, foot");
     try expectFailure("terminal.kitty.opacity.alpha=1", "--set: terminal.kitty.opacity: expected a number, got a table");
 }
 

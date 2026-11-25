@@ -65,12 +65,20 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const network_tests = b.option(bool, "network", "Also run the tests that fetch kosm and the official packages from their repositories") orelse false;
 
-    // Core imports only the tree-sitter runtime: it knows no apps, packages or command line.
+    // The names closest to a misspelled one, for core and the kosmos names alike.
+    const suggestion_module = b.createModule(.{
+        .root_source_file = b.path("src/suggestion.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    // Core imports only the tree-sitter runtime and the suggestions: it knows no apps, packages
+    // or command line.
     const kosm_module = b.addModule("kosm", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
+        .imports = &.{.{ .name = "kosm_suggestion", .module = suggestion_module }},
     });
     addTreeSitter(b, kosm_module, target, optimize);
     // The number the command line and the runner check against each other.
@@ -90,6 +98,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/names.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{.{ .name = "kosm_suggestion", .module = suggestion_module }},
     });
     // The runner only sees core's public API, like any package.
     const runner_module = b.addModule("kosm_runner", .{
@@ -132,7 +141,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     // The config tests build against the installed sources, which proves every manifest's `.paths`.
     test_step.dependOn(b.getInstallStep());
-    for ([_]*std.Build.Module{ kosm_module, interface_module, names_module, current_module, runner_module, build_helpers_module }) |module| {
+    for ([_]*std.Build.Module{ kosm_module, suggestion_module, interface_module, names_module, current_module, runner_module, build_helpers_module }) |module| {
         test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module })).step);
     }
     // The command line's tests build configs against the installed sources, which Zig's cache

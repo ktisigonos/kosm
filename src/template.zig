@@ -8,6 +8,7 @@ const ColorFormat = @import("ColorFormat.zig");
 const Format = @import("Format.zig");
 const Raw = @import("Raw.zig");
 const Value = @import("value.zig").Value;
+const suggestion = @import("kosm_suggestion");
 
 /// Where a placeholder pointed at a `null` optional, the one failure only runtime can see.
 pub const Failure = struct {
@@ -315,6 +316,7 @@ fn fail(comptime location: Location, comptime message: []const u8) noreturn {
 /// (`kosm.roundingpx`) suggests the braced form. `rest` starts with the unknown segment.
 fn unknownField(comptime T: type, comptime location: Location, comptime rest: []const []const u8) []const u8 {
     comptime {
+        @setEvalBranchQuota(100_000);
         const segment = rest[0];
         const segments = splitPath(location.path);
         var before: []const u8 = "";
@@ -329,13 +331,13 @@ fn unknownField(comptime T: type, comptime location: Location, comptime rest: []
         var best: []const u8 = "";
         var best_distance: usize = std.math.maxInt(usize);
         for (names) |field_name| {
-            const distance = editDistance(segment, field_name);
+            const distance = suggestion.closeness(segment, field_name);
             if (distance < best_distance) {
                 best = field_name;
                 best_distance = distance;
             }
         }
-        if (best.len != 0 and best_distance <= @max(2, segment.len / 3))
+        if (best.len != 0 and best_distance <= suggestion.allowedEdits(segment.len))
             return "unknown field '" ++ segment ++ "'; did you mean kosm." ++ before ++ best ++ "?";
         return "unknown field '" ++ segment ++ "'; fields are " ++ joinNames(names);
     }
@@ -346,24 +348,6 @@ fn joinNames(comptime names: []const []const u8) []const u8 {
         var joined: []const u8 = "";
         for (names, 0..) |field_name, index| joined = joined ++ (if (index == 0) "" else ", ") ++ field_name;
         return joined;
-    }
-}
-
-/// Levenshtein distance, for suggestions.
-fn editDistance(comptime left: []const u8, comptime right: []const u8) usize {
-    comptime {
-        var previous: [right.len + 1]usize = undefined;
-        for (&previous, 0..) |*cell, index| cell.* = index;
-        for (left, 0..) |left_character, row| {
-            var current: [right.len + 1]usize = undefined;
-            current[0] = row + 1;
-            for (right, 0..) |right_character, column| {
-                const substitution = previous[column] + @intFromBool(left_character != right_character);
-                current[column + 1] = @min(substitution, previous[column + 1] + 1, current[column] + 1);
-            }
-            previous = current;
-        }
-        return previous[right.len];
     }
 }
 

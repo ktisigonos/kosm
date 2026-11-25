@@ -40,7 +40,7 @@ fn check(script: app_modules.Script, declaration: AdapterDeclaration, diagnostic
     for (declaration.functions) |function| {
         for (capabilities) |capability| {
             if (std.mem.eql(u8, function, capability)) break;
-        } else return fail(diagnostics, script.path, "'{s}' is no adapter capability; an adapter gives format, parser, serialize or insert", .{function});
+        } else return fail(diagnostics, script.path, "'{s}' is no adapter capability; {f}", .{ function, kosm.suggestion.hint(function, &capabilities, "an adapter gives format, parser, serialize or insert") });
     }
     if (declaration.functions.len == 0) return fail(diagnostics, script.path, "it gives none of format, parser, serialize and insert, so no app can write through it", .{});
 }
@@ -105,13 +105,22 @@ fn writeFormat(writer: *std.Io.Writer, script: app_modules.Script, format: Loose
             try writeColorFormat(writer, at, entry.value, diagnostics);
         } else if (std.mem.eql(u8, entry.key, "boolean")) {
             const name = textOf(entry.value) orelse return fail(diagnostics, at, "default_format.boolean is no name; it is one of {s}", .{comptime tagList(kosm.Format.Boolean)});
-            if (std.meta.stringToEnum(kosm.Format.Boolean, name) == null) return fail(diagnostics, at, "default_format.boolean: '{s}' is none of {s}", .{ name, comptime tagList(kosm.Format.Boolean) });
+            if (std.meta.stringToEnum(kosm.Format.Boolean, name) == null) {
+                const tags = comptime std.meta.fieldNames(kosm.Format.Boolean);
+                const listed = comptime tagList(kosm.Format.Boolean);
+                if (kosm.suggestion.hasClose(name, tags, kosm.suggestion.allowedEdits(name.len)))
+                    return fail(diagnostics, at, "default_format.boolean: '{s}' is none of {s}; {f}", .{ name, listed, kosm.suggestion.hint(name, tags, "") });
+                return fail(diagnostics, at, "default_format.boolean: '{s}' is none of {s}", .{ name, listed });
+            }
             try writer.print("boolean = .{s}", .{name});
         } else if (std.mem.eql(u8, entry.key, "float_precision")) {
             const precision = if (entry.value.value == .integer) entry.value.value.integer else -1;
             if (precision < 0 or precision > kosm.Format.max_float_precision) return fail(diagnostics, at, "default_format.float_precision is a whole number of decimals, 0..{d}", .{kosm.Format.max_float_precision});
             try writer.print("float_precision = {d}", .{precision});
-        } else return fail(diagnostics, at, "default_format sets '{s}'; it holds color, boolean and float_precision", .{entry.key});
+        } else {
+            const fields = &[_][]const u8{ "color", "boolean", "float_precision" };
+            return fail(diagnostics, at, "default_format sets '{s}'; {f}", .{ entry.key, kosm.suggestion.hint(entry.key, fields, "it holds color, boolean and float_precision") });
+        }
     }
     try writer.writeAll(if (entries.len == 0) "}" else " }");
 }
@@ -123,7 +132,8 @@ fn writeColorFormat(writer: *std.Io.Writer, at: []const u8, given: Loose, diagno
         inline for (comptime namedColorFormats()) |known| {
             if (std.mem.eql(u8, name, known)) return writer.print(".{s}", .{known});
         }
-        return fail(diagnostics, at, "default_format.color: '{s}' names no color format; name one of {s}, or give {{ template, components }}", .{ name, comptime namedList() });
+        const listed = "name one of " ++ comptime namedList() ++ ", or give { template, components }";
+        return fail(diagnostics, at, "default_format.color: '{s}' names no color format; {f}", .{ name, kosm.suggestion.hint(name, comptime namedColorFormats(), listed) });
     }
     const entries = if (given.value == .table) given.value.table else return fail(diagnostics, at, "default_format.color is a format's name or a table of template and components", .{});
     var template: ?[]const u8 = null;
@@ -256,10 +266,23 @@ test "a declaration kosm cannot write fails naming the script" {
         .{ .declaration = .{ .name = "", .functions = &.{"format"} }, .message = "adapters/keys.lua: it gives no name; an adapter's name is the language apps pass as .lang" },
         .{ .declaration = .{ .name = "keys", .extensions = &.{"keys"}, .functions = &.{"format"} }, .message = "adapters/keys.lua: extension 'keys' does not start with a dot, as \".keys\"" },
         .{ .declaration = .{ .name = "keys" }, .message = "adapters/keys.lua: it gives none of format, parser, serialize and insert, so no app can write through it" },
-        .{ .declaration = .{ .name = "keys", .functions = &.{"parse"} }, .message = "adapters/keys.lua: 'parse' is no adapter capability; an adapter gives format, parser, serialize or insert" },
+        .{ .declaration = .{ .name = "keys", .functions = &.{"parse"} }, .message = "adapters/keys.lua: 'parse' is no adapter capability; did you mean 'parser'?" },
+        .{ .declaration = .{ .name = "keys", .functions = &.{"lint"} }, .message = "adapters/keys.lua: 'lint' is no adapter capability; an adapter gives format, parser, serialize or insert" },
         .{
             .declaration = .{ .name = "keys", .functions = &.{"format"}, .default_format = .{ .value = .{ .table = &.{.{ .key = "boolean", .value = .{ .value = .{ .string = "maybe" }, .origin = "adapters/keys.lua:3" } }} } } },
             .message = "adapters/keys.lua:3: default_format.boolean: 'maybe' is none of true_false, yes_no, one_zero, on_off",
+        },
+        .{
+            .declaration = .{ .name = "keys", .functions = &.{"format"}, .default_format = .{ .value = .{ .table = &.{.{ .key = "boolean", .value = .{ .value = .{ .string = "yes-no" } } }} } } },
+            .message = "adapters/keys.lua: default_format.boolean: 'yes-no' is none of true_false, yes_no, one_zero, on_off; did you mean 'yes_no'?",
+        },
+        .{
+            .declaration = .{ .name = "keys", .functions = &.{"format"}, .default_format = .{ .value = .{ .table = &.{.{ .key = "bolean", .value = .{ .value = .{ .string = "yes_no" } } }} } } },
+            .message = "adapters/keys.lua: default_format sets 'bolean'; did you mean 'boolean'?",
+        },
+        .{
+            .declaration = .{ .name = "keys", .functions = &.{"format"}, .default_format = .{ .value = .{ .table = &.{.{ .key = "color", .value = .{ .value = .{ .string = "hex9" } } }} } } },
+            .message = "adapters/keys.lua: default_format.color: 'hex9' names no color format; did you mean 'hex' or 'hex8'?",
         },
         .{
             .declaration = .{ .name = "keys", .functions = &.{"format"}, .default_format = .{ .value = .{ .table = &.{.{ .key = "color", .value = .{ .value = .{ .string = "rgb" } } }} } } },
