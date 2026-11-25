@@ -56,7 +56,7 @@ Steps 23b-23k come from a review of kosm with the human (2026-11-24), in the ord
   - Done when: a command running two builds prints them at most once, an unchanged override prints nothing without `-v`, and a CLI test covers it.
 
 - **21l. Pick a suggestion for a misspelled kosmos** `ASK` (later)
-  - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.
+  - Do: when a kosmos name is misspelled and stdin and stderr are a terminal, offer the closest names (up to 3) numbered, picked by typing its number (the human prefers 1/2/3 over letters), and apply the one picked; without a terminal, fail in one line as today. Propose the prompt (its look, how a choice is typed, cancelling) first. `kosm apply` of a Zig kosmos is the easy part (the check runs in the command line before building); names the runner of scripts checks (a script, its variants, `--on`, a script's `base`) need it to hand its suggestions back to the command line, or to prompt itself. Decide whether `kosm build`, `colors` and `list` prompt too.
   - Done when: the human has agreed on the prompt, and picking a suggestion applies that kosmos, under a test.
 
 - **18h. Equibop theme** (waits on the human)
