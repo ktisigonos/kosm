@@ -31,10 +31,6 @@ Steps 23b-23k come from a review of kosm with the human (2026-11-24), in the ord
   - Do: propose a way (a flag, or a per-app choice) to leave out an app whose program isn't installed with a one-line notice, so choosing apps is about what is riced, not what is installed. It builds on how 20a finds installs.
   - Done when: the human decided, and if agreed, it works and is tested.
 
-- **23f. Lua helpers for writing a kosmos** `ASK`
-  - Do: propose names and forms for: printing a value while writing a kosmos (`kosm.trace(...)`, kosm prints it to stderr with the script's file and line, so the script still does no IO), showing a handle's fields (`kosm.inspect`), copying a handle (`:copy()`, today `color:mix(color, 0)`), a color with some components changed (`color:with({ lightness = 0.7 })`), and reading an optional chain without nil checks at every level.
-  - Done when: the human agreed on the names, each works from Lua, completes, and is tested.
-
 - **23g. `kosm --help`, `kosm help <command>` and `kosm --version`**
   - Do: `--help` prints "unknown command '--help'". Add the three, `help <command>` printing that command's usage and flags.
   - Do: a misspelled command (`kosm updae`) fails in one line suggesting the closest commands through `suggestion.zig` (`unknown command 'updae'; did you mean 'update'?`), instead of printing the whole usage; with nothing close it names `kosm help`.
