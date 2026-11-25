@@ -24,18 +24,129 @@ pub fn writePlan(allocator: std.mem.Allocator, terminal: std.Io.Terminal, plan: 
     }
     for (plan.links.items) |link| {
         if (!link.changed() or link.group != null) continue;
-        try terminal.setColor(.bold);
-        try terminal.writer.print("link {s} -> {s}", .{ link.display_path, link.target });
-        if (link.old_target) |old_target| try terminal.writer.print(" (was {s})", .{old_target});
-        try endLine(terminal);
+        try writeLink(terminal, link);
     }
     const groups = try plan.changedGroups(allocator);
     defer allocator.free(groups);
-    for (groups) |count| {
-        try terminal.setColor(.bold);
-        try terminal.writer.print("{f} change, not shown", .{count});
-        try endLine(terminal);
+    for (groups) |count| try writeGroup(terminal, count);
+}
+
+/// Shown in place of the app for a file several apps edit.
+const several_apps = "several apps";
+
+/// `kosm apply --diff --stat`: per app, in the order first planned, each file it changes with
+/// the lines added and removed, then each link and group as `writePlan` shows them.
+pub fn writeStat(allocator: std.mem.Allocator, terminal: std.Io.Terminal, plan: *const Plan) !void {
+    const groups = try plan.changedGroups(allocator);
+    defer allocator.free(groups);
+    var apps: std.ArrayList([]const u8) = .empty;
+    defer apps.deinit(allocator);
+    for (plan.files.items) |file| {
+        if (file.changed() and file.group == null) try addApp(allocator, &apps, appOf(file));
     }
+    for (plan.links.items) |link| {
+        if (link.changed() and link.group == null) try addApp(allocator, &apps, link.owner);
+    }
+    for (groups) |count| try addApp(allocator, &apps, groupApp(plan, count.group));
+
+    for (apps.items) |app| {
+        try terminal.setColor(.bold);
+        try terminal.writer.writeAll(app);
+        try endLine(terminal);
+        var width: usize = 0;
+        for (plan.files.items) |file| {
+            if (shownUnder(file, app)) width = @max(width, file.display_path.len);
+        }
+        for (plan.files.items) |file| {
+            if (shownUnder(file, app)) try writeFileStat(allocator, terminal, file, width);
+        }
+        for (plan.links.items) |link| {
+            if (!link.changed() or link.group != null or !std.mem.eql(u8, link.owner, app)) continue;
+            try terminal.writer.writeAll("  ");
+            try writeLink(terminal, link);
+        }
+        for (groups) |count| {
+            if (!std.mem.eql(u8, groupApp(plan, count.group), app)) continue;
+            try terminal.writer.writeAll("  ");
+            try writeGroup(terminal, count);
+        }
+    }
+}
+
+fn addApp(allocator: std.mem.Allocator, apps: *std.ArrayList([]const u8), app: []const u8) !void {
+    for (apps.items) |known| {
+        if (std.mem.eql(u8, known, app)) return;
+    }
+    try apps.append(allocator, app);
+}
+
+fn appOf(file: Plan.File) []const u8 {
+    const owner = file.owner();
+    return if (owner.len == 0) several_apps else owner;
+}
+
+/// The app of the first changed file or link in `group`; a group always has one.
+fn groupApp(plan: *const Plan, group: []const u8) []const u8 {
+    for (plan.files.items) |file| {
+        const in = file.group orelse continue;
+        if (file.changed() and std.mem.eql(u8, in, group)) return appOf(file);
+    }
+    for (plan.links.items) |link| {
+        const in = link.group orelse continue;
+        if (link.changed() and std.mem.eql(u8, in, group)) return link.owner;
+    }
+    unreachable;
+}
+
+fn shownUnder(file: Plan.File, app: []const u8) bool {
+    return file.changed() and file.group == null and std.mem.eql(u8, appOf(file), app);
+}
+
+/// `  ~/a.conf  +3 -1`, the counts lined up at `width`, and `(new)` or `(chmod +x)` after.
+fn writeFileStat(allocator: std.mem.Allocator, terminal: std.Io.Terminal, file: Plan.File, width: usize) !void {
+    const counts = try countLines(allocator, file.old, file.new);
+    try terminal.writer.print("  {s}", .{file.display_path});
+    try terminal.writer.splatByteAll(' ', width - file.display_path.len + 2);
+    try terminal.setColor(.green);
+    try terminal.writer.print("+{d}", .{counts.added});
+    try terminal.setColor(.reset);
+    try terminal.writer.writeByte(' ');
+    try terminal.setColor(.red);
+    try terminal.writer.print("-{d}", .{counts.removed});
+    try terminal.setColor(.reset);
+    if (file.old == null) try terminal.writer.writeAll(" (new)");
+    if (file.executable and !file.was_executable) try terminal.writer.writeAll(" (chmod +x)");
+    try terminal.writer.writeByte('\n');
+}
+
+const LineCounts = struct { added: usize = 0, removed: usize = 0 };
+
+/// The lines the diff of a file adds and removes; `old` is null for a file that does not exist.
+fn countLines(allocator: std.mem.Allocator, old: ?[]const u8, new: []const u8) !LineCounts {
+    var arena: std.heap.ArenaAllocator = .init(allocator);
+    defer arena.deinit();
+    const old_lines = try splitLines(arena.allocator(), old orelse "");
+    const new_lines = try splitLines(arena.allocator(), new);
+    var counts: LineCounts = .{};
+    for (try editScript(arena.allocator(), old_lines, new_lines)) |edit| switch (edit.operation) {
+        .equal => {},
+        .delete => counts.removed += 1,
+        .insert => counts.added += 1,
+    };
+    return counts;
+}
+
+fn writeLink(terminal: std.Io.Terminal, link: Plan.Link) !void {
+    try terminal.setColor(.bold);
+    try terminal.writer.print("link {s} -> {s}", .{ link.display_path, link.target });
+    if (link.old_target) |old_target| try terminal.writer.print(" (was {s})", .{old_target});
+    try endLine(terminal);
+}
+
+fn writeGroup(terminal: std.Io.Terminal, count: Plan.GroupCount) !void {
+    try terminal.setColor(.bold);
+    try terminal.writer.print("{f} change, not shown", .{count});
+    try endLine(terminal);
 }
 
 /// Prints a unified diff of one file; `old` is null for a file that does not exist yet.
@@ -446,4 +557,76 @@ test "links print one line each, and a group of files and links one line in all"
     defer output.deinit();
     try writePlan(testing.allocator, .{ .writer = &output.writer, .mode = .no_color }, &plan);
     try testing.expectEqualStrings("link ~/a.svg -> b.svg\n~/icons: 1 file and 2 links change, not shown\n", output.written());
+}
+
+test "the stat counts per app the lines the full diff adds and removes, links and groups as there" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "kitty.conf", .data = "a\nb\nc\nd\n" });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "shared.conf", .data = "x\n" });
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const length = try tmp.dir.realPath(testing.io, &buffer);
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const root = buffer[0..length];
+    const kitty = try std.Io.Dir.path.join(arena.allocator(), &.{ root, "kitty.conf" });
+    const shared = try std.Io.Dir.path.join(arena.allocator(), &.{ root, "shared.conf" });
+
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    try plan.add(kitty, "~/kitty.conf", "kitty", "a\nB\nc\nd\ne\n");
+    try plan.add("/nonexistent/kosm-test/kitty/theme.conf", "~/kitty/theme.conf", "kitty", "one\ntwo\n");
+    try plan.addLink("/nonexistent/kosm-test/a.svg", "~/a.svg", "icons", "b.svg", null);
+    const icon = try plan.load("/nonexistent/kosm-test/icons/d.svg", "~/icons/d.svg");
+    try plan.addEdit(icon, .{ .target = .whole_file, .start = 0, .end = 0, .content = "<svg/>", .owner = "icons" });
+    try plan.setGroup(icon, "~/icons");
+    const both = try plan.load(shared, "~/shared.conf");
+    try plan.addEdit(both, .{ .target = .value, .start = 0, .end = 1, .content = "y", .owner = "kitty" });
+    try plan.addEdit(both, .{ .target = .value, .start = 1, .end = 1, .content = "z\n", .owner = "foot" });
+
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+    try writeStat(testing.allocator, .{ .writer = &output.writer, .mode = .no_color }, &plan);
+    try testing.expectEqualStrings(
+        \\kitty
+        \\  ~/kitty.conf        +2 -1
+        \\  ~/kitty/theme.conf  +2 -0 (new)
+        \\several apps
+        \\  ~/shared.conf  +2 -1
+        \\icons
+        \\  link ~/a.svg -> b.svg
+        \\  ~/icons: 1 file change, not shown
+        \\
+    , output.written());
+
+    var full: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer full.deinit();
+    try writePlan(testing.allocator, .{ .writer = &full.writer, .mode = .no_color }, &plan);
+    var added: usize = 0;
+    var removed: usize = 0;
+    var lines = std.mem.splitScalar(u8, full.written(), '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "+") and !std.mem.startsWith(u8, line, "+++ ")) added += 1;
+        if (std.mem.startsWith(u8, line, "-") and !std.mem.startsWith(u8, line, "--- ")) removed += 1;
+    }
+    try testing.expectEqual(2 + 2 + 2, added);
+    try testing.expectEqual(1 + 0 + 1, removed);
+}
+
+test "the stat marks a file that only becomes executable" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "run.sh", .data = "x\n" });
+    var buffer: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const length = try tmp.dir.realPath(testing.io, &buffer);
+    const path = try std.Io.Dir.path.join(testing.allocator, &.{ buffer[0..length], "run.sh" });
+    defer testing.allocator.free(path);
+    var plan: Plan = .init(testing.allocator, testing.io);
+    defer plan.deinit();
+    try plan.add(path, "~/run.sh", "scripts", "x\n");
+    plan.files.items[0].executable = true;
+    var output: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer output.deinit();
+    try writeStat(testing.allocator, .{ .writer = &output.writer, .mode = .no_color }, &plan);
+    try testing.expectEqualStrings("scripts\n  ~/run.sh  +0 -0 (chmod +x)\n", output.written());
 }

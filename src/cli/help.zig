@@ -33,13 +33,15 @@ pub const list_flags = [_]Flag{
     .{ .name = "--frontends", .meaning = "list only frontends" },
     .{ .name = "--packages", .meaning = "list only packages" },
 };
+const set_flag: Flag = .{ .name = "--set", .value = "path=value", .meaning = "set one value of the kosmos" };
 pub const apply_flags = [_]Flag{
     .{ .name = "--diff", .meaning = "print what would change and write nothing" },
+    .{ .name = "--stat", .meaning = "with --diff, print only the files and lines each app changes" },
     .{ .name = "--reload", .meaning = "reload every app, also those whose files did not change" },
-    .{ .name = "--set", .value = "path=value", .meaning = "set one value of the kosmos" },
+    set_flag,
     config_flag,
 };
-const colors_flags = [_]Flag{ apply_flags[2], config_flag };
+const colors_flags = [_]Flag{ set_flag, config_flag };
 pub const build_flags = [_]Flag{
     .{ .name = "--except", .meaning = "build every kosmos but the ones named after it" },
     .{ .name = "--all", .meaning = "build every kosmos in kosmoi/, whatever kosm.zon says" },
@@ -50,7 +52,7 @@ const parameters_note = "A kosmos takes the parameters it declares as --<param> 
 pub const commands = [_]Command{
     .{ .name = "init", .arguments = "[--config dir]", .summary = "create what a config project is missing", .flags = &.{config_flag} },
     .{ .name = "new", .arguments = "kosmos|app|adapter|frontend|modifier|style|family|package <name> [--language <frontend>] [--config dir]", .summary = "scaffold a kosmos, app, adapter, frontend, color script or package", .flags = &.{ language_flag, config_flag } },
-    .{ .name = "apply", .arguments = "<kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff] [--reload] [--config dir]", .summary = "apply a kosmos", .flags = &apply_flags, .notes = &.{parameters_note} },
+    .{ .name = "apply", .arguments = "<kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff [--stat]] [--reload] [--config dir]", .summary = "apply a kosmos", .flags = &apply_flags, .notes = &.{parameters_note} },
     .{ .name = "list", .arguments = "[<kosmos> | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]", .summary = "list kosmoi and packages", .flags = &(list_flags ++ [_]Flag{config_flag}) },
     .{ .name = "colors", .arguments = "<kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]", .summary = "show the colors a kosmos wears", .flags = &colors_flags, .notes = &.{parameters_note} },
     .{ .name = "current", .arguments = "", .summary = "print the last apply as a command" },

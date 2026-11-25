@@ -763,6 +763,7 @@ fn readArguments(init: std.process.Init, comptime Params: type, raw_arguments: [
     const typed = Arguments.split(arena, raw_arguments) catch |err| switch (err) {
         error.SetWithoutAssignment => return fail(diagnostics, "--set needs path=value", .{}),
         error.ConfigWithoutDirectory => return fail(diagnostics, "--config needs a directory", .{}),
+        error.StatWithoutDiff => return fail(diagnostics, "--stat summarizes --diff, so it needs --diff", .{}),
         error.OutOfMemory => return error.OutOfMemory,
     };
     const working_directory = std.process.currentPathAlloc(init.io, arena) catch |err|
@@ -794,6 +795,7 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         .io = init.io,
         .home = home,
         .diff = arguments.diff,
+        .stat = arguments.stat,
         .reload_all = arguments.reload,
         .recording = try recording(arena, init.environ_map, diagnostics.kosmos, arguments),
         .latest = latest,
@@ -911,6 +913,8 @@ const Delivery = struct {
     /// The home directory a reload's `~/` arguments expand to.
     home: []const u8,
     diff: bool,
+    /// With `diff`, print the files and lines each app changes instead of the whole diff.
+    stat: bool = false,
     /// Reload every app, not only those whose files changed.
     reload_all: bool = false,
     /// Saved after a successful commit; null records nothing.
@@ -928,7 +932,9 @@ fn deliver(tree: anytype, plan: *kosm.Plan, delivery: Delivery) !void {
     const stdout = delivery.streams.stdout;
     if (delivery.diff) {
         if (!plan.hasChanges()) return report.nothingToChange(stdout);
-        return kosm.diff.writePlan(delivery.gpa, .{ .writer = stdout, .mode = delivery.streams.stdout_mode }, plan);
+        const terminal: std.Io.Terminal = .{ .writer = stdout, .mode = delivery.streams.stdout_mode };
+        if (delivery.stat) return kosm.diff.writeStat(delivery.gpa, terminal, plan);
+        return kosm.diff.writePlan(delivery.gpa, terminal, plan);
     }
     if (delivery.latest) |latest| if (!latest.isNewest(delivery.io)) return report.superseded(delivery.streams.stderr);
     if (plan.hasChanges()) {

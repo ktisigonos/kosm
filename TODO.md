@@ -31,10 +31,6 @@ Steps 23b-23l come from a review of kosm with the human (2026-11-24), in the ord
   - Do: propose a way (a flag, or a per-app choice) to leave out an app whose program isn't installed with a one-line notice, so choosing apps is about what is riced, not what is installed. It builds on how 20a finds installs.
   - Done when: the human decided, and if agreed, it works and is tested.
 
-- **23h. A summary of the diff**
-  - Do: with thousands of files a whole diff is too long to read. Add `--diff --stat`: per app, the files and lines changed, groups as one line as now.
-  - Done when: it prints per app counts that match the full diff, and a test covers it.
-
 - **23i. Review the diff, then commit it** `ASK`
   - Do: propose `kosm apply -i`: print the diff, ask y/N, then commit the same plan without planning again, so what is committed is what was shown (a program saving a file meanwhile already fails the commit).
   - Done when: the human agreed, it works, and saying no writes nothing.

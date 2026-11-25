@@ -1,4 +1,4 @@
-//! A runner's arguments, sorted into kosm's own (`--diff`, `--reload`, `--set`, `--config`) and the kosmos'
+//! A runner's arguments, sorted into kosm's own (`--diff`, `--stat`, `--reload`, `--set`, `--config`) and the kosmos'
 //! parameters.
 
 const Arguments = @This();
@@ -7,6 +7,8 @@ const std = @import("std");
 
 /// Print the plan as a diff instead of committing it.
 diff: bool = false,
+/// With `diff`, print per app the files and lines changed instead of the whole diff.
+stat: bool = false,
 /// Reload every app after the commit, not only those whose files changed.
 reload: bool = false,
 /// The config project's absolute path, which `kosm apply` passes on for the record.
@@ -18,13 +20,14 @@ parameters: []const []const u8 = &.{},
 /// The parameters and `--set`s as typed, for the record of the apply.
 recorded: []const []const u8 = &.{},
 
-pub const Error = error{ SetWithoutAssignment, ConfigWithoutDirectory, OutOfMemory };
+pub const Error = error{ SetWithoutAssignment, ConfigWithoutDirectory, StatWithoutDiff, OutOfMemory };
 
-/// Sorts `arguments` (without the program name); `--diff`, `--reload`, `--set path=value` and
-/// `--config dir` may appear anywhere. The slices point into `arguments` and are allocated in
+/// Sorts `arguments` (without the program name); `--diff`, `--stat`, `--reload`, `--set
+/// path=value` and `--config dir` may appear anywhere, and `--stat` only with `--diff`. The slices point into `arguments` and are allocated in
 /// `arena`.
 pub fn split(arena: std.mem.Allocator, arguments: []const []const u8) Error!Arguments {
     var diff = false;
+    var stat = false;
     var reload = false;
     var config: ?[]const u8 = null;
     var assignments: std.ArrayList([]const u8) = .empty;
@@ -35,6 +38,8 @@ pub fn split(arena: std.mem.Allocator, arguments: []const []const u8) Error!Argu
         const argument = arguments[index];
         if (std.mem.eql(u8, argument, "--diff")) {
             diff = true;
+        } else if (std.mem.eql(u8, argument, "--stat")) {
+            stat = true;
         } else if (std.mem.eql(u8, argument, "--reload")) {
             reload = true;
         } else if (std.mem.eql(u8, argument, "--config")) {
@@ -51,7 +56,8 @@ pub fn split(arena: std.mem.Allocator, arguments: []const []const u8) Error!Argu
             try recorded.append(arena, argument);
         }
     }
-    return .{ .diff = diff, .reload = reload, .config = config, .assignments = assignments.items, .parameters = parameters.items, .recorded = recorded.items };
+    if (stat and !diff) return error.StatWithoutDiff;
+    return .{ .diff = diff, .stat = stat, .reload = reload, .config = config, .assignments = assignments.items, .parameters = parameters.items, .recorded = recorded.items };
 }
 
 /// These arguments with `parameters` in place of the kosmos' parameters (as many, in the same
@@ -100,6 +106,15 @@ test "the record keeps parameters and sets in the order typed, without diff or c
     try testing.expectEqualStrings("kitty=null", arguments.recorded[1]);
     try testing.expectEqualStrings("--blur", arguments.recorded[2]);
     try testing.expectEqualStrings("false", arguments.recorded[3]);
+}
+
+test "--stat goes with --diff and is an error without it" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const arguments = try split(arena.allocator(), &.{ "--stat", "--diff" });
+    try testing.expect(arguments.diff and arguments.stat);
+    try testing.expectEqual(0, arguments.recorded.len);
+    try testing.expectError(error.StatWithoutDiff, split(arena.allocator(), &.{"--stat"}));
 }
 
 test "a trailing --set or --config is an error" {

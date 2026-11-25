@@ -137,9 +137,17 @@ fn completeApply(context: Context, before: []const []const u8, previous: []const
         return writeKosmosCandidates(context, kosmos, .paths);
     }
     // Every parameter takes a value, so after one nothing is offered.
-    if (std.mem.startsWith(u8, previous, "--") and !std.mem.eql(u8, previous, "--diff")) return;
+    if (std.mem.startsWith(u8, previous, "--") and !isApplySwitch(previous)) return;
     try writeAll(context.stdout, &apply_flags);
     try writeKosmosCandidates(context, kosmos, .parameters);
+}
+
+/// Whether `word` is a flag of `kosm apply` that takes no value, like `--diff`.
+fn isApplySwitch(word: []const u8) bool {
+    for (help.apply_flags) |flag| {
+        if (flag.value.len == 0 and std.mem.eql(u8, flag.name, word)) return true;
+    }
+    return false;
 }
 
 /// `kosm build`: any number of kosmoi, after `--except` too; `--all` takes none.
@@ -353,4 +361,6 @@ test "a config that does not build completes no kosmos, silently" {
     // The flags kosm itself takes need no build.
     try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "apply", "frost", "" }), "--diff\t");
     try testing.expectEqualStrings("", try testComplete(arena.allocator(), config, &.{ "apply", "frost", "--blur", "" }));
+    try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "apply", "frost", "--diff", "" }), "--diff\t");
+    try testing.expectStringStartsWith(try testComplete(arena.allocator(), config, &.{ "apply", "frost", "--reload", "" }), "--diff\t");
 }

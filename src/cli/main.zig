@@ -700,7 +700,8 @@ const Apply = struct {
     config: ?[]const u8,
     /// Parameters, `--set`s and `--diff`, in order, for the kosmos runner.
     runner_arguments: []const []const u8,
-    /// Whether `--diff` is among them, read like the runner reads it.
+    /// Whether `--diff` or `--stat` is among them, read like the runner reads it: either way the
+    /// apply writes nothing.
     diff: bool,
     /// `kosm colors`: print the themes of the tree instead of applying it.
     colors: bool = false,
@@ -725,7 +726,8 @@ const Apply = struct {
                 continue;
             }
             try rest.append(arena, arguments[index]);
-            if (std.mem.eql(u8, arguments[index], "--diff")) diff = true;
+            // Without --diff the runner refuses --stat, so kosm must not write either.
+            if (std.mem.eql(u8, arguments[index], "--diff") or std.mem.eql(u8, arguments[index], "--stat")) diff = true;
             // The value of a --set is never a flag, as in the runner.
             if (std.mem.eql(u8, arguments[index], "--set") and index + 1 < arguments.len) {
                 index += 1;
@@ -769,6 +771,13 @@ test "apply keeps --config for itself and passes the rest on in order" {
     try testing.expectEqualStrings("--blur", command.runner_arguments[0]);
     try testing.expectEqualStrings("--diff", command.runner_arguments[2]);
     try testing.expect(command.diff);
+}
+
+test "--stat writes nothing, with --diff or without, which the runner refuses" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    try testing.expect((try Apply.parse(arena.allocator(), &.{ "apply", "frost", "--stat" })).diff);
+    try testing.expect(!(try Apply.parse(arena.allocator(), &.{ "apply", "frost", "--set", "--stat" })).diff);
 }
 
 test "a --set whose value is --diff is no diff, as in the runner" {
