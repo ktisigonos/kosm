@@ -19,9 +19,10 @@ Steps 21e-21j: kosmoi written in Lua, through a **frontend**. Decided with the h
 
 Steps 23b-23l come from a review of kosm with the human (2026-11-24), in the order to take them.
 
-- **23b. `kosm doctor`** `PLAN FIRST`
-  - Do: a program that never includes kosm's file shows no change and no error, the likeliest first-day failure. Propose how an app declares how its file is reached (which file of the program includes it, and the line that does) and how its program is found (a command, a Flatpak id), then add `kosm doctor [kosmos]` printing one line per app: fine, not included (with the exact line to add), or program not found.
-  - Done when: the human agreed on the declaration, doctor reports each case, and a test covers each.
+- **23b. `kosm doctor`** (waits on the human)
+  - Done: `kosm doctor [kosmos]` (kosm `d00140f`, `ccfcd1f`) and a checkup in every official app it applies to; `kosm_base` `4edd67f` pins them all.
+  - Left for the human: push the package repos the keyring would not let Claude push (`kosm_kitty`, `kosm_ghostty`, `kosm_hyprland`, `kosm_equibop`, `kosm_adwsteamgtk`, `kosm_blender`, `kosm_commet`, `kosm_counter_strike`, `kosm_counter_strike_2`, `kosm_dunst`, `kosm_fastfetch`, `kosm_foot`, `kosm_hyprmouse`, `kosm_hyprpaper`, `kosm_nvim`, `kosm_ohmyposh`, `kosm_qtct`, `kosm_tuios`, `kosm_vicinae`, `kosm_wlr_which_key`, `kosm_zen`, `kosm_base`), then `kosm update` in the config so doctor checks every app instead of printing "nothing to check".
+  - Done when: `kosm doctor` in the human's config checks every app.
 
 - **23c. Seed files for configs that don't exist yet** `ASK`
   - Do: a fresh install fails on apps editing a program's main config the machine lacks (qtct, tuios, hyprmouse, wlr-which-key, Vicinae), so the starting kosmos leaves them out by hand. Propose a seed, the least content an app starts such a file from only when it does not exist at all, which goes against the non-goal on inserting keys, so it needs the human's word.
@@ -132,6 +133,7 @@ Steps 23b-23l come from a review of kosm with the human (2026-11-24), in the ord
   - Do: kosm cannot know how a user installed a program (native, Flatpak, later Windows and macOS folders), and an app's single literal path misses the others: Equibop's Flatpak reads `~/.var/app/<id>/config/equibop`, not `~/.config/equibop`. Each app names the places its program may keep its config: its standard folders (step 20's `{config}`, `{data}`) and each packaged kind it knows (a Flatpak id, more kinds later). kosm, not the app, checks which kinds are installed and writes to every one found; the kosmos can turn any of them off per app.
   - Do: the human's idea for programs found nowhere: a kosm-wide setting, set once in the user's config (and once by an installer), listing the kinds missing programs are written for (such as `.system` and `.flatpak`), so kosm writes to those instead of guessing. Propose where the setting lives (the config's root, beside `packages.zon`, or a kosmos field) and its default.
   - Do: settle the edge cases in the plan: how kosm detects a kind (a config folder exists only after a first run, so a Flatpak is better checked by `flatpak info <id>` or its install folder); a Flatpak granted the host's `~/.config` reads the native files, so both kinds are one program; reloads per kind (signals and `touch -c` reach a Flatpak's files, commands may need `flatpak run --command`); how `--diff` and errors name each install; kinds that make no sense on a platform are skipped.
+  - Do: build on `kosm doctor`, which already finds a program by command or Flatpak id (`kosm.Checkup.Program`, the runner's `doctor.zig`); Commet's and Equibop's checkups pick the Flatpak or the command from the path they write to, which moves to the installs kosm finds.
   - Done when: the human has agreed on the plan, and an app with a native and a Flatpak install writes to both, under a test.
 
 - **20. Windows support** `ASK` `PLAN FIRST`

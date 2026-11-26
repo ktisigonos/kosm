@@ -59,6 +59,8 @@ When unsure about any std function, grep the std source for its definition befor
 - **A recursive comptime string builder needs `comptime` at each recursive `++`:** `describe(child) ++ " or null"` inside a non-comptime call is "unable to resolve comptime value"; write `comptime describe(child) ++ ...`.
 - **`&.{ ... }` holding run-time values lives in the enclosing function's frame:** a test helper returning `.{ .table = &.{.{ .key = key, .value = v }} }` hands back a dangling slice (a segfault later). Allocate nested literals built from parameters, or write them inline in the test body.
 
+- **A `switch` over an inferred error set rejects a prong it lacks:** `error.Reported, error.New => 1` fails with "'error.New' not a member of destination error set" in every caller whose error set has no `New`, so a generic function switching on several callers' errors (the runner's `finishRun`) may only name errors all of them can return.
+
 ### std
 
 - **`std.zig.Ast`: a union tag or enum value without a type is a `tuple_like` container field:** in `union(enum) { disabled, size: u16 }`, `fullContainerField` of `disabled` has `ast.tuple_like == true` and its identifier as `type_expr`; read its name from `ast.main_token` and treat it as untyped. Doc comments are the `.doc_comment` tokens right before `ast.firstToken(member)`; a file's `//!` lines are `.container_doc_comment` tokens from token 0.
