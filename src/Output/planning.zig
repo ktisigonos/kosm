@@ -11,10 +11,12 @@ pub fn addEdit(output: *Output, file: *Plan.File, edit: Plan.Edit) Output.Error!
         error.OutOfMemory => return error.OutOfMemory,
         error.EditsOverlap => {
             const other = file.clash(edit).?;
+            // The plan may be freed before the failure is printed; the output's memory is not.
+            const shown = try output.allocator.dupe(u8, file.display_path);
             return switch (other.target) {
-                .whole_file => fail(output, error.EditsOverlap, file.display_path, "app '{s}' writes this whole file; two apps cannot write the same bytes", .{other.owner}),
-                .block => |id| fail(output, error.EditsOverlap, file.display_path, "app '{s}' writes block '{s}' of this file; two apps cannot write the same bytes", .{ other.owner, id }),
-                .value => fail(output, error.EditsOverlap, file.display_path, "app '{s}' already writes the value on line {d} of this file; the same bytes cannot be written twice", .{ other.owner, lineOf(file.current(), other.start) }),
+                .whole_file => fail(output, error.EditsOverlap, shown, "app '{s}' writes this whole file; two apps cannot write the same bytes", .{other.owner}),
+                .block => |id| fail(output, error.EditsOverlap, shown, "app '{s}' writes block '{s}' of this file; two apps cannot write the same bytes", .{ other.owner, id }),
+                .value => fail(output, error.EditsOverlap, shown, "app '{s}' already writes the value on line {d} of this file; the same bytes cannot be written twice", .{ other.owner, lineOf(file.current(), other.start) }),
             };
         },
     };

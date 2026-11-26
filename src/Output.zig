@@ -917,6 +917,10 @@ test "two apps writing one file is an error naming the first" {
     try testing.expectError(error.EditsOverlap, second.generate(.{ .file = "~/shared.lines" }, .{ .size = 2 }));
     try testing.expectEqualStrings("browser", fixture.diagnostics.app);
     try testing.expectEqualStrings("app 'terminal' writes this whole file; two apps cannot write the same bytes", fixture.diagnostics.message());
+    // The runner prints the failure after freeing the plan.
+    fixture.plan.deinit();
+    fixture.plan = .init(testing.allocator, testing.io);
+    try testing.expectEqualStrings("~/shared.lines", fixture.diagnostics.file);
 }
 
 test "generate reads the current contents so unchanged files are left alone" {
