@@ -45,7 +45,8 @@ fn planNode(node: anytype, comptime path: []const u8, context: Context) Error!vo
     }
 }
 
-fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void {
+/// Calls `apply` on one app, as `planTree` does for each, under its `path` in the tree.
+pub fn planApp(app: anytype, comptime path: []const u8, context: Context) Error!void {
     var output: kosm.Output = .{
         .allocator = context.allocator,
         .home = context.home,

@@ -1,10 +1,12 @@
-//! `kosm doctor`: checks each app of a planned tree for what makes an apply show nothing
+//! `kosm doctor`: plans each app of a tree, then checks it for what makes an apply show nothing
 //! without failing: a program that isn't installed, or one that never reads the app's file.
-//! Every app gets one line: fine, nothing to check, or each problem found.
+//! Every app gets one line: fine, nothing to check, or each problem found, an app that cannot
+//! be applied among them.
 
 const std = @import("std");
 const kosm = @import("kosm");
 const discovery = @import("discovery.zig");
+const walk = @import("walk.zig");
 
 /// What the checks read besides the tree.
 pub const Context = struct {
@@ -18,16 +20,17 @@ pub const Context = struct {
     /// The folders a Flatpak's app id is looked up in, each holding one folder per installed app
     /// (`~/.local/share/flatpak/app`, `/var/lib/flatpak/app`).
     flatpak_folders: []const []const u8,
-    /// The plan of the tree, so a file the apply would write or add an include to is read as it
-    /// would be afterwards.
-    plan: *kosm.Plan,
+    /// Plans each app before it is checked, so a file the apply would write or add an include to
+    /// is read as it would be afterwards. Its plan is never committed.
+    planning: walk.Context,
 };
 
 /// The folder system-wide Flatpaks are installed in, one folder per app id.
 pub const system_flatpak_folder = "/var/lib/flatpak/app";
 
-/// Checks every app in `tree`, in field order, and prints its line to `writer`. Returns how
-/// many apps have a problem.
+/// Plans and checks every app in `tree`, in field order, and prints its line to `writer`. An
+/// app that cannot be applied is that app's problem, and the others are still checked. Returns
+/// how many apps have a problem.
 pub fn checkTree(tree: anytype, context: Context, writer: *std.Io.Writer) !usize {
     var lines: std.ArrayList(Line) = .empty;
     try checkNode(tree, "", context, &lines);
@@ -59,7 +62,12 @@ fn checkNode(node: anytype, comptime path: []const u8, context: Context, lines: 
         return;
     }
     if (comptime discovery.isApp(Node)) {
-        const line = if (comptime discovery.hasCheckup(Node)) try checkApp(node, context) else nothing_to_check;
+        const line = if (try notApplied(node, path, context)) |problem|
+            problem
+        else if (comptime discovery.hasCheckup(Node))
+            try checkApp(node, context)
+        else
+            nothing_to_check;
         return lines.append(context.allocator, .{ .app = path, .text = line.text, .problem = line.problem });
     }
     if (comptime !discovery.containsApp(Node)) return;
@@ -75,6 +83,21 @@ const Result = struct {
 };
 
 const nothing_to_check: Result = .{ .text = "nothing to check", .problem = false };
+
+/// Plans `app`; why it cannot be applied, or null when it can.
+fn notApplied(app: anytype, comptime path: []const u8, context: Context) !?Result {
+    const diagnostics = context.planning.diagnostics;
+    walk.planApp(app, path, context.planning) catch {
+        defer diagnostics.set("", "", "", .{});
+        const text = if (diagnostics.file.len != 0)
+            try context.allocator.print("cannot apply {s}: {s}", .{ diagnostics.file, diagnostics.message() })
+        else
+            try context.allocator.print("cannot apply: {s}", .{diagnostics.message()});
+        kosm.failure.clear();
+        return .{ .text = text, .problem = true };
+    };
+    return null;
+}
 
 fn checkApp(app: anytype, context: Context) !Result {
     kosm.failure.clear();
@@ -144,7 +167,7 @@ fn notIncluded(include: kosm.Checkup.Include, context: Context) !?[]const u8 {
     const path = try expandHome(include.file, context);
     if (!std.Io.Dir.path.isAbsolute(path))
         return try context.allocator.print("cannot check {s}: file paths start with ~/ or /", .{include.file});
-    const file = context.plan.loadExisting(path, include.file) catch |err|
+    const file = context.planning.plan.loadExisting(path, include.file) catch |err|
         return try context.allocator.print("cannot read {s}: {s}", .{ include.file, @errorName(err) });
     const found = file orelse
         return try context.allocator.print("not included: {s} does not exist; create it holding `{s}`", .{ include.file, include.line });
@@ -192,15 +215,32 @@ const RecordingApp = struct {
     }
 };
 
+const UnappliedApp = struct {
+    file: []const u8,
+
+    pub fn apply(self: UnappliedApp, output: *kosm.Output) !void {
+        if (self.file.len == 0) return error.GlowMissing;
+        try output.verbatim(.{ .file = self.file, .content = "" });
+    }
+
+    pub fn checkup(self: UnappliedApp) kosm.Checkup {
+        _ = self;
+        return .{ .program = .{ .command = "never-checked" } };
+    }
+};
+
 const Fixture = struct {
     tmp: testing.TmpDir,
     home_buffer: [std.Io.Dir.max_path_bytes]u8 = undefined,
     home: []const u8 = "",
     arena: std.heap.ArenaAllocator,
     plan: kosm.Plan,
+    diagnostics: kosm.Diagnostics = .{},
+    warnings: kosm.Warnings = undefined,
 
     fn init(fixture: *Fixture) !void {
         fixture.* = .{ .tmp = testing.tmpDir(.{}), .arena = .init(testing.allocator), .plan = .init(testing.allocator, testing.io) };
+        fixture.warnings = .init(fixture.arena.allocator());
         fixture.home = fixture.home_buffer[0..try fixture.tmp.dir.realPath(testing.io, &fixture.home_buffer)];
         try fixture.tmp.dir.createDirPath(testing.io, "bin");
         try fixture.tmp.dir.createDirPath(testing.io, "flatpak/org.equicord.equibop");
@@ -222,7 +262,14 @@ const Fixture = struct {
             .home = fixture.home,
             .path_variable = try std.mem.concat(allocator, u8, &.{ "relative:", fixture.home, "/bin" }),
             .flatpak_folders = try allocator.dupe([]const u8, &.{try std.Io.Dir.path.join(allocator, &.{ fixture.home, "flatpak" })}),
-            .plan = &fixture.plan,
+            .planning = .{
+                .allocator = allocator,
+                .home = fixture.home,
+                .adapters = &.{},
+                .plan = &fixture.plan,
+                .diagnostics = &fixture.diagnostics,
+                .warnings = &fixture.warnings,
+            },
         };
     }
 
@@ -320,6 +367,23 @@ test "a script's failure in its checkup is that app's problem, and the others ar
     try fixture.check(tree, 1,
         \\cava   cannot check: apps/cava.lua:4: attempt to index a nil value
         \\kitty  fine
+        \\
+    );
+}
+
+test "an app that cannot be applied is that app's problem, naming its file, and the others are still checked" {
+    var fixture: Fixture = undefined;
+    try fixture.init();
+    defer fixture.deinit();
+    const tree = .{
+        .relative = UnappliedApp{ .file = "relative.conf" },
+        .failing = UnappliedApp{ .file = "" },
+        .kitty = CheckedApp{ .checkup_given = .{ .program = .{ .command = "kitty" } } },
+    };
+    try fixture.check(tree, 2,
+        \\relative  cannot apply relative.conf: file paths start with ~/ or /
+        \\failing   cannot apply: apply failed: GlowMissing
+        \\kitty     fine
         \\
     );
 }

@@ -818,15 +818,13 @@ fn lockApply(init: std.process.Init, diagnostics: *kosm.Diagnostics, stderr: *st
     };
 }
 
-/// Plans `tree` as an apply would, then prints each app's checkup against the plan, for
-/// `kosm doctor`; writes nothing. `error.Reported` with no message when an app has a problem.
+/// Plans each app of `tree` as an apply would and prints its checkup against the plan, for
+/// `kosm doctor`, then the warnings planning gave; writes nothing. `error.Reported` with no message when an app has a problem.
 fn checkApps(init: std.process.Init, tree: anytype, home: []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
     const arena = init.arena.allocator();
     var plan: kosm.Plan = .init(init.gpa, init.io);
     defer plan.deinit();
     var warnings: kosm.Warnings = .init(arena);
-    const context: walk.Context = .{ .allocator = arena, .home = home, .adapters = adapters.list, .adapter_clashes = adapters.clashes, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings };
-    try planWarning(tree, context, streams.stderr);
     const user_flatpaks = try std.Io.Dir.path.join(arena, &.{ try dataHome(arena, init.environ_map, home), "flatpak", "app" });
     const problems = try doctor.checkTree(tree, .{
         .allocator = arena,
@@ -834,8 +832,9 @@ fn checkApps(init: std.process.Init, tree: anytype, home: []const u8, adapters: 
         .home = home,
         .path_variable = init.environ_map.get("PATH"),
         .flatpak_folders = &.{ user_flatpaks, doctor.system_flatpak_folder },
-        .plan = &plan,
+        .planning = .{ .allocator = arena, .home = home, .adapters = adapters.list, .adapter_clashes = adapters.clashes, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings },
     }, streams.stdout);
+    try warnings.write(diagnostics.kosmos, streams.stderr);
     if (problems != 0) return error.Reported;
 }
 
