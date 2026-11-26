@@ -1,6 +1,6 @@
 //! The `kosm` command: `kosm init`, `kosm apply`, which builds the one kosmos in the config
 //! project with `zig build` and runs it (a script kosmos runs on the runner every script shares,
-//! rebuilt only when Zig code changed), `kosm list`, `kosm colors`, `kosm new`,
+//! rebuilt only when Zig code changed), `kosm list`, `kosm colors`, `kosm doctor`, `kosm new`,
 //! `kosm current`, the package commands `kosm add`, `kosm remove` and `kosm update`, `kosm clean`,
 //! `kosm build`, and
 //! `kosm source` and `kosm relay`, the native messaging host browser extensions use. Applying a directory kosmos also refreshes its own
@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
     const builds = try Builds.prepare(init, &stderr.interface) orelse return 1;
     switch (command) {
-        .apply, .colors => |apply| return runApply(init, builds, apply, &stderr.interface),
+        .apply, .colors, .doctor => |apply| return runApply(init, builds, apply, &stderr.interface),
         .init => |init_arguments| return runInit(init, builds, init_arguments, &stderr.interface),
         .new => |new| return runNew(init, builds, new, &stderr.interface),
         .build => |build_arguments| return runBuildCommand(init, builds, build_arguments, &stderr.interface),
@@ -199,8 +199,12 @@ fn runNew(init: std.process.Init, builds: Builds, command: New, stderr: *std.Io.
 }
 
 /// Builds and runs the kosmos; only returns when it could not be run.
-fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std.Io.Writer) !u8 {
+fn runApply(init: std.process.Init, builds: Builds, typed: Apply, stderr: *std.Io.Writer) !u8 {
     const arena = init.arena.allocator();
+    const command = if (typed.kosmos.len != 0) typed else current: {
+        const record = try loadCurrent(init, stderr) orelse return 1;
+        break :current Apply{ .kosmos = record.kosmos, .config = typed.config orelse record.config, .runner_arguments = record.arguments, .diff = false, .purpose = typed.purpose };
+    };
     // The runner records this path for `kosm current`, which may run from anywhere.
     const config = try configPath(init, command.config, stderr) orelse return 1;
     const latest = announceApply(init, command, stderr) catch |err| switch (err) {
@@ -221,8 +225,8 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
             error.Failed => return 1,
             else => |other| return other,
         };
-        // Showing colors writes nothing, so it leaves stale manifests to the next apply.
-        if (!command.colors) if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff, stderr)) return 1;
+        // Showing colors or checking apps writes nothing, so it leaves stale manifests to the next apply.
+        if (command.purpose == .apply) if (base) |name| if (!try refreshManifest(init, builds, config, name, command.diff, stderr)) return 1;
         break :script try scriptRunnerArguments(arena, config, command);
     } else zig: {
         // The runner of scripts checks a script's name itself; a Zig kosmos' is checked here,
@@ -232,7 +236,7 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
             else => |other| return other,
         };
         if (!try build(context, command.kosmos)) return 1;
-        if (!command.colors and !try refreshManifest(init, builds, config, command.kosmos, command.diff, stderr)) return 1;
+        if (command.purpose == .apply and !try refreshManifest(init, builds, config, command.kosmos, command.diff, stderr)) return 1;
         const runner = try std.Io.Dir.path.join(arena, &.{ config, runner_path });
         const builds_on_kosmoi = scripts.buildsOnKosmoi(context, runner) catch |err| switch (err) {
             error.Failed => return 1,
@@ -248,7 +252,11 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
     const runner = runner_arguments[0];
     const environ = try arena.create(std.process.Environ.Map);
     environ.* = try builds.environ.clone(arena);
-    if (command.colors) try environ.put(interface.colors_variable, "1");
+    switch (command.purpose) {
+        .apply => {},
+        .colors => try environ.put(interface.colors_variable, "1"),
+        .doctor => try environ.put(interface.doctor_variable, "1"),
+    }
     if (latest) |mark| try environ.put(interface.apply_token_variable, &mark.token);
     const err = std.process.replace(init.io, .{ .argv = runner_arguments, .environ_map = environ });
     try stderr.print("error: cannot run {s}: {s}\n", .{ runner, @errorName(err) });
@@ -257,10 +265,10 @@ fn runApply(init: std.process.Init, builds: Builds, command: Apply, stderr: *std
 
 /// Says an apply starts now, before anything is built, so that of two `kosm apply`s the one
 /// typed last wins however long each takes to build. Null when there is nothing to announce:
-/// on `--diff`, for `kosm colors`, and when there is no state directory. `error.Failed` after
+/// on `--diff`, for `kosm colors` and `kosm doctor`, and when there is no state directory. `error.Failed` after
 /// saying why on `stderr`.
 fn announceApply(init: std.process.Init, command: Apply, stderr: *std.Io.Writer) !?Record.Latest {
-    if (command.diff or command.colors) return null;
+    if (command.diff or command.purpose != .apply) return null;
     const path = try Record.statePath(init.arena.allocator(), init.environ_map, Record.Latest.file_name) orelse return null;
     return Record.Latest.announce(init.io, path) catch |err| {
         try stderr.print("error: cannot write {s}, which tells an older apply that this one is newer: {s}\n", .{ path, @errorName(err) });
@@ -329,7 +337,7 @@ fn runConfigCommand(init: std.process.Init, builds: Builds, command: Command, co
         .remove => package_commands.remove(context, config_command.argument.?),
         .update => package_commands.update(context, config_command.argument),
         .clean => clean_command.clean(context),
-        .help, .version, .apply, .colors, .list, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the four above.
+        .help, .version, .apply, .colors, .doctor, .list, .current, .init, .new, .build, .source, .completions, .complete, .relay => unreachable, // main passes only the four above.
     };
     result catch |err| switch (err) {
         error.Failed => return 1,
@@ -393,12 +401,12 @@ fn printVersion(init: std.process.Init) !u8 {
     return 0;
 }
 
-/// Prints the last successful apply as the command that repeats it.
-fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
+/// The last successful apply, or null after printing why there is none.
+fn loadCurrent(init: std.process.Init, stderr: *std.Io.Writer) !?Record {
     const arena = init.arena.allocator();
     const path = try Record.path(arena, init.environ_map) orelse {
         try stderr.writeAll("error: neither XDG_STATE_HOME nor HOME is set, so there is no state directory\n");
-        return 1;
+        return null;
     };
     var diagnostics: std.zon.parse.Diagnostics = undefined;
     const loaded = Record.load(arena, init.io, path, &diagnostics) catch |err| {
@@ -406,12 +414,18 @@ fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
             error.ParseZon => try stderr.print("{f}\n", .{diagnostics.fmt(path)}),
             else => try stderr.print("error: cannot read {s}: {s}\n", .{ path, @errorName(err) }),
         }
-        return 1;
+        return null;
     };
-    const record = loaded orelse {
+    return loaded orelse {
         try stderr.print("error: no kosmos has been applied yet ({s} does not exist)\n", .{path});
-        return 1;
+        return null;
     };
+}
+
+/// Prints the last successful apply as the command that repeats it.
+fn printCurrent(init: std.process.Init, stderr: *std.Io.Writer) !u8 {
+    const arena = init.arena.allocator();
+    const record = try loadCurrent(init, stderr) orelse return 1;
     var stdout_buffer: [1024]u8 = undefined;
     var stdout = std.Io.File.stdout().writerStreaming(init.io, &stdout_buffer);
     try record.writeCommand(try defaultConfig(init.io, arena, init.environ_map), &stdout.interface);
@@ -452,6 +466,9 @@ const Command = union(enum) {
     list: List,
     /// Like `apply`, printing the themes of the tree its kosmos builds instead of applying it.
     colors: Apply,
+    /// Like `apply`, checking each app of the tree instead of applying it; its kosmos is empty
+    /// for the one `kosm current` records.
+    doctor: Apply,
     /// The shell whose completion script to print.
     completions: completions.Shell,
     /// The file to forward to a browser extension.
@@ -509,6 +526,7 @@ const Command = union(enum) {
         if (std.mem.eql(u8, arguments[0], "new")) return .{ .new = try .parse(arguments[1..]) };
         if (std.mem.eql(u8, arguments[0], "list")) return .{ .list = try .parse(arena, arguments[1..]) };
         if (std.mem.eql(u8, arguments[0], "colors")) return .{ .colors = try Apply.parse(arena, arguments) };
+        if (std.mem.eql(u8, arguments[0], "doctor")) return .{ .doctor = try Apply.parse(arena, arguments) };
         if (std.mem.eql(u8, arguments[0], "add")) return .{ .add = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "remove")) return .{ .remove = try .parse(arguments[1..], .required) };
         if (std.mem.eql(u8, arguments[0], "update")) return .{ .update = try .parse(arguments[1..], .optional) };
@@ -691,10 +709,11 @@ fn runBuildCommand(init: std.process.Init, builds: Builds, command: Build, stder
     return 0;
 }
 
-/// `kosm apply` or `kosm colors` with its arguments sorted: kosm's own, and the ones the kosmos
+/// `kosm apply`, `kosm colors` or `kosm doctor` with its arguments sorted: kosm's own, and the ones the kosmos
 /// gets.
 const Apply = struct {
-    /// As typed: "frost" or "frost.iced".
+    /// As typed: "frost" or "frost.iced". Empty for `kosm doctor` alone, which checks the
+    /// kosmos `kosm current` records.
     kosmos: []const u8,
     /// The `--config` directory, or null for the default.
     config: ?[]const u8,
@@ -703,17 +722,25 @@ const Apply = struct {
     /// Whether `--diff` or `--stat` is among them, read like the runner reads it: either way the
     /// apply writes nothing.
     diff: bool,
-    /// `kosm colors`: print the themes of the tree instead of applying it.
-    colors: bool = false,
+    /// What is done with the tree the kosmos builds.
+    purpose: Purpose = .apply,
+
+    const Purpose = enum {
+        apply,
+        /// `kosm colors`: print the themes of the tree instead of applying it.
+        colors,
+        /// `kosm doctor`: check each app of the tree instead of applying it.
+        doctor,
+    };
 
     const ParseError = error{ NoCommand, UnknownCommand, MissingKosmos, MissingConfigDirectory, OutOfMemory };
 
-    /// Reads `apply <kosmos> ...` or `colors <kosmos> ...` (without the program name).
+    /// Reads `apply <kosmos> ...`, `colors <kosmos> ...` or `doctor [<kosmos> ...]` (without the
+    /// program name).
     /// `--config dir` may appear anywhere.
     fn parse(arena: std.mem.Allocator, arguments: []const []const u8) ParseError!Apply {
         if (arguments.len == 0) return error.NoCommand;
-        const colors = std.mem.eql(u8, arguments[0], "colors");
-        if (!colors and !std.mem.eql(u8, arguments[0], "apply")) return error.UnknownCommand;
+        const purpose = std.meta.stringToEnum(Purpose, arguments[0]) orelse return error.UnknownCommand;
         var config: ?[]const u8 = null;
         var diff = false;
         var rest: std.ArrayList([]const u8) = .empty;
@@ -734,8 +761,9 @@ const Apply = struct {
                 try rest.append(arena, arguments[index]);
             }
         }
+        if (purpose == .doctor and rest.items.len == 0) return .{ .kosmos = "", .config = config, .runner_arguments = &.{}, .diff = false, .purpose = purpose };
         if (rest.items.len == 0 or std.mem.startsWith(u8, rest.items[0], "-")) return error.MissingKosmos;
-        return .{ .kosmos = rest.items[0], .config = config, .runner_arguments = rest.items[1..], .diff = diff, .colors = colors };
+        return .{ .kosmos = rest.items[0], .config = config, .runner_arguments = rest.items[1..], .diff = diff, .purpose = purpose };
     }
 };
 
@@ -856,9 +884,17 @@ test "init takes only --config, and list at most one kosmos or the kinds to list
     try testing.expectEqualStrings("frost.light", colors.kosmos);
     try testing.expectEqualStrings("/c", colors.config.?);
     try testing.expectEqual(2, colors.runner_arguments.len);
-    try testing.expect(colors.colors and !colors.diff);
-    try testing.expect(!(try Command.parse(arena.allocator(), &.{ "apply", "frost" })).apply.colors);
+    try testing.expect(colors.purpose == .colors and !colors.diff);
+    try testing.expectEqual(.apply, (try Command.parse(arena.allocator(), &.{ "apply", "frost" })).apply.purpose);
     try testing.expectError(error.MissingKosmos, Command.parse(arena.allocator(), &.{"colors"}));
+    const doctor = (try Command.parse(arena.allocator(), &.{ "doctor", "frost", "--set", "kitty=null" })).doctor;
+    try testing.expectEqualStrings("frost", doctor.kosmos);
+    try testing.expect(doctor.purpose == .doctor);
+    try testing.expectEqual(2, doctor.runner_arguments.len);
+    const current = (try Command.parse(arena.allocator(), &.{ "doctor", "--config", "/c" })).doctor;
+    try testing.expectEqualStrings("", current.kosmos);
+    try testing.expectEqualStrings("/c", current.config.?);
+    try testing.expectError(error.MissingKosmos, Command.parse(arena.allocator(), &.{ "doctor", "--set", "kitty=null" }));
     try testing.expectEqual(completions.Shell.fish, (try Command.parse(arena.allocator(), &.{ "completions", "fish" })).completions);
     try testing.expectError(error.UnexpectedArgument, Command.parse(arena.allocator(), &.{ "completions", "csh" }));
     try testing.expectEqual(2, (try Command.parse(arena.allocator(), &.{ "complete", "--", "apply", "" })).complete.len);
@@ -1154,6 +1190,84 @@ test "a kosmos and its apps run on a stack deeper than the process', and a list 
     const applied = try context.run(&.{ runner, "--diff", "--config", context.config });
     try testing.expect(!applied.term.success());
     try testing.expect(std.mem.find(u8, applied.stderr, "listed.items points into a function that has returned") != null);
+}
+
+/// A kosmos whose app writes `~/checked.tool`, and whose checkup asks for `~/bin/tool` and the line
+/// in `~/tool.conf` reading that file.
+const test_checked = test_header ++ testAdapter("tool") ++
+    \\pub const Checked = struct {
+    \\    pub fn apply(self: Checked, output: *kosm.Output) !void {
+    \\        _ = self;
+    \\        try output.generate(.{ .file = "~/checked.tool" }, .{ .written = 1 });
+    \\    }
+    \\
+    \\    pub fn checkup(self: Checked) kosm.Checkup {
+    \\        _ = self;
+    \\        return .{ .program = .{ .command = "~/bin/tool" }, .includes = &.{.{ .file = "~/tool.conf", .line = "include checked.tool" }} };
+    \\    }
+    \\};
+    \\
+    \\pub fn kosmos() struct { own: Checked, plain: Writer } {
+    \\    return .{ .own = .{}, .plain = .{} };
+    \\}
+    \\
+;
+
+test "doctor checks each app against what the apply would write, writes nothing, and fails on a problem" {
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var stdout: std.Io.Writer.Allocating = .init(arena);
+    var stderr: std.Io.Writer.Allocating = .init(arena);
+    const root = try tmp.dir.realPathFileAlloc(testing.io, ".", arena);
+    // Assumes the tests run from the repository root, as `zig build test` does.
+    const repository_root = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, ".", arena);
+    var environ = try testing.environ.createMap(arena);
+    _ = environ.swapRemove("ZIG_PROGRESS");
+    // Shared with the other config tests, so the compiled std stays warm.
+    try environ.put("ZIG_GLOBAL_CACHE_DIR", try std.Io.Dir.path.join(arena, &.{ repository_root, ".zig-cache/kosm-test-global-cache" }));
+    try environ.put("HOME", try std.Io.Dir.path.join(arena, &.{ root, "home" }));
+    try tmp.dir.createDirPath(testing.io, "home");
+    try tmp.dir.createDirPath(testing.io, "project");
+    const test_kosm = @import("test_kosm.zig");
+    var context: Context = .{
+        .io = testing.io,
+        .arena = arena,
+        .config = try std.Io.Dir.path.join(arena, &.{ root, "project" }),
+        .environ_map = &environ,
+        .sources = try test_kosm.sources(arena, testing.io),
+        .stdout = &stdout.writer,
+        .stderr = &stderr.writer,
+    };
+    try init_command.init(context, try test_kosm.stub(arena, testing.io, tmp.dir, root));
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "project/kosmoi/checked.zig", .data = test_checked });
+    const built = try context.runZig(&.{ "build", "-Dkosmos=checked" });
+    if (!built.term.success()) std.debug.print("{s}\n", .{built.stderr});
+    try testing.expect(built.term.success());
+
+    const runner = try std.Io.Dir.path.join(arena, &.{ context.config, runner_path });
+    var doctor_environ = try environ.clone(arena);
+    try doctor_environ.put(interface.doctor_variable, "1");
+    context.environ_map = &doctor_environ;
+    const missing = try context.run(&.{ runner, "--config", context.config });
+    try testing.expect(!missing.term.success());
+    try testing.expectEqualStrings(
+        \\own    program not found: no `~/bin/tool` command; not included: ~/tool.conf does not exist; create it holding `include checked.tool`
+        \\plain  nothing to check
+        \\
+    , missing.stdout);
+    try testing.expectEqualStrings("", missing.stderr);
+
+    try tmp.dir.createDirPath(testing.io, "home/bin");
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "home/bin/tool", .data = "", .flags = .{ .permissions = .executable_file } });
+    try tmp.dir.writeFile(testing.io, .{ .sub_path = "home/tool.conf", .data = "  include checked.tool\n" });
+    const fine = try context.run(&.{ runner, "--config", context.config });
+    if (!fine.term.success()) std.debug.print("{s}\n", .{fine.stderr});
+    try testing.expect(fine.term.success());
+    try testing.expectEqualStrings("own    fine\nplain  nothing to check\n", fine.stdout);
+    try testing.expectError(error.FileNotFound, tmp.dir.access(testing.io, "home/checked.tool", .{}));
 }
 
 /// Builds kosmos `name` in the config and runs it with `--diff`; returns the diff.

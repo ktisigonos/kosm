@@ -23,10 +23,10 @@ pub const Script = struct {
 };
 
 /// The functions a generated module calls; any other a script gives is its own.
-const known_functions = [_][]const u8{ "from", "apply", "reload" };
+const known_functions = [_][]const u8{ "from", "apply", "reload", "checkup" };
 
 /// Declarations of `App` a field may not share its name with.
-const reserved_fields = [_][]const u8{ "script", "apply", "reload" };
+const reserved_fields = [_][]const u8{ "script", "apply", "reload", "checkup" };
 
 pub const Error = std.mem.Allocator.Error || error{InvalidDeclaration};
 
@@ -136,6 +136,14 @@ fn writeModule(writer: *std.Io.Writer, script: Script, declaration: Declaration,
         \\    /// Runs the script's `reload(self, reloader)`.
         \\    pub fn reload(self: App, reloader: *kosm.Reloader) !void {
         \\        return script.reload(App, self, reloader);
+        \\    }
+        \\
+    );
+    if (declaration.gives("checkup")) try writer.writeAll(
+        \\
+        \\    /// Runs the script's `checkup(self)`.
+        \\    pub fn checkup(self: App) kosm.Checkup {
+        \\        return script.checkup(App, self);
         \\    }
         \\
     );
@@ -578,7 +586,7 @@ test "a declaration becomes an app with typed, documented fields and functions r
     const color_type: Declaration.Type = .{ .zig = "kosm.Color" };
     const declaration: Declaration = .{
         .doc = "Cava, the audio visualizer.",
-        .functions = &.{ "from", "apply", "reload" },
+        .functions = &.{ "from", "apply", "reload", "checkup" },
         .fields = &.{
             .{ .name = "bars", .doc = "How many bars; 0 fills the terminal.", .type = .integer, .default = .{ .value = .{ .integer = 0 } }, .line = 3 },
             .{ .name = "sensitivity", .type = .float, .default = .{ .value = .{ .integer = 100 } }, .line = 4 },
@@ -621,6 +629,11 @@ test "a declaration becomes an app with typed, documented fields and functions r
         \\    /// Runs the script's `reload(self, reloader)`.
         \\    pub fn reload(self: App, reloader: *kosm.Reloader) !void {
         \\        return script.reload(App, self, reloader);
+        \\    }
+        \\
+        \\    /// Runs the script's `checkup(self)`.
+        \\    pub fn checkup(self: App) kosm.Checkup {
+        \\        return script.checkup(App, self);
         \\    }
         \\
         \\    comptime {

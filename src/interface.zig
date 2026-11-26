@@ -5,7 +5,7 @@ const std = @import("std");
 
 /// Bumped whenever the command line and the runner change how they talk to each other
 /// (arguments, environment, output the command line reads).
-pub const version: u32 = 8;
+pub const version: u32 = 9;
 
 /// The environment variable the command line passes its `version` to the runner in.
 pub const environment_variable = "KOSM_INTERFACE";
@@ -18,6 +18,11 @@ pub const completions_variable = "KOSM_COMPLETIONS";
 /// Set by the command line to make a runner print the themes of the tree its kosmos builds,
 /// for `kosm colors`, instead of planning and applying it.
 pub const colors_variable = "KOSM_COLORS";
+
+/// Set by the command line to make a runner check each app of the tree its kosmos builds, for
+/// `kosm doctor`, printing one line per app instead of applying it. It plans the tree as an
+/// apply would, writes nothing, and exits 1 when an app has a problem.
+pub const doctor_variable = "KOSM_DOCTOR";
 
 /// Set by the command line to the token it announced in the state directory's latest-apply
 /// file when `kosm apply` started, so the apply typed last wins, not the one built last. A

@@ -55,6 +55,7 @@ pub const commands = [_]Command{
     .{ .name = "apply", .arguments = "<kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--diff [--stat]] [--reload] [--config dir]", .summary = "apply a kosmos", .flags = &apply_flags, .notes = &.{parameters_note} },
     .{ .name = "list", .arguments = "[<kosmos> | --kosmoi | --apps | --adapters | --frontends | --packages ...] [--config dir]", .summary = "list kosmoi and packages", .flags = &(list_flags ++ [_]Flag{config_flag}) },
     .{ .name = "colors", .arguments = "<kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]... [--config dir]", .summary = "show the colors a kosmos wears", .flags = &colors_flags, .notes = &.{parameters_note} },
+    .{ .name = "doctor", .arguments = "[<kosmos>[.<group>]...[.<variant>] [--<param> value]... [--set path=value]...] [--config dir]", .summary = "check that each app's program is installed and reads its files", .flags = &colors_flags, .notes = &.{ parameters_note, "Without a kosmos it checks the one kosm current prints.", "It writes nothing, and exits 1 when an app has a problem." } },
     .{ .name = "current", .arguments = "", .summary = "print the last apply as a command" },
     .{ .name = "source", .arguments = "[<dir> | --default]", .summary = "choose the kosm sources builds use", .flags = &.{default_flag} },
     .{ .name = "add", .arguments = "<url>[#ref] [--config dir]", .summary = "install a package from a url", .flags = &.{config_flag} },

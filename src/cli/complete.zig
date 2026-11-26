@@ -75,7 +75,7 @@ pub fn complete(context: Context, words: []const []const u8) Error!void {
     if (std.mem.eql(u8, command, "current")) return;
     // A file, which each shell completes itself.
     if (std.mem.eql(u8, command, "relay")) return;
-    if (std.mem.eql(u8, command, "apply") or std.mem.eql(u8, command, "colors")) return completeApply(context, before, previous, current);
+    if (std.mem.eql(u8, command, "apply") or std.mem.eql(u8, command, "colors") or std.mem.eql(u8, command, "doctor")) return completeApply(context, before, previous, current);
     if (std.mem.eql(u8, command, "build")) return completeBuild(context, before, current);
 
     if (std.mem.eql(u8, command, "list") and std.mem.startsWith(u8, current, "-")) {
@@ -125,7 +125,7 @@ fn holdsKind(words: []const []const u8) bool {
     return false;
 }
 
-/// `kosm apply` and `kosm colors`: the kosmos first, then its flags; after `--set`, its paths.
+/// `kosm apply`, `kosm colors` and `kosm doctor`: the kosmos first, then its flags; after `--set`, its paths.
 fn completeApply(context: Context, before: []const []const u8, previous: []const u8, current: []const u8) Error!void {
     const kosmos = firstPositional(before) orelse {
         if (std.mem.startsWith(u8, current, "-")) return writeAll(context.stdout, &.{config_flag});

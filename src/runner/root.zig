@@ -16,6 +16,7 @@ const colors = @import("colors.zig");
 const completions = @import("completions.zig");
 const completion_types = @import("completion_types.zig");
 const discovery = @import("discovery.zig");
+const doctor = @import("doctor.zig");
 const files = @import("files.zig");
 const hosting = @import("hosting.zig");
 const kosmos_call = @import("kosmos_call.zig");
@@ -432,7 +433,8 @@ fn finishRun(result: anytype, diagnostics: *kosm.Diagnostics, streams: Streams) 
         else => return err,
     };
     try streams.stdout.flush();
-    if (status != 0) try diagnostics.write(streams.stderr);
+    // `kosm doctor` fails without a message, having printed its problems on stdout.
+    if (status != 0 and diagnostics.message().len != 0) try diagnostics.write(streams.stderr);
     try streams.stderr.flush();
     return status;
 }
@@ -518,7 +520,7 @@ fn applyAnnounced(init: std.process.Init, comptime kosmos: anytype, raw_argument
 /// even when this one takes longer to build: takes the token the command line announced, else
 /// announces one. Null on `--diff`, for `kosm colors`, and when there is no state directory.
 fn announceApply(init: std.process.Init, raw_arguments: []const []const u8, diagnostics: *kosm.Diagnostics) !?Latest {
-    if (init.environ_map.get(interface.colors_variable) != null) return null;
+    if (init.environ_map.get(interface.colors_variable) != null or init.environ_map.get(interface.doctor_variable) != null) return null;
     // Arguments that do not split are reported once they are read for the apply.
     const typed = Arguments.split(init.arena.allocator(), raw_arguments) catch return null;
     if (typed.diff) return null;
@@ -780,6 +782,7 @@ fn finish(init: std.process.Init, tree: anytype, arguments: Arguments, home: []c
         error.OutOfMemory => return error.OutOfMemory,
     };
     if (init.environ_map.get(interface.colors_variable) != null) return showColors(tree.*, diagnostics, streams);
+    if (init.environ_map.get(interface.doctor_variable) != null) return checkApps(init, tree.*, home, adapters, diagnostics, streams);
 
     const lock = if (arguments.diff) null else try lockApply(init, diagnostics, streams.stderr);
     defer if (lock) |file| file.close(init.io);
@@ -813,6 +816,34 @@ fn lockApply(init: std.process.Init, diagnostics: *kosm.Diagnostics, stderr: *st
         error.WriteFailed => return error.WriteFailed,
         else => return fail(diagnostics, "cannot lock {s} against another apply: {s}", .{ path, @errorName(err) }),
     };
+}
+
+/// Plans `tree` as an apply would, then prints each app's checkup against the plan, for
+/// `kosm doctor`; writes nothing. `error.Reported` with no message when an app has a problem.
+fn checkApps(init: std.process.Init, tree: anytype, home: []const u8, adapters: discovery.Adapters, diagnostics: *kosm.Diagnostics, streams: Streams) !void {
+    const arena = init.arena.allocator();
+    var plan: kosm.Plan = .init(init.gpa, init.io);
+    defer plan.deinit();
+    var warnings: kosm.Warnings = .init(arena);
+    const context: walk.Context = .{ .allocator = arena, .home = home, .adapters = adapters.list, .adapter_clashes = adapters.clashes, .plan = &plan, .diagnostics = diagnostics, .warnings = &warnings };
+    try planWarning(tree, context, streams.stderr);
+    const user_flatpaks = try std.Io.Dir.path.join(arena, &.{ try dataHome(arena, init.environ_map, home), "flatpak", "app" });
+    const problems = try doctor.checkTree(tree, .{
+        .allocator = arena,
+        .io = init.io,
+        .home = home,
+        .path_variable = init.environ_map.get("PATH"),
+        .flatpak_folders = &.{ user_flatpaks, doctor.system_flatpak_folder },
+        .plan = &plan,
+    }, streams.stdout);
+    if (problems != 0) return error.Reported;
+}
+
+/// `$XDG_DATA_HOME`, or `~/.local/share` when it is unset or not absolute, as the XDG base
+/// directory spec says.
+fn dataHome(arena: std.mem.Allocator, environ: *const std.process.Environ.Map, home: []const u8) ![]const u8 {
+    if (environ.get("XDG_DATA_HOME")) |given| if (std.Io.Dir.path.isAbsolute(given)) return given;
+    return std.Io.Dir.path.join(arena, &.{ home, ".local", "share" });
 }
 
 /// Prints every theme in `tree`, for `kosm colors`, or fails when it holds none.
@@ -1019,6 +1050,7 @@ test {
     std.testing.refAllDecls(Places);
     std.testing.refAllDecls(lifetime);
     std.testing.refAllDecls(walk);
+    std.testing.refAllDecls(doctor);
     std.testing.refAllDecls(script);
     std.testing.refAllDecls(kosmos_call);
     std.testing.refAllDecls(@import("bindings.zig"));

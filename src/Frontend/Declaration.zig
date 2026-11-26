@@ -7,8 +7,8 @@ const Declaration = @This();
 
 /// The fields, in the order the script writes them.
 fields: []const Field,
-/// The names of the functions the script gives: an app's "from", "apply", and "reload" when it
-/// reloads its program; a modifier's or style's "apply"; a family's "from".
+/// The names of the functions the script gives: an app's "from", "apply", "reload" when it
+/// reloads its program and "checkup" when `kosm doctor` checks it; a modifier's or style's "apply"; a family's "from".
 functions: []const []const u8,
 /// The doc comment of what it declares, without the comment markers; null when it has none.
 doc: ?[]const u8 = null,

@@ -32,6 +32,21 @@ pub fn hasReload(comptime T: type) bool {
     return true;
 }
 
+/// Whether app `T` declares a checkup. A `checkup` of any other shape than
+/// `pub fn checkup(self: T) kosm.Checkup` is a compile error, so it is never skipped silently.
+pub fn hasCheckup(comptime T: type) bool {
+    @setEvalBranchQuota(branch_quota);
+    if (!@hasDecl(T, "checkup")) return false;
+    const wrong_shape = @typeName(T) ++ ".checkup must be `pub fn checkup(self: " ++ @typeName(T) ++ ") kosm.Checkup`";
+    const function = switch (@typeInfo(@TypeOf(T.checkup))) {
+        .@"fn" => |function| function,
+        else => @compileError(wrong_shape),
+    };
+    if (function.is_generic or function.param_types.len != 1 or function.param_types[0] != T) @compileError(wrong_shape);
+    if (function.return_type != kosm.Checkup) @compileError(wrong_shape);
+    return true;
+}
+
 /// Whether a kosmos tree of type `T` holds at least one app, looking through structs and optionals.
 pub fn containsApp(comptime T: type) bool {
     @setEvalBranchQuota(branch_quota);

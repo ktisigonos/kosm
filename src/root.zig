@@ -32,6 +32,8 @@ pub const Output = @import("Output.zig");
 pub const Diagnostics = @import("Diagnostics.zig");
 pub const Warnings = @import("Warnings.zig");
 pub const Reloader = @import("Reloader.zig");
+/// What `kosm doctor` checks for an app: its program, and the files that read the app's.
+pub const Checkup = @import("Checkup.zig");
 pub const Plan = @import("Plan.zig");
 pub const commit = @import("commit.zig");
 pub const diff = @import("diff.zig");
@@ -136,6 +138,7 @@ test {
     std.testing.refAllDecls(Modifier.Function);
     std.testing.refAllDecls(Variations);
     std.testing.refAllDecls(Keyboard);
+    std.testing.refAllDecls(Checkup.Include);
     std.testing.refAllDecls(@import("curve.zig"));
     std.testing.refAllDecls(ColorFormat);
     std.testing.refAllDecls(Format);

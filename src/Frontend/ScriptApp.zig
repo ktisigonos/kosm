@@ -1,5 +1,5 @@
 //! An app written through a frontend: where its script is, and the calls the Zig module kosm
-//! generates for it makes to run the script's `from`, `apply` and `reload` through
+//! generates for it makes to run the script's `from`, `apply`, `reload` and `checkup` through
 //! `Host.current()`. Its `App` keeps a Zig app's shape, so it is used like any app.
 
 const ScriptApp = @This();
@@ -9,6 +9,7 @@ const Loose = @import("../Loose.zig");
 const Theme = @import("../Theme.zig");
 const Output = @import("../Output.zig");
 const Reloader = @import("../Reloader.zig");
+const Checkup = @import("../Checkup.zig");
 const Diagnostics = @import("../Diagnostics.zig");
 const assignment = @import("../assignment.zig");
 const failure = @import("../failure.zig");
@@ -98,6 +99,37 @@ pub fn reload(app: ScriptApp, comptime App: type, self: App, reloader: *Reloader
     };
 }
 
+/// What the script's `checkup(self)` gives: the fields of the table it returns. Like a Zig
+/// app's `checkup` it cannot fail: a failure is recorded like `kosm.fail`'s message, which
+/// `kosm doctor` reports for the app, and an empty checkup is given.
+pub fn checkup(app: ScriptApp, comptime App: type, self: App) Checkup {
+    var built: Checkup = .{};
+    app.fillCheckup(App, self, &built) catch |err| switch (err) {
+        error.OutOfMemory => failure.record("{s}: out of memory", .{app.path}),
+        // `fillCheckup` recorded why.
+        error.KosmosFailed => {},
+    };
+    return built;
+}
+
+fn fillCheckup(app: ScriptApp, comptime App: type, self: App, built: *Checkup) (std.mem.Allocator.Error || failure.Error)!void {
+    const host = Host.current() orelse return failure.fail("{s}: an app written through a frontend runs only in the runner of scripts, and this runner is none", .{app.path});
+    const kept = try host.arena.create(App);
+    kept.* = self;
+    const self_handle = host.handleOf(App, kept) orelse return failure.fail("{s}: the app cannot be handed to its script", .{app.path});
+    var call = host.call();
+    const given = host.run(host.state, &call, app.file(), "checkup", &.{.{ .value = .{ .handle = self_handle } }}) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.CallFailed => return failure.fail("{s}", .{call.message orelse "checkup failed and did not say why"}),
+    };
+    var diagnostics: Diagnostics = .{};
+    const origin = try host.arena.print("{s}: checkup", .{app.path});
+    assignment.assignNamed(Checkup, host.arena, built, withOrigin(given, origin), &diagnostics, "the checkup") catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.InvalidAssignment => return failure.fail("{s}", .{diagnostics.message()}),
+    };
+}
+
 const testing = std.testing;
 
 /// A host whose `from` returns a table (or fails, for `apps/broken.lua`) and whose `apply`
@@ -112,6 +144,16 @@ const TestHost = struct {
             return .{ .value = .{ .table = try call.arena.dupe(Loose.Entry, &.{
                 .{ .key = "size", .value = .{ .value = .{ .integer = if (theme.mode == .light) 2 else 1 } } },
                 .{ .key = "name", .value = .{ .value = .{ .string = "cava" } } },
+            }) } };
+        }
+        if (std.mem.eql(u8, function, "checkup")) {
+            const self = arguments[0].value.handle.as(TestApp).?;
+            return .{ .value = .{ .table = try call.arena.dupe(Loose.Entry, &.{
+                .{ .key = "program", .value = .{ .value = .{ .table = try call.arena.dupe(Loose.Entry, &.{.{ .key = "command", .value = .{ .value = .{ .string = self.name orelse "cava" } } }}) } } },
+                .{ .key = "includes", .value = .{ .value = .{ .list = try call.arena.dupe(Loose, &.{.{ .value = .{ .table = try call.arena.dupe(Loose.Entry, &.{
+                    .{ .key = "file", .value = .{ .value = .{ .string = "~/.config/cava/config" } } },
+                    .{ .key = "line", .value = .{ .value = .{ .string = "include kosm" } } },
+                }) } }}) } } },
             }) } };
         }
         const output = arguments[1].value.handle.as(Output).?;
@@ -199,4 +241,21 @@ test "a failing apply names the file a call on its output failed on, with the sc
     try testing.expectError(error.AppFailed, app.apply(TestApp, .{}, &output));
     try testing.expectEqualStrings("~/.config/cava/config", diagnostics.file);
     try testing.expectEqualStrings("apps/cava.lua:9: kosm.Output.generateValue: no adapter claims it", diagnostics.message());
+}
+
+test "checkup gives the table the script returns as a kosm.Checkup" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const host = withTestHost(arena.allocator());
+    Host.install(&host);
+    defer Host.install(null);
+    failure.clear();
+    const app: ScriptApp = .{ .frontend = "test", .path = "apps/cava.lua" };
+    const given = app.checkup(TestApp, .{ .name = "cava-git" });
+    try testing.expectEqual(null, failure.message());
+    try testing.expectEqualStrings("cava-git", given.program.?.command.?);
+    try testing.expectEqual(null, given.program.?.flatpak);
+    try testing.expectEqual(1, given.includes.len);
+    try testing.expectEqualStrings("~/.config/cava/config", given.includes[0].file);
+    try testing.expectEqualStrings("include kosm", given.includes[0].line);
 }
